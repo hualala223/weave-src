@@ -19,6 +19,7 @@
 		canUseSourceLocation?: boolean;
 		showPremiumFeaturePreviewEnabled?: boolean;
 		onRequestPremiumFeaturePreview?: (featureId: string) => void;
+		deleting?: boolean;
 		onDelete: (info: HighlightClickInfo) => void;
 		onTemporarilyReveal: (info: HighlightClickInfo) => void;
 		onChangeColor: (info: HighlightClickInfo, newColor: string) => void;
@@ -38,6 +39,7 @@
 		canUseSourceLocation = true,
 		showPremiumFeaturePreviewEnabled = false,
 		onRequestPremiumFeaturePreview,
+		deleting = false,
 		onDelete,
 		onTemporarilyReveal,
 		onChangeColor,
@@ -330,7 +332,7 @@
 							<span class="action-label">{t('epub.highlightToolbar.copy')}</span>
 						</button>
 						<div class="row-divider"></div>
-						<button class="clickable-icon action-item delete delete-action" onclick={() => onDelete(info)} title={t('epub.highlightToolbar.deleteTitle')}>
+						<button class="clickable-icon action-item delete delete-action" disabled={deleting} onclick={() => onDelete(info)} title={t('epub.highlightToolbar.deleteTitle')}>
 							<span class="action-icon" use:icon={'trash-2'}></span>
 							<span class="action-label">{t('epub.highlightToolbar.delete')}</span>
 						</button>

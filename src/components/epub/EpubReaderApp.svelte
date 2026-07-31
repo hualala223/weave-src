@@ -310,6 +310,7 @@
 	let referencePopoverStats = $state<ReferenceStats | null>(null);
 	let commentEditorDraft = $state('');
 	let commentEditorSaving = $state(false);
+	let highlightDeleting = $state(false);
 	const SCROLLED_NAV_FRAME_INSET_VAR = '--epub-scrolled-side-nav-frame-inset-end';
 	const SCROLLED_NAV_SCROLLBAR_VAR = '--epub-scrolled-side-nav-scrollbar-width';
 	let excerptSettings = $state<EpubExcerptSettings>({
@@ -1461,7 +1462,9 @@
 
 	function reloadHighlightsAfterExcerptMutation(sourcePath?: string | null) {
 		rememberHighlightSourcePath(sourcePath);
-		void reloadHighlights({ incremental: true });
+		// Route through the shared debounce so the vault modify event (requestReload) and
+		// the direct mutation path merge into a single reload pass instead of two.
+		queueHighlightReload(350, { incremental: true });
 	}
 
 	function queueHighlightReload(delayMs = 350, options: HighlightReloadOptions = {}) {
@@ -4430,6 +4433,21 @@
 		info: HighlightClickInfo,
 		options?: { quiet?: boolean }
 	): Promise<boolean> {
+		if (highlightDeleting) {
+			return false;
+		}
+		highlightDeleting = true;
+		try {
+			return await performHighlightDelete(info, options);
+		} finally {
+			highlightDeleting = false;
+		}
+	}
+
+	async function performHighlightDelete(
+		info: HighlightClickInfo,
+		options?: { quiet?: boolean }
+	): Promise<boolean> {
 		const quiet = options?.quiet === true;
 		/* Always allow */ 
 		if (info.presentation === 'conceal') {
@@ -4867,16 +4885,17 @@
 	async function saveHighlightComment() {
 // Always allow (gate removed)
 		const info = commentEditorInfo;
-		if (!info) {
+		if (!info || commentEditorSaving) {
 			return;
 		}
+		commentEditorSaving = true;
 		const source = await resolveHighlightSource(info);
 		if (!source?.sourceFile) {
+			commentEditorSaving = false;
 			new Notice(t('epub.reader.highlightSourcePending'));
 			void reloadHighlights();
 			return;
 		}
-		commentEditorSaving = true;
 		if (source.sourceFile === '__inline__') {
 			const mutationCfi = resolveHighlightMutationCfi(info, source);
 			const inline = findInlineHighlight(mutationCfi);
@@ -5821,6 +5840,7 @@
 				canUseSourceLocation={hasSourceLocationCapability()}
 				showPremiumFeaturePreviewEnabled={isPremiumFeaturePreviewEnabled()}
 				onRequestPremiumFeaturePreview={openPremiumFeaturePreview}
+				deleting={highlightDeleting}
 				onDelete={handleHighlightDelete}
 				onTemporarilyReveal={handleTemporarilyRevealConcealed}
 				onChangeColor={handleHighlightChangeColor}
