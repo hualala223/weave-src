@@ -57,6 +57,11 @@
     return plugin.settings?.sourceNavigationOpenInNewTab !== false;
   });
 
+  let largeNavButtonsEnabled = $derived.by(() => {
+    stateVersion;
+    return plugin.settings?.enableLargeNavButtons === true;
+  });
+
   let continuousReadingPositionAutoSaveEnabled = $derived.by(() => {
     stateVersion;
     return normalizeContinuousReadingPositionAutoSaveEnabled(
@@ -109,6 +114,7 @@
     getContinuousReadingPositionAutoSaveEnabled: () => continuousReadingPositionAutoSaveEnabled,
     getContinuousReadingPositionAutoSavePages: () => continuousReadingPositionAutoSavePages,
     getSourceNavigationOpenInNewTab: () => sourceNavigationOpenInNewTab,
+    getLargeNavButtonsEnabled: () => largeNavButtonsEnabled,
     getDebugModeEnabled: () => debugModeEnabled,
     getBookNotesExportTemplateFolderValue: () => bookNotesExportTemplateFolderValue,
     getBookNotesExportDefaultTemplatePath: () => bookNotesExportDefaultTemplatePath,
@@ -217,6 +223,7 @@
           continuousReadingPositionAutoSavePages,
           continuousReadingPositionAutoSavePagesInput,
           sourceNavigationOpenInNewTab,
+          largeNavButtonsEnabled,
           debugModeEnabled,
           selectionTranslationSettings,
           customTranslationProviderDrafts,
@@ -252,6 +259,7 @@
           addCustomTranslationProvider: actions.addCustomTranslationProvider,
           removeCustomTranslationProvider: actions.removeCustomTranslationProvider,
           updateSourceNavigationOpenInNewTab: actions.updateSourceNavigationOpenInNewTab,
+          updateLargeNavButtons: actions.updateLargeNavButtons,
           updateDebugMode: actions.updateDebugMode,
         },
       });

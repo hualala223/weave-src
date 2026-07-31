@@ -12,6 +12,7 @@ import {
 	type SelectionTranslationSettings,
 } from "../../config/selection-translation-settings";
 import { getEpubStorageService, normalizeEpubBookmarkFolderPath } from "../../services/epub";
+import { syncLargeNavButtonStyle } from "../../services/epub/epub-large-nav-style";
 import { notifyExcerptSettingsChanged } from "../../services/epub/excerpt-settings-events";
 import { ensureDefaultBookNotesExportTemplates } from "../../services/epub/book-notes-export/install-templates";
 import { resolveBookNotesExportTemplateFolder } from "../../services/epub/book-notes-export/template-folder";
@@ -36,6 +37,7 @@ export interface EpubBasicSettingsActionDeps {
 	getContinuousReadingPositionAutoSaveEnabled: () => boolean;
 	getContinuousReadingPositionAutoSavePages: () => number;
 	getSourceNavigationOpenInNewTab: () => boolean;
+	getLargeNavButtonsEnabled: () => boolean;
 	getDebugModeEnabled: () => boolean;
 	getBookNotesExportTemplateFolderValue: () => string;
 	getBookNotesExportDefaultTemplatePath: () => string;
@@ -243,6 +245,16 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 			}
 
 			plugin.settings.sourceNavigationOpenInNewTab = enabled;
+			await deps.save();
+		},
+
+		async updateLargeNavButtons(enabled: boolean): Promise<void> {
+			if (deps.getLargeNavButtonsEnabled() === enabled) {
+				return;
+			}
+
+			plugin.settings.enableLargeNavButtons = enabled;
+			syncLargeNavButtonStyle(enabled);
 			await deps.save();
 		},
 

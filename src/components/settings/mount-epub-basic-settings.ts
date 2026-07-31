@@ -364,6 +364,17 @@ export function mountEpubBasicSettings(options: EpubBasicSettingsMountOptions): 
 		cleanupFns.push(() => inputEl.removeEventListener("keydown", handleKeydown));
 	});
 
+	new Setting(hosts.reading)
+		.setName(t("epub.settings.basic.largeNavButtons"))
+		.setDesc(t("epub.settings.basic.largeNavButtonsDesc"))
+		.setClass("epub-large-nav-buttons-toggle-setting")
+		.addToggle((toggle) => {
+			toggle.setValue(snapshot.largeNavButtonsEnabled);
+			toggle.onChange(async (value) => {
+				await callbacks.updateLargeNavButtons(value);
+			});
+		});
+
 	for (const builtin of BUILTIN_WEB_TRANSLATION_PROVIDERS) {
 		const builtinEnabled = isBuiltinTranslationEnabled(
 			snapshot.selectionTranslationSettings,

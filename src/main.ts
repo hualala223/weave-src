@@ -31,6 +31,7 @@ import {
 import { PremiumFeatureGuard } from "./services/premium/PremiumFeatureGuard";
 import { configureNavigationHub } from "./services/navigation/navigation-hub-access";
 import { getBookSessionManager } from "./services/epub/session/book-session-manager-access";
+import { syncLargeNavButtonStyle } from "./services/epub/epub-large-nav-style";
 import {
 	registerEpubHost,
 	resolveEpubHost,
@@ -107,6 +108,7 @@ interface StandaloneEpubPluginSettings {
 	aiConfig?: AIConfig;
 	allowInheritedLicenses: boolean;
 	enableDebugMode: boolean;
+	enableLargeNavButtons: boolean;
 	showPremiumFeaturesPreview: boolean;
 	bookshelfAutoViewByLocationEnabled: boolean;
 	bookshelfDisplayMode: BookshelfDisplayMode;
@@ -126,6 +128,7 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 	licenseState: DEFAULT_LICENSE_STORE,
 	allowInheritedLicenses: true,
 	enableDebugMode: false,
+	enableLargeNavButtons: false,
 	showPremiumFeaturesPreview: false,
 	bookshelfAutoViewByLocationEnabled: false,
 	bookshelfDisplayMode: DEFAULT_BOOKSHELF_DISPLAY_MODE,
@@ -627,6 +630,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		syncLargeNavButtonStyle(this.settings.enableLargeNavButtons === true);
 		await vaultStorage.initialize(this.app);
 		initI18n(this.settings.interfaceLanguage);
 		licenseManager.initializeCloud(this.app);

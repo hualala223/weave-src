@@ -35,6 +35,7 @@ export interface EpubBasicSettingsSnapshot {
 	continuousReadingPositionAutoSavePages: number;
 	continuousReadingPositionAutoSavePagesInput: string;
 	sourceNavigationOpenInNewTab: boolean;
+	largeNavButtonsEnabled: boolean;
 	debugModeEnabled: boolean;
 	selectionTranslationSettings: SelectionTranslationSettings;
 	customTranslationProviderDrafts: CustomWebTranslationProvider[];
@@ -67,6 +68,7 @@ export interface EpubBasicSettingsCallbacks {
 	addCustomTranslationProvider: () => Promise<void>;
 	removeCustomTranslationProvider: (index: number) => Promise<void>;
 	updateSourceNavigationOpenInNewTab: (enabled: boolean) => Promise<void>;
+	updateLargeNavButtons: (enabled: boolean) => Promise<void>;
 	updateDebugMode: (enabled: boolean) => Promise<void>;
 }
 

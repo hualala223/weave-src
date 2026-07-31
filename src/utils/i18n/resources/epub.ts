@@ -919,6 +919,9 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 					autoSavePages: "连续阅读页数",
 					autoSavePagesDesc:
 						"达到该页数时自动记录一次阅读位置。范围 {min}-{max} 页，默认 {default} 页。",
+					largeNavButtons: "全局翻页按钮样式",
+					largeNavButtonsDesc:
+						"开启后，上一页按钮放大为屏幕左侧 10% 宽、下一页为右侧 90% 宽，高度 10vh；按钮隐藏但可点击，底部状态栏隐藏。默认关闭。",
 					selectionTranslationTitle: "选区工具条 · 查词与翻译",
 					selectionTranslationDesc:
 						"在阅读器中选中文本后，可从工具条一键查词或翻译。选中文本会自动填入，无需复制粘贴。",
@@ -2152,6 +2155,9 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 					autoSavePages: "Continuous reading page threshold",
 					autoSavePagesDesc:
 						"Auto-save once reading reaches this many pages. Range: {min}-{max} pages. Default: {default}.",
+					largeNavButtons: "Global page-turn button style",
+					largeNavButtonsDesc:
+						"When enabled, the previous-page button expands to the left 10% of the screen and the next-page button to the right 90%, 10vh tall; both stay invisible but clickable, and the bottom status bar is hidden. Off by default.",
 					selectionTranslationTitle: "Selection toolbar · Lookup & translation",
 					selectionTranslationDesc:
 						"After selecting text in the reader, look up words or translate passages with one click. The selection is passed in the URL—no copy and paste.",
