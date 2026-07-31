@@ -3301,7 +3301,7 @@
 		style?: EpubHighlightStyle
 	) {
 		outputNote(text, cfiRange, color, style);
-		try { if (book?.id) { const key = 'weave-inline-hl-' + book.id; const raw = vaultStorage.getItem(key) || '[]'; const arr = JSON.parse(raw); const item = { cfiRange, color, style, text, createdTime: Date.now() }; const dedup = arr.filter((x) => x.cfiRange !== cfiRange); dedup.push(item); vaultStorage.setItem(key, JSON.stringify(dedup)); } } catch (_e) {}
+		try { if (book?.id) { const key = 'weave-inline-hl-' + book.id; const raw = vaultStorage.getItem(key) || '[]'; const arr = JSON.parse(raw); const item = { cfiRange, color, style, text, commentText: '', createdTime: Date.now() }; const dedup = arr.filter((x) => x.cfiRange !== cfiRange); dedup.push(item); vaultStorage.setItem(key, JSON.stringify(dedup)); } } catch (_e) {}
 	}
 
 	async function handleExtractToCard(
@@ -4457,6 +4457,20 @@
 			return false;
 		}
 		const mutationCfiRange = resolveHighlightMutationCfi(info, source);
+		if (source.sourceFile === '__inline__') {
+			const inline = findInlineHighlight(mutationCfiRange);
+			if (inline) {
+				updateInlineHighlight(inline.key, inline.arr.filter((_, i) => i !== inline.idx));
+			}
+			readerService.removeHighlight(info.cfiRange);
+			highlightToolbarInfo = null;
+			if (!quiet) {
+				new Notice(t('epub.reader.highlightDeleted'));
+			}
+			void reloadHighlights();
+			return true;
+		}
+
 
 		const officialApi = resolveEpubWeaveOfficialAPI(app);
 		const officialApiInfo = officialApi?.getInfo?.();
@@ -4863,6 +4877,28 @@
 			return;
 		}
 		commentEditorSaving = true;
+		if (source.sourceFile === '__inline__') {
+			const mutationCfi = resolveHighlightMutationCfi(info, source);
+			const inline = findInlineHighlight(mutationCfi);
+			if (inline) {
+				inline.item.commentText = commentEditorDraft;
+				updateInlineHighlight(inline.key, inline.arr);
+			}
+			readerService.addHighlight({
+				cfiRange: mutationCfi,
+				color: info.color || '',
+				style: info.style,
+				text: info.text,
+				commentText: commentEditorDraft,
+				hasCommentDivider: true,
+			});
+			commentEditorSaving = false;
+			new Notice(t('epub.reader.commentSaved'));
+			closeCommentEditor();
+			void reloadHighlights();
+			return;
+		}
+
 		const updated = await backlinkService.updateHighlightComment(
 			source.sourceFile,
 			resolveHighlightMutationCfi(info, source),
@@ -5020,7 +5056,7 @@
 			}
 
 			let allHighlights = collectedHighlights;
-			try { if (book?.id) { const _k = 'weave-inline-hl-' + book.id; const _r = vaultStorage.getItem(_k) || '[]'; const _il = JSON.parse(_r); if (_il.length > 0) { allHighlights = allHighlights.concat(_il.map((h) => ({ cfiRange: h.cfiRange, color: h.color, style: h.style, text: h.text, createdTime: h.createdTime, sourceFile: '__inline__', sourceRef: '' }))); } } } catch (_e) {}
+			try { if (book?.id) { const _k = 'weave-inline-hl-' + book.id; const _r = vaultStorage.getItem(_k) || '[]'; const _il = JSON.parse(_r); if (_il.length > 0) { allHighlights = allHighlights.concat(_il.map((h) => ({ cfiRange: h.cfiRange, color: h.color, style: h.style, text: h.text, commentText: h.commentText || '', hasCommentDivider: !!(h.commentText), createdTime: h.createdTime, sourceFile: '__inline__', sourceRef: '' }))); } } } catch (_e) {}
 
 			const referenceStats = referenceStatsService.computeReferenceStatsFromHighlights(
 				allHighlights,
