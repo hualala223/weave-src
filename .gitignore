@@ -273,6 +273,7 @@ start-dev.sh
 scripts/*
 !scripts/clean-cache.cjs
 !scripts/copy-manifest.cjs
+!scripts/deploy-obsidian.cjs
 !scripts/dev-watch.cjs
 !scripts/hot-reload-utils.cjs
 !scripts/kill-vite.cjs
