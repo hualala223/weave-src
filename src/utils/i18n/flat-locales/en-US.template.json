@@ -895,7 +895,7 @@
   "epub.settings.basic.autoSavePages": "Continuous reading page threshold",
   "epub.settings.basic.autoSavePagesDesc": "Auto-save once reading reaches this many pages. Range: {min}-{max} pages. Default: {default}.",
   "epub.settings.basic.largeNavButtons": "Global page-turn button style",
-  "epub.settings.basic.largeNavButtonsDesc": "When enabled, the previous-page button expands to the left 10% of the screen and the next-page button to the right 90%, 10vh tall; both stay invisible but clickable, and the bottom status bar is hidden. Off by default.",
+  "epub.settings.basic.largeNavButtonsDesc": "When enabled, the previous-page button expands to the left 10% of the screen and the next-page button to the right 90%, 10vh tall; both stay invisible but clickable, the bottom status bar is hidden, and page turns have no sliding animation. Off by default.",
   "epub.settings.basic.selectionTranslationTitle": "Selection toolbar · Lookup & translation",
   "epub.settings.basic.selectionTranslationDesc": "After selecting text in the reader, look up words or translate passages with one click. The selection is passed in the URL—no copy and paste.",
   "epub.settings.basic.preferNativeDictionaryApp": "Prefer native dictionary app",

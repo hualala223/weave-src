@@ -24,6 +24,7 @@ import {
 	computePaginatorLayoutMetrics,
 	isFoliatePaginatorRenderer,
 } from "../reader-renderer-layout";
+import { syncLargeNavButtonStyle } from "../epub-large-nav-style";
 import {
 	ReaderPaginatedLayoutRecoveryScheduler,
 	shouldRecoverPaginatedLayout,
@@ -455,6 +456,40 @@ describe("reader-renderer-layout", () => {
 		);
 		expect(setAttribute).toHaveBeenCalledWith("flow", "scrolled");
 		expect(render).toHaveBeenCalled();
+	});
+
+	it("skips the animated attribute while large nav buttons are enabled", () => {
+		const setAttribute = vi.fn();
+		const render = vi.fn();
+		const metrics = {
+			hostWidth: 800,
+			inlineSize: "720px",
+			paginatorMargin: 16,
+			gap: "4%",
+		};
+
+		syncLargeNavButtonStyle(true);
+		try {
+			applyRendererLayoutAttributes(
+				{ tagName: "foliate-paginator", setAttribute, render },
+				metrics,
+				"paginated",
+				"single",
+				"standard"
+			);
+			expect(setAttribute).not.toHaveBeenCalledWith("animated", "");
+		} finally {
+			syncLargeNavButtonStyle(false);
+		}
+
+		applyRendererLayoutAttributes(
+			{ tagName: "foliate-paginator", setAttribute, render },
+			metrics,
+			"paginated",
+			"single",
+			"standard"
+		);
+		expect(setAttribute).toHaveBeenCalledWith("animated", "");
 	});
 });
 

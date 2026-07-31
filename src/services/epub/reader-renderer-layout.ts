@@ -1,4 +1,5 @@
 import type { EpubFlowMode, EpubLayoutMode, EpubWidthMode } from "./types";
+import { isLargeNavButtonsEnabled } from "./epub-large-nav-style";
 
 export interface PaginatorLayoutMetrics {
 	hostWidth: number;
@@ -94,7 +95,10 @@ export function applyRendererLayoutAttributes(
 		renderer.setAttribute("max-block-size", "1440px");
 		renderer.setAttribute("margin", `${metrics.paginatorMargin}px`);
 		renderer.setAttribute("gap", metrics.gap);
-		renderer.setAttribute("animated", "");
+		// 全局翻页按钮样式开启时关闭滑动动画（animated 属性由本文件唯一写入）
+		if (!isLargeNavButtonsEnabled()) {
+			renderer.setAttribute("animated", "");
+		}
 		renderer.render?.();
 		return;
 	}
