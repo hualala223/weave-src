@@ -49,7 +49,6 @@
 		autoInsert?: boolean;
 		canvasMode?: boolean;
 		canUseExcerptNotes?: boolean;
-		canUseStyledExcerpts?: boolean;
 		showPremiumFeaturePreviewEnabled?: boolean;
 		onRequestPremiumFeaturePreview?: (featureId: string) => void;
 		boundsEl?: HTMLElement | null;
@@ -75,7 +74,6 @@
 		autoInsert = false,
 		canvasMode = false,
 		canUseExcerptNotes = true,
-		canUseStyledExcerpts = true,
 		showPremiumFeaturePreviewEnabled = false,
 		onRequestPremiumFeaturePreview,
 		boundsEl = null,
@@ -287,11 +285,6 @@
 		clearAndHide();
 	}
 
-	function handlePremiumStyledExcerptFeaturePreview(): void {
-		onRequestPremiumFeaturePreview?.(PREMIUM_FEATURES.EPUB_STYLED_EXCERPTS);
-		clearAndHide();
-	}
-
 	async function handleHighlight(color: string, style?: EpubHighlightStyle) {
 		if (!book || !selectedText || !currentCfiRange) { clearAndHide(); return; }
 		try {
@@ -466,31 +459,10 @@
 		if (onCopySelectionLink && (canUseExcerptNotes || canPreviewLockedExcerptFeature())) {
 			menu.addSeparator();
 			menu.addItem((item) => {
-				item.setTitle(t('epub.selectionToolbar.copyMdLink'));
-				item.setIcon('link');
-				item.onClick(() => {
-					void runSelectionLinkCopy('protocolMarkdown');
-				});
-			});
-			menu.addItem((item) => {
 				item.setTitle(t('epub.selectionToolbar.copyVaultLink'));
 				item.setIcon('links-going-out');
 				item.onClick(() => {
 					void runSelectionLinkCopy('vaultWikilink');
-				});
-			});
-			menu.addItem((item) => {
-				item.setTitle(t('epub.selectionToolbar.copyObsidianUri'));
-				item.setIcon('external-link');
-				item.onClick(() => {
-					void runSelectionLinkCopy('obsidianUri');
-				});
-			});
-			menu.addItem((item) => {
-				item.setTitle(t('epub.selectionToolbar.copyPlainText'));
-				item.setIcon('clipboard-copy');
-				item.onClick(() => {
-					void runSelectionLinkCopy('plainText');
 				});
 			});
 		}
@@ -818,7 +790,14 @@
 					<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'strikethrough')} title="删除线"><span class="action-icon style-icon strikethrough-style-icon" use:icon={'strikethrough'}></span></button>
 					<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'wavy')} title="波浪线"><span class="action-icon style-icon wavy-style-icon" use:icon={'pen-tool'}></span></button>
 				</div>
-			</div>
+		</div>
+		</div>
+	</div>
+	<div class="selection-actions-shell">
+		<div class="toolbar-row actions-row selection-actions-row">
+			<button class="clickable-icon action-item icon-only more-action" onclick={handleOpenMoreMenu} title={t('epub.selectionToolbar.moreMenuTitle')}>
+				<span class="action-icon" use:icon={'more-horizontal'}></span>
+			</button>
 		</div>
 	</div>
 	<div class="toolbar-arrow"></div>

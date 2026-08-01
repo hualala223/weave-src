@@ -3776,18 +3776,6 @@
 		}
 	}
 
-	async function handleHighlightExtractToCard(info: HighlightClickInfo) {
-		await extractContentToCard(
-			buildNoteContent(info.text, info.cfiRange, info.color, info.style),
-			t('epub.reader.createCardSuccess'),
-			'Failed to extract highlight to card',
-			t('epub.reader.highlightExtractFailed'),
-			() => {
-				highlightToolbarInfo = null;
-			}
-		);
-	}
-
 	function handleAutoInsertSelection(
 		text: string,
 		cfiRange: string,
@@ -4340,10 +4328,7 @@
 		info: HighlightClickInfo,
 		newStyle?: HighlightClickInfo['style']
 	) {
-		/* Always allow */ 
-		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_STYLED_EXCERPTS, t('epub.reader.styledExcerptFeatureNotice'))) {
-			return;
-		}
+		/* Always allow (gate removed) */
 		if (newStyle === info.style) return;
 		updateInlineHighlightFields(info.cfiRange, { style: newStyle });
 		readerService.addHighlight({
@@ -4416,54 +4401,6 @@
 			logger.error('[EpubReaderApp] Failed to open reference detail popover:', error);
 			new Notice(t('epub.reader.referencePopoverOpenFailed'));
 		}
-	}
-
-	async function handleHighlightBacklink(info: HighlightClickInfo) {
-		if (!ensureBookSourceLocationAccess(app, t('epub.reader.sourceLocationFeatureNotice'))) {
-			return;
-		}
-		const source = await resolveHighlightSource(info);
-		if (!source?.sourceFile) {
-			new Notice(t('epub.reader.relatedNoteMissing'));
-			return;
-		}
-
-		const sourceFile = source.sourceFile;
-		const sourceRef = source.sourceRef;
-
-		if (sourceRef?.startsWith('card:')) {
-			await navigateExternalSource({ kind: 'card', resourcePath: sourceRef.slice(5) });
-			highlightToolbarInfo = null;
-			return;
-		}
-
-		if (sourceFile.endsWith('.wdeck')) {
-			await navigateExternalSource({ kind: 'json', resourcePath: sourceFile });
-			highlightToolbarInfo = null;
-			return;
-		}
-
-		const encodedCfi = EpubLinkService.encodeCfiForWikilink(info.cfiRange);
-
-		if (sourceFile.endsWith('.canvas')) {
-			await navigateExternalSource({
-				kind: 'canvas',
-				resourcePath: sourceFile,
-				locate: { candidates: [encodedCfi, info.cfiRange, sourceFile] },
-				context: { nodeId: sourceRef, epubFilePath: filePath },
-			});
-			highlightToolbarInfo = null;
-			return;
-		}
-
-		if (sourceFile.endsWith('.json')) {
-			await navigateExternalSource({ kind: 'json', resourcePath: sourceFile });
-			highlightToolbarInfo = null;
-			return;
-		}
-
-		await navigateToMarkdownCallout(sourceFile, encodedCfi, info.cfiRange, info.text, info.createdTime);
-		highlightToolbarInfo = null;
 	}
 
 	function handleHighlightEditComment(info: HighlightClickInfo) {
@@ -5267,17 +5204,11 @@
 				readerService={readerService}
 				mobileDockBottomOffset={settings.paragraphModeEnabled ? paragraphModeNavBottomOffset : 0}
 				info={hasExcerptNotesCapability() ? highlightToolbarInfo : null}
-				canUseStyledExcerpts={hasStyledExcerptCapability()}
-				canUseSourceLocation={hasSourceLocationCapability()}
-				showPremiumFeaturePreviewEnabled={isPremiumFeaturePreviewEnabled()}
-				onRequestPremiumFeaturePreview={openPremiumFeaturePreview}
 				deleting={highlightDeleting}
 				onDelete={handleHighlightDelete}
 				onTemporarilyReveal={handleTemporarilyRevealConcealed}
 				onChangeColor={handleHighlightChangeColor}
 				onChangeStyle={handleHighlightChangeStyle}
-				onBacklink={handleHighlightBacklink}
-				onExtractToCard={handleHighlightExtractToCard}
 				onCopyText={handleHighlightCopyText}
 				onEditComment={handleHighlightEditComment}
 				onDismiss={() => highlightToolbarInfo = null}

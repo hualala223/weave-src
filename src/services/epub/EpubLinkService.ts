@@ -1096,21 +1096,7 @@ export class EpubLinkService {
 					chapterLabelMaxLength
 				);
 			case "vaultWikilink":
-				return this.buildEpubLink(
-					filePath,
-					cfi,
-					text,
-					chapterIndex,
-					chapterTitle,
-					options?.sourcePath,
-					sourceId,
-					undefined,
-					{
-						includeText: false,
-						includeChapter: chapterIndex !== undefined,
-						preferCompactLocator: true,
-					}
-				);
+				return `[[${filePath}|${String(text || '').trim().replace(/\|/g, '\\|')}]]`;
 			case "obsidianUri":
 				return this.buildObsidianProtocolHref(filePath, cfi, {
 					chapter: chapterIndex,

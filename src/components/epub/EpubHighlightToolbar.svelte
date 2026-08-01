@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { setIcon, Platform } from 'obsidian';
 	import { tick, untrack } from 'svelte';
-	import { PREMIUM_FEATURES } from '../../services/premium/PremiumFeatureGuard';
 	import { tr } from '../../utils/i18n';
 	import type { EpubReaderEngine, HighlightClickInfo } from '../../services/epub';
 	import {
@@ -15,18 +14,12 @@
 		info: HighlightClickInfo | null;
 		readerService: EpubReaderEngine;
 		mobileDockBottomOffset?: number;
-		canUseStyledExcerpts?: boolean;
-		canUseSourceLocation?: boolean;
-		showPremiumFeaturePreviewEnabled?: boolean;
-		onRequestPremiumFeaturePreview?: (featureId: string) => void;
 		deleting?: boolean;
 		onDelete: (info: HighlightClickInfo) => void;
 		onTemporarilyReveal: (info: HighlightClickInfo) => void;
 		onChangeColor: (info: HighlightClickInfo, newColor: string) => void;
 		onChangeStyle: (info: HighlightClickInfo, newStyle?: HighlightClickInfo['style']) => void;
 		onEditComment: (info: HighlightClickInfo) => void;
-		onBacklink: (info: HighlightClickInfo) => void;
-		onExtractToCard: (info: HighlightClickInfo) => void;
 		onCopyText: (info: HighlightClickInfo) => void;
 		onDismiss: () => void;
 	}
@@ -35,18 +28,12 @@
 		info,
 		readerService,
 		mobileDockBottomOffset = 0,
-		canUseStyledExcerpts = true,
-		canUseSourceLocation = true,
-		showPremiumFeaturePreviewEnabled = false,
-		onRequestPremiumFeaturePreview,
 		deleting = false,
 		onDelete,
 		onTemporarilyReveal,
 		onChangeColor,
 		onChangeStyle,
 		onEditComment,
-		onBacklink,
-		onExtractToCard,
 		onCopyText,
 		onDismiss
 	}: Props = $props();
@@ -195,25 +182,8 @@
 	}
 
 	function handleStyleToggle(targetInfo: HighlightClickInfo, nextStyle: HighlightClickInfo['style']) {
-		if (!canUseStyledExcerpts) {
-			if (showPremiumFeaturePreviewEnabled) {
-				onRequestPremiumFeaturePreview?.(PREMIUM_FEATURES.EPUB_STYLED_EXCERPTS);
-				onDismiss();
-			}
-			return;
-		}
+		/* Always allow (gate removed) */
 		onChangeStyle(targetInfo, targetInfo.style === nextStyle ? undefined : nextStyle);
-	}
-
-	function handleBacklinkAction(targetInfo: HighlightClickInfo) {
-		if (!canUseSourceLocation) {
-			if (showPremiumFeaturePreviewEnabled) {
-				onRequestPremiumFeaturePreview?.(PREMIUM_FEATURES.EPUB_SOURCE_LOCATION);
-				onDismiss();
-			}
-			return;
-		}
-		onBacklink(targetInfo);
 	}
 
 	$effect(() => {
@@ -316,16 +286,6 @@
 						<button class="clickable-icon action-item comment-action" class:accent={Boolean(info.hasCommentDivider)} onclick={() => onEditComment(info)} title={t('epub.highlightToolbar.commentTitle')} aria-label={t('epub.highlightToolbar.commentTitle')}>
 							<span class="action-icon" use:icon={'message-square'}></span>
 							<span class="action-label">{t('epub.highlightToolbar.comment')}</span>
-						</button>
-						{#if canUseSourceLocation || showPremiumFeaturePreviewEnabled}
-							<button class="clickable-icon action-item backlink-action" onclick={() => handleBacklinkAction(info)} title={t('epub.highlightToolbar.noteTitle')}>
-								<span class="action-icon" use:icon={'external-link'}></span>
-								<span class="action-label">{t('epub.highlightToolbar.note')}</span>
-							</button>
-						{/if}
-						<button class="clickable-icon action-item accent extract-action" onclick={() => onExtractToCard(info)} title={t('epub.highlightToolbar.createCardTitle')} aria-label={t('epub.highlightToolbar.createCardTitle')}>
-							<span class="action-icon" use:icon={'scissors'}></span>
-							<span class="action-label">{t('epub.highlightToolbar.createCard')}</span>
 						</button>
 						<button class="clickable-icon action-item copy-action" onclick={() => onCopyText(info)} title={t('epub.highlightToolbar.copyTitle')}>
 							<span class="action-icon" use:icon={'clipboard-copy'}></span>
