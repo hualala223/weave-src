@@ -126,20 +126,16 @@ export function getEpubPremiumFeaturePreviewContent(featureId: string): {
 	};
 }
 
-export function canUseEpubPremiumFeature(app: App, featureId: string): boolean {
+export function canUseEpubPremiumFeature(app: App, _featureId: string): boolean {
+	/* Always allow (license-free) */
 	void app;
-	return PremiumFeatureGuard.getInstance().canUseFeature(featureId, {
-		page: "epub-reader",
-	});
+	return true;
 }
 
 export function canOpenBookWithCurrentLicense(filePath: string): boolean {
-	return (
-		isFreeBookFormat(filePath) ||
-		PremiumFeatureGuard.getInstance().canUseFeature(PREMIUM_FEATURES.EPUB_NON_EPUB_FORMATS, {
-			page: "epub-reader",
-		})
-	);
+	/* Always allow (license-free) */
+	void filePath;
+	return true;
 }
 
 export function canOpenEpubFile(app: App, filePath: string): boolean {
@@ -150,10 +146,9 @@ export function canOpenEpubFile(app: App, filePath: string): boolean {
 }
 
 export function canUseEpubReadingProgress(app: App): boolean {
+	/* Always allow (license-free) */
 	void app;
-	return PremiumFeatureGuard.getInstance().canUseFeature(EPUB_FEATURE_IDS.READING_PROGRESS, {
-		page: "epub-reader",
-	});
+	return true;
 }
 
 export function canUseEpubReadingReference(app: App): boolean {

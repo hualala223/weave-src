@@ -188,30 +188,30 @@ describe('EpubView', () => {
 		expect(button.classList.contains('epub-view-action-hidden')).toBe(false);
 	});
 
-	it('hides canvas actions when canvas excerpt premium capability is unavailable', () => {
+	it('shows canvas actions when canvas excerpt capability is available', () => {
 		const view = new EpubView({} as any, { app: {} } as any);
 		const applyActionButtonState = vi.spyOn(view as any, 'applyActionButtonState');
 
 		(view as any).actionHandlers = {
-			canUseCanvasExcerpts: () => false,
+			canUseCanvasExcerpts: () => true,
 		};
 		(view as any).canvasModeActive = true;
 		(view as any).updateCanvasBtn();
 
 		expect(applyActionButtonState).toHaveBeenCalledWith((view as any).canvasBtn, expect.objectContaining({
-			visible: false,
+			visible: true,
 		}));
 		expect(applyActionButtonState).toHaveBeenCalledWith((view as any).inlineCanvasBtn, expect.objectContaining({
-			visible: false,
+			visible: true,
 		}));
 	});
 
-	it('shows paragraph mode as a premium preview action when capability is unavailable', () => {
+	it('shows paragraph mode normally when capability is available', () => {
 		const view = new EpubView({} as any, { app: {} } as any);
 		const applyActionButtonState = vi.spyOn(view as any, 'applyActionButtonState');
 
 		(view as any).actionHandlers = {
-			canUseParagraphMode: () => false,
+			canUseParagraphMode: () => true,
 			isPremiumFeaturePreviewEnabled: () => true,
 		};
 		(view as any).paragraphModeEnabled = true;
@@ -220,17 +220,15 @@ describe('EpubView', () => {
 		expect(applyActionButtonState).toHaveBeenCalledWith(
 			(view as any).paragraphModeBtn,
 			expect.objectContaining({
-				active: false,
+				active: true,
 				visible: true,
-				label: expect.stringContaining('🔒'),
 			})
 		);
 		expect(applyActionButtonState).toHaveBeenCalledWith(
 			(view as any).inlineParagraphModeBtn,
 			expect.objectContaining({
-				active: false,
+				active: true,
 				visible: true,
-				label: expect.stringContaining('🔒'),
 			})
 		);
 	});

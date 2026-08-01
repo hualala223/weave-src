@@ -580,7 +580,7 @@ describe('EpubLinkService legacy link compatibility', () => {
 		expect(quoteBlock).not.toMatch(/\^we-montaigne/);
 	});
 
-	it('builds selection toolbar copy links without duplicating quote text in vault wikilinks', () => {
+	it('builds plain vault wikilinks with selected text as alias', () => {
 		const service = new EpubLinkService({} as any);
 		const vaultLink = service.buildSelectionCopyLink(
 			'vaultWikilink',
@@ -590,9 +590,6 @@ describe('EpubLinkService legacy link compatibility', () => {
 			{ chapterIndex: 3, sourceId: 'epubsrc-demo' }
 		);
 
-		expect(vaultLink).toMatch(/^\[\[Books\/demo\.epub#/);
-		expect(vaultLink).not.toContain('&text=');
-		expect(vaultLink).toContain('&chapter=3');
-		expect(vaultLink).toContain('&sid=epubsrc-demo');
+		expect(vaultLink).toBe('[[Books/demo.epub|Hello world]]');
 	});
 });

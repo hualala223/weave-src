@@ -228,7 +228,7 @@
 	}
 
 	function getSourceLabel(sourceFile?: string): string {
-		if (!sourceFile) {
+		if (!sourceFile || sourceFile === '__inline__') {
 			return '';
 		}
 		const normalized = sourceFile.replace(/\\/g, '/');

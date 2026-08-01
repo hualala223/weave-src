@@ -97,7 +97,8 @@ export class PremiumFeatureGuard {
 	 * 私有构造函数，确保单例
 	 */
 	private constructor() {
-		this.isPremiumActive = writable(false);
+		/* Always allow (license-free) */
+		this.isPremiumActive = writable(true);
 		this.premiumFeaturesPreviewEnabled = writable(false);
 	}
 
@@ -124,7 +125,8 @@ export class PremiumFeatureGuard {
 		this.inheritedLicenses = input.inheritedLicenses ?? [];
 		const effectiveState = await this.validateLicenseState();
 		this.effectiveState = effectiveState;
-		this.isPremiumActive.set(effectiveState.isPremiumActive);
+		/* Always allow (license-free) */
+		this.isPremiumActive.set(true);
 		this.dispatchPremiumUiStateChanged();
 	}
 
@@ -142,7 +144,8 @@ export class PremiumFeatureGuard {
 		this.inheritedLicenses = input.inheritedLicenses ?? this.inheritedLicenses;
 		const effectiveState = await this.validateLicenseState();
 		this.effectiveState = effectiveState;
-		this.isPremiumActive.set(effectiveState.isPremiumActive);
+		/* Always allow (license-free) */
+		this.isPremiumActive.set(true);
 		this.dispatchPremiumUiStateChanged();
 	}
 

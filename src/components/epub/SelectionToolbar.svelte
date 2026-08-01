@@ -2,9 +2,7 @@
 	import { setIcon, Platform, Menu } from 'obsidian';
 	import type { App } from 'obsidian';
 	import { onMount, tick, untrack } from 'svelte';
-	import { PREMIUM_FEATURES } from '../../services/premium/PremiumFeatureGuard';
 	import { tr } from '../../utils/i18n';
-	import { isWeaveMainPluginEnabled } from '../../utils/weave-reader-access';
 	import { logger } from '../../utils/logger';
 	import type {
 		EpubBook,
@@ -14,16 +12,6 @@
 		ReaderFrame,
 		ReaderViewportRect,
 	} from '../../services/epub';
-	import type { ResolvedWebTranslationProvider } from '../../config/selection-translation-settings';
-	import { openObsidianVaultSearch } from '../../services/obsidian/obsidian-vault-search';
-	import { openObsidianWebSearch } from '../../services/obsidian/obsidian-web-search';
-	import {
-		listActiveTranslationProviders,
-		openWebTranslationProvider,
-		readSelectionTranslationSettings,
-	} from '../../services/obsidian/obsidian-web-translate';
-	import { extractSelectionContext } from '../../services/obsidian/selection-lookup-routing';
-	import { showNotification } from '../../utils/notifications';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import {
 		computeToolbarPosition,
@@ -48,22 +36,10 @@
 		readerVersion?: number;
 		autoInsert?: boolean;
 		canvasMode?: boolean;
-		canUseExcerptNotes?: boolean;
-		showPremiumFeaturePreviewEnabled?: boolean;
-		onRequestPremiumFeaturePreview?: (featureId: string) => void;
 		boundsEl?: HTMLElement | null;
 		mobileDockBottomOffset?: number;
 		externalSelection?: ExternalSelectionState | null;
 		onInsertToNote?: (text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) => void;
-		onCopySelectionLink?: (
-			action: 'protocolMarkdown' | 'vaultWikilink' | 'obsidianUri' | 'plainText',
-			text: string,
-			cfiRange: string
-		) => void | Promise<void>;
-		onAutoInsert?: (text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) => void;
-		onExtractToCard?: (text: string, cfiRange: string) => void;
-		onCreateReadingPoint?: (text: string, cfiRange: string) => void;
-		onOpenAIMenu: (event: MouseEvent, text: string, cfiRange: string) => void;
 	}
 
 	let {
@@ -73,21 +49,12 @@
 		readerVersion = 0,
 		autoInsert = false,
 		canvasMode = false,
-		canUseExcerptNotes = true,
-		showPremiumFeaturePreviewEnabled = false,
-		onRequestPremiumFeaturePreview,
 		boundsEl = null,
 		mobileDockBottomOffset = 0,
 		externalSelection = null,
-		onInsertToNote,
-		onCopySelectionLink,
-		onAutoInsert,
-		onExtractToCard,
-		onCreateReadingPoint,
-		onOpenAIMenu
+		onInsertToNote
 	}: Props = $props();
 	let t = $derived($tr);
-	let canUseAiSplit = $derived(isWeaveMainPluginEnabled(app));
 
 	let toolbarEl: HTMLDivElement | undefined = $state(undefined);
 	let isVisible = $state(false);
@@ -276,74 +243,12 @@
 		hideToolbar();
 	}
 
-	function canPreviewLockedExcerptFeature(): boolean {
-		return !canUseExcerptNotes && showPremiumFeaturePreviewEnabled;
-	}
-
-	function handlePremiumExcerptFeaturePreview(): void {
-		onRequestPremiumFeaturePreview?.(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-		clearAndHide();
-	}
-
 	async function handleHighlight(color: string, style?: EpubHighlightStyle) {
 		if (!book || !selectedText || !currentCfiRange) { clearAndHide(); return; }
 		try {
 			readerService.addHighlight({ cfiRange: currentCfiRange, color, style, text: selectedText });
 		} catch (e) { logger.warn('[SelectionToolbar] Failed to apply highlight:', e); }
 		onInsertToNote?.(selectedText, currentCfiRange, color, style);
-		clearAndHide();
-	}
-
-	function handleInsertToNote() {
-		if (!canUseExcerptNotes && showPremiumFeaturePreviewEnabled) {
-			handlePremiumExcerptFeaturePreview();
-			return;
-		}
-		if (selectedText && currentCfiRange) {
-			onInsertToNote?.(selectedText, currentCfiRange);
-		}
-		clearAndHide();
-	}
-
-	async function runSelectionLinkCopy(
-		action: 'protocolMarkdown' | 'vaultWikilink' | 'obsidianUri' | 'plainText'
-	) {
-		if (!canUseExcerptNotes && showPremiumFeaturePreviewEnabled) {
-			handlePremiumExcerptFeaturePreview();
-			return;
-		}
-		if (selectedText && currentCfiRange) {
-			await onCopySelectionLink?.(action, selectedText, currentCfiRange);
-		}
-		clearAndHide();
-	}
-
-	function handleExtractToCard() {
-		if (selectedText && currentCfiRange) {
-			onExtractToCard?.(selectedText, currentCfiRange);
-		}
-		clearAndHide();
-	}
-
-	function handleCreateReadingPoint() {
-		if (selectedText && currentCfiRange) {
-			onCreateReadingPoint?.(selectedText, currentCfiRange);
-		}
-		clearAndHide();
-	}
-
-	function handleOpenAIMenu(event: MouseEvent) {
-		if (selectedText && currentCfiRange) {
-			onOpenAIMenu(event, selectedText, currentCfiRange);
-		}
-		clearAndHide();
-	}
-
-	function handleVaultSearch() {
-		if (!selectedText) return;
-		if (!openObsidianVaultSearch(app, selectedText)) {
-			showNotification(t('epub.selectionToolbar.vaultSearchUnavailable'), 'warning');
-		}
 		clearAndHide();
 	}
 
@@ -355,6 +260,26 @@
 		if (!opened) {
 			showNotification(t('epub.selectionToolbar.webSearchUnavailable'), 'warning');
 		}
+	}
+
+	function handleTranslate(event: MouseEvent) {
+		event.stopPropagation();
+		const text = selectedText.trim();
+		if (!text) {
+			return;
+		}
+
+		dismissActiveToolbarMenu();
+		const menu = new Menu();
+		activeToolbarMenu = menu;
+		addLookupProviderMenuItems(
+			menu,
+			listTranslationProviders(),
+			text,
+			t('epub.selectionToolbar.translateUnavailable'),
+			t('epub.selectionToolbar.translateOpenFailed')
+		);
+		menu.showAtMouseEvent(event);
 	}
 
 	function resolveBuiltinTranslationLabel(
@@ -412,62 +337,6 @@
 				});
 			});
 		}
-	}
-
-	function resolveSelectionToolbarSubmenu(item: unknown, fallbackMenu: Menu): Menu {
-		const candidate = item as { setSubmenu?: () => Menu };
-		if (typeof candidate.setSubmenu === 'function') {
-			return candidate.setSubmenu();
-		}
-		return fallbackMenu;
-	}
-
-	function handleOpenMoreMenu(event: MouseEvent) {
-		event.stopPropagation();
-		const text = selectedText.trim();
-		if (!text) {
-			return;
-		}
-
-		dismissActiveToolbarMenu();
-		const translationProviders = listTranslationProviders();
-		const menu = new Menu();
-		activeToolbarMenu = menu;
-
-		menu.addItem((item) => {
-			item.setTitle(t('epub.selectionToolbar.webSearch'));
-			item.setIcon('globe');
-			item.onClick(async () => {
-				await runWebSearch();
-				clearAndHide();
-			});
-		});
-
-		menu.addItem((item) => {
-			item.setTitle(t('epub.selectionToolbar.translate'));
-			item.setIcon('languages');
-			const translateMenu = resolveSelectionToolbarSubmenu(item, menu);
-			addLookupProviderMenuItems(
-				translateMenu,
-				translationProviders,
-				text,
-				t('epub.selectionToolbar.translateUnavailable'),
-				t('epub.selectionToolbar.translateOpenFailed')
-			);
-		});
-
-		if (onCopySelectionLink && (canUseExcerptNotes || canPreviewLockedExcerptFeature())) {
-			menu.addSeparator();
-			menu.addItem((item) => {
-				item.setTitle(t('epub.selectionToolbar.copyVaultLink'));
-				item.setIcon('links-going-out');
-				item.onClick(() => {
-					void runSelectionLinkCopy('vaultWikilink');
-				});
-			});
-		}
-
-		menu.showAtMouseEvent(event);
 	}
 
 	function handlePointerDownOutside(event: Event) {
@@ -795,8 +664,13 @@
 	</div>
 	<div class="selection-actions-shell">
 		<div class="toolbar-row actions-row selection-actions-row">
-			<button class="clickable-icon action-item icon-only more-action" onclick={handleOpenMoreMenu} title={t('epub.selectionToolbar.moreMenuTitle')}>
-				<span class="action-icon" use:icon={'more-horizontal'}></span>
+			<button class="clickable-icon action-item" onclick={() => { void runWebSearch(); clearAndHide(); }} title={t('epub.selectionToolbar.webSearchTitle')}>
+				<span class="action-icon" use:icon={'globe'}></span>
+				<span class="action-label">{t('epub.selectionToolbar.webSearch')}</span>
+			</button>
+			<button class="clickable-icon action-item" onclick={handleTranslate} title={t('epub.selectionToolbar.translateTitle')}>
+				<span class="action-icon" use:icon={'languages'}></span>
+				<span class="action-label">{t('epub.selectionToolbar.translate')}</span>
 			</button>
 		</div>
 	</div>

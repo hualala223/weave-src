@@ -102,6 +102,7 @@
 	import { buildEpubMarkdownLocateCandidates } from '../../services/ui/source-locate-candidates';
 	import type { EpubSavedCardSnapshot } from '../../services/epub/epub-card-highlight-sync';
 	import type { EpubHostCreateCardInput } from '../../services/epub';
+	import { generateBlockID } from '../../services/identifier/WeaveIDGenerator';
 	import {
 		normalizeContinuousReadingPositionAutoSaveEnabled,
 		normalizeContinuousReadingPositionAutoSavePages,
@@ -2975,28 +2976,6 @@
 		}
 	}
 
-	async function handleCopySelectionLink(
-		action: 'protocolMarkdown' | 'vaultWikilink' | 'obsidianUri' | 'plainText',
-		text: string,
-		cfiRange: string
-	) {
-		if (!hasExcerptNotesCapability()) {
-			if (isPremiumFeaturePreviewEnabled()) {
-				openPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-			}
-			return;
-		}
-		const content = linkService.buildSelectionCopyLink(action, filePath, cfiRange, text, {
-			chapterIndex: readerService.getCurrentChapterIndex(),
-			chapterTitle: resolveExcerptChapterTitle(),
-			sourceId: book?.sourceId,
-			chapterLabelMaxLength: resolveExcerptChapterLabelMaxLength(),
-		});
-		if (content) {
-			await copyTextToClipboard(content);
-		}
-	}
-
 	function showCanvasAddedNotice(
 		anchorMode: ReturnType<EpubCanvasService['getLastInsertAnchorMode']>
 	): void {
@@ -3102,7 +3081,7 @@
 			const raw = vaultStorage.getItem(key) || '[]';
 			const arr = JSON.parse(raw);
 			const createdTime = Date.now();
-			const item = { cfiRange, color, style, text, commentText: '', createdTime };
+			const item = { cfiRange, color, style, text, commentText: '', createdTime, excerptId: generateBlockID() };
 			const dedup = arr.filter((x: { cfiRange?: string }) => x.cfiRange !== cfiRange);
 			dedup.push(item);
 			vaultStorage.setItem(key, JSON.stringify(dedup));
@@ -3114,6 +3093,7 @@
 				commentText: '',
 				hasCommentDivider: false,
 				createdTime,
+				excerptId: item.excerptId,
 				sourceFile: '__inline__',
 				sourceRef: '',
 				presentation: 'highlight',
@@ -4521,8 +4501,18 @@
 	}
 
 	async function handleHighlightCopyText(info: HighlightClickInfo) {
-		const plainText = info.text.replace(/^>\s?/gm, '').trim();
-		await copyTextToClipboard(plainText);
+		const link = linkService.buildEpubLink(
+			filePath,
+			info.cfiRange,
+			info.text,
+			undefined,
+			undefined,
+			undefined,
+			book?.sourceId,
+			info.excerptId,
+			{ includeText: false, includeChapter: false, preferCompactLocator: false }
+		);
+		await copyTextToClipboard(link);
 		highlightToolbarInfo = null;
 	}
 
@@ -4575,9 +4565,14 @@
 				const raw = vaultStorage.getItem(key) || '[]';
 				const inlineItems = JSON.parse(raw);
 				if (Array.isArray(inlineItems)) {
+					let migrated = false;
 					for (const item of inlineItems) {
 						if (!item || typeof item.cfiRange !== 'string') {
 							continue;
+						}
+						if (!item.excerptId) {
+							item.excerptId = generateBlockID();
+							migrated = true;
 						}
 						allHighlights.push({
 							cfiRange: item.cfiRange,
@@ -4587,10 +4582,14 @@
 							commentText: item.commentText || '',
 							hasCommentDivider: !!(item.commentText),
 							createdTime: item.createdTime,
+							excerptId: item.excerptId,
 							sourceFile: '__inline__',
 							sourceRef: '',
 							presentation: 'highlight',
 						});
+					}
+					if (migrated) {
+						vaultStorage.setItem(key, JSON.stringify(inlineItems));
 					}
 				}
 			}
