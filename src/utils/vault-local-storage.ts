@@ -8,7 +8,7 @@
  * App#loadLocalStorage (for example Obsidian's own `language` setting).
  */
 
-import type { App } from "obsidian";
+import { getConfiguredVaultStoragePath, getLegacyLocalStoragePath } from "../config/paths";
 import { getPluginPaths } from "../config/paths";
 import { getAppWithLegacyLocalStorage } from "../types/obsidian-extensions";
 import { DirectoryUtils } from "./directory-utils";
@@ -30,9 +30,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 class VaultLocalStorage {
 	private app: App | null = null;
-	private storagePath: string | null = null;
-	private entries: Record<string, string> = {};
 	private initializePromise: Promise<void> | null = null;
+	private entries: Record<string, string> = {};
 	private persistPromise: Promise<void> = Promise.resolve();
 	private persistTimer: ReturnType<typeof setTimeout> | null = null;
 	private dirty = false;
@@ -40,7 +39,16 @@ class VaultLocalStorage {
 
 	setApp(app: App): void {
 		this.app = app;
-		this.storagePath = getPluginPaths(app).state.localStorage;
+	}
+
+	/**
+	 * 当前生效的 local-storage.json 路径（动态解析，支持设置页修改后立即生效）。
+	 */
+	private resolveStoragePath(): string | null {
+		if (!this.app) {
+			return null;
+		}
+		return getConfiguredVaultStoragePath(this.app);
 	}
 
 	async initialize(app: App): Promise<void> {
@@ -126,7 +134,6 @@ class VaultLocalStorage {
 			this.persistTimer = null;
 		}
 		this.app = null;
-		this.storagePath = null;
 		this.entries = {};
 		this.initializePromise = null;
 		this.persistPromise = Promise.resolve();
@@ -174,8 +181,8 @@ class VaultLocalStorage {
 	}
 
 	private async loadAndMigrate(): Promise<void> {
+		await this.migrateFromLegacyPath();
 		this.entries = await this.readPersistedEntries();
-
 		const legacyEntries = this.collectLegacyManagedEntries();
 		const conflicts: ConflictEntry[] = [];
 		let mergedLegacyEntries = false;
@@ -223,7 +230,7 @@ class VaultLocalStorage {
 	}
 
 	private async persistPendingEntries(): Promise<void> {
-		if (!this.app || !this.storagePath || !this.dirty) {
+		if (!this.app || !this.resolveStoragePath() || !this.dirty) {
 			await this.persistPromise;
 			return;
 		}
@@ -253,17 +260,18 @@ class VaultLocalStorage {
 	}
 
 	private async readPersistedEntries(): Promise<Record<string, string>> {
-		if (!this.app || !this.storagePath) {
+		const storagePath = this.resolveStoragePath();
+		if (!this.app || !storagePath) {
 			return {};
 		}
 
 		const adapter = this.app.vault.adapter;
 		try {
-			if (!(await adapter.exists(this.storagePath))) {
+			if (!(await adapter.exists(storagePath))) {
 				return {};
 			}
 
-			const parsed = JSON.parse(await adapter.read(this.storagePath)) as unknown;
+			const parsed = JSON.parse(await adapter.read(storagePath)) as unknown;
 			if (!isRecord(parsed)) {
 				return {};
 			}
@@ -276,24 +284,58 @@ class VaultLocalStorage {
 			}
 			return normalized;
 		} catch (error) {
-			logger.warn(`[VaultLocalStorage] 读取失败: ${this.storagePath}`, error);
+			logger.warn(`[VaultLocalStorage] 读取失败: ${storagePath}`, error);
 			return {};
 		}
 	}
 
 	private async writeEntriesSnapshot(entries: Record<string, string>): Promise<boolean> {
-		if (!this.app || !this.storagePath) {
+		const storagePath = this.resolveStoragePath();
+		if (!this.app || !storagePath) {
 			return false;
 		}
 
 		const adapter = this.app.vault.adapter;
 		try {
-			await DirectoryUtils.ensureDirForFile(adapter, this.storagePath);
-			await adapter.write(this.storagePath, JSON.stringify(entries, null, 2));
+			await DirectoryUtils.ensureDirForFile(adapter, storagePath);
+			await adapter.write(storagePath, JSON.stringify(entries, null, 2));
 			return true;
 		} catch (error) {
-			logger.warn(`[VaultLocalStorage] 写入失败: ${this.storagePath}`, error);
+			logger.warn(`[VaultLocalStorage] 写入失败: ${storagePath}`, error);
 			return false;
+		}
+	}
+
+	/**
+	 * 迁移：旧路径（.obsidian/plugins/<id>/state/local-storage.json）→ 新路径（weave/local-storage.json）。
+	 * 仅当新路径不存在且旧路径有数据时复制；旧文件保留（安全，不破坏）。
+	 */
+	private async migrateFromLegacyPath(): Promise<void> {
+		if (!this.app) {
+			return;
+		}
+		try {
+			const adapter = this.app.vault.adapter;
+			const legacyPath = getLegacyLocalStoragePath(this.app);
+			const nextPath = this.resolveStoragePath();
+			if (!nextPath || nextPath === legacyPath) {
+				return;
+			}
+			if (await adapter.exists(nextPath)) {
+				return;
+			}
+			if (!(await adapter.exists(legacyPath))) {
+				return;
+			}
+			const content = await adapter.read(legacyPath);
+			if (!content?.trim()) {
+				return;
+			}
+			await DirectoryUtils.ensureDirForFile(adapter, nextPath);
+			await adapter.write(nextPath, content);
+			logger.info(`[VaultLocalStorage] 已迁移 ${legacyPath} → ${nextPath}`);
+		} catch (error) {
+			logger.warn("[VaultLocalStorage] 迁移旧 local-storage.json 失败", error);
 		}
 	}
 

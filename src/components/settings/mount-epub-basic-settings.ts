@@ -207,6 +207,49 @@ export function mountEpubBasicSettings(options: EpubBasicSettingsMountOptions): 
 		cleanupFns,
 	});
 
+	const highlightStoragePathSetting = new Setting(hosts.reading)
+		.setName(t("epub.settings.basic.highlightStoragePath"))
+		.setDesc(t("epub.settings.basic.highlightStoragePathDesc"))
+		.setClass("epub-highlight-storage-path-setting");
+
+	highlightStoragePathSetting.addText((text) => {
+		text.setPlaceholder(t("epub.settings.basic.highlightStoragePathPlaceholder"));
+		text.setValue(snapshot.highlightStoragePathInput);
+		text.onChange((value) => {
+			callbacks.setHighlightStoragePathInput(value);
+		});
+
+		const inputEl = text.inputEl;
+
+		const commitValue = () => {
+			void callbacks.updateHighlightStoragePath(inputEl.value);
+		};
+
+		const handleBlur = () => {
+			commitValue();
+		};
+
+		const handleKeydown = (event: KeyboardEvent) => {
+			if (event.key === "Enter") {
+				event.preventDefault();
+				commitValue();
+				return;
+			}
+
+			if (event.key === "Escape") {
+				callbacks.setHighlightStoragePathInput(snapshot.highlightStoragePathValue);
+				text.setValue(snapshot.highlightStoragePathValue);
+				inputEl.blur();
+			}
+		};
+
+		inputEl.addEventListener("blur", handleBlur);
+		inputEl.addEventListener("keydown", handleKeydown);
+
+		cleanupFns.push(() => inputEl.removeEventListener("blur", handleBlur));
+		cleanupFns.push(() => inputEl.removeEventListener("keydown", handleKeydown));
+	});
+
 	const exportTemplateFolderSetting = new Setting(hosts.reading)
 		.setName(t("epub.settings.basic.bookNotesExportTemplateFolder"))
 		.setDesc(t("epub.settings.basic.bookNotesExportTemplateFolderDesc"))

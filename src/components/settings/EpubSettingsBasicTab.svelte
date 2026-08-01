@@ -9,6 +9,7 @@
   import { EPUB_RUNTIME, normalizeEpubBookmarkFolderPath } from "../../services/epub";
   import type { CustomWebTranslationProvider } from "../../config/selection-translation-settings";
   import { normalizeInterfaceLanguagePreference, tr } from "../../utils/i18n";
+  import { normalizeHighlightStoragePath } from "../../config/paths";
   import type StandaloneEpubPlugin from "../../main";
   import { createEpubBasicSettingsActions } from "./epub-basic-settings-actions";
   import { mountEpubBasicSettings } from "./mount-epub-basic-settings";
@@ -29,6 +30,7 @@
   let diagnosticsSettingsHost = $state<HTMLDivElement | null>(null);
 
   let bookmarkFolderInput = $state("");
+  let highlightStoragePathInput = $state("");
   let bookNotesExportTemplateFolderInput = $state("");
   let bookNotesExportTemplateFolderValue = $state("");
   let bookNotesExportDefaultTemplatePath = $state("");
@@ -45,6 +47,11 @@
   let bookmarkFolderValue = $derived.by(() => {
     stateVersion;
     return normalizeEpubBookmarkFolderPath(plugin.settings?.bookmarkFolder);
+  });
+
+  let highlightStoragePathValue = $derived.by(() => {
+    stateVersion;
+    return normalizeHighlightStoragePath(plugin.settings?.highlightStoragePath);
   });
 
   let debugModeEnabled = $derived.by(() => {
@@ -109,6 +116,7 @@
     plugin,
     getTranslate: () => t,
     getBookmarkFolderValue: () => bookmarkFolderValue,
+    getHighlightStoragePathValue: () => highlightStoragePathValue,
     getInterfaceLanguageValue: () => interfaceLanguageValue,
     getPremiumPreviewEnabled: () => premiumPreviewEnabled,
     getContinuousReadingPositionAutoSaveEnabled: () => continuousReadingPositionAutoSaveEnabled,
@@ -122,6 +130,9 @@
     getAutoSavePagesTextControl: () => autoSavePagesTextControl,
     setBookmarkFolderInput: (value) => {
       bookmarkFolderInput = value;
+    },
+    setHighlightStoragePathInput: (value) => {
+      highlightStoragePathInput = value;
     },
     setBookNotesExportTemplateFolderInput: (value) => {
       bookNotesExportTemplateFolderInput = value;
@@ -144,6 +155,11 @@
   $effect(() => {
     bookmarkFolderValue;
     bookmarkFolderInput = bookmarkFolderValue;
+  });
+
+  $effect(() => {
+    highlightStoragePathValue;
+    highlightStoragePathInput = highlightStoragePathValue;
   });
 
   $effect(() => {
@@ -216,6 +232,8 @@
           premiumPreviewEnabled,
           bookmarkFolderValue,
           bookmarkFolderInput,
+          highlightStoragePathValue,
+          highlightStoragePathInput,
           bookNotesExportTemplateFolderValue,
           bookNotesExportTemplateFolderInput,
           bookNotesExportDefaultTemplatePath,
@@ -233,6 +251,9 @@
           setBookmarkFolderInput: (value) => {
             bookmarkFolderInput = value;
           },
+          setHighlightStoragePathInput: (value) => {
+            highlightStoragePathInput = value;
+          },
           setBookNotesExportTemplateFolderInput: (value) => {
             bookNotesExportTemplateFolderInput = value;
           },
@@ -243,6 +264,7 @@
             autoSavePagesTextControl = control;
           },
           updateBookmarkFolder: actions.updateBookmarkFolder,
+          updateHighlightStoragePath: actions.updateHighlightStoragePath,
           updateInterfaceLanguage: actions.updateInterfaceLanguage,
           updatePremiumPreview: actions.updatePremiumPreview,
           updateBookNotesExportTemplatePath: actions.updateBookNotesExportTemplatePath,

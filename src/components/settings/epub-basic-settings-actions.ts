@@ -12,6 +12,7 @@ import {
 	type SelectionTranslationSettings,
 } from "../../config/selection-translation-settings";
 import { getEpubStorageService, normalizeEpubBookmarkFolderPath } from "../../services/epub";
+import { normalizeHighlightStoragePath } from "../../config/paths";
 import { syncLargeNavButtonStyle } from "../../services/epub/epub-large-nav-style";
 import { notifyExcerptSettingsChanged } from "../../services/epub/excerpt-settings-events";
 import { ensureDefaultBookNotesExportTemplates } from "../../services/epub/book-notes-export/install-templates";
@@ -32,6 +33,7 @@ export interface EpubBasicSettingsActionDeps {
 	plugin: StandaloneEpubPlugin;
 	getTranslate: () => EpubSettingsTranslateFn;
 	getBookmarkFolderValue: () => string;
+	getHighlightStoragePathValue: () => string;
 	getInterfaceLanguageValue: () => InterfaceLanguagePreference;
 	getPremiumPreviewEnabled: () => boolean;
 	getContinuousReadingPositionAutoSaveEnabled: () => boolean;
@@ -44,6 +46,7 @@ export interface EpubBasicSettingsActionDeps {
 	getCustomTranslationProviderDrafts: () => CustomWebTranslationProvider[];
 	getAutoSavePagesTextControl: () => TextComponent | null;
 	setBookmarkFolderInput: (value: string) => void;
+	setHighlightStoragePathInput: (value: string) => void;
 	setBookNotesExportTemplateFolderInput: (value: string) => void;
 	setBookNotesExportTemplateFolderValue: (value: string) => void;
 	setBookNotesExportDefaultTemplatePath: (value: string) => void;
@@ -101,6 +104,18 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 			plugin.settings.bookmarkFolder = normalizedFolderPath;
 			await deps.save();
 			showNotification(t("epub.settings.notifications.bookmarkFolderUpdated"), "success");
+		},
+
+		async updateHighlightStoragePath(filePath: string): Promise<void> {
+			const normalizedPath = normalizeHighlightStoragePath(filePath);
+			deps.setHighlightStoragePathInput(normalizedPath);
+			if (normalizedPath === deps.getHighlightStoragePathValue()) {
+				return;
+			}
+
+			plugin.settings.highlightStoragePath = normalizedPath;
+			await deps.save();
+			showNotification(t("epub.settings.notifications.highlightStoragePathUpdated"), "success");
 		},
 
 		async updateInterfaceLanguage(value: InterfaceLanguagePreference): Promise<void> {

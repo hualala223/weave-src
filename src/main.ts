@@ -28,6 +28,10 @@ import {
 	normalizeContinuousReadingPositionAutoSaveEnabled,
 	normalizeContinuousReadingPositionAutoSavePages,
 } from "./config/reading-position-auto-save";
+import {
+	DEFAULT_HIGHLIGHT_STORAGE_PATH,
+	normalizeHighlightStoragePath,
+} from "./config/paths";
 import { PremiumFeatureGuard } from "./services/premium/PremiumFeatureGuard";
 import { configureNavigationHub } from "./services/navigation/navigation-hub-access";
 import { getBookSessionManager } from "./services/epub/session/book-session-manager-access";
@@ -113,6 +117,7 @@ interface StandaloneEpubPluginSettings {
 	bookshelfAutoViewByLocationEnabled: boolean;
 	bookshelfDisplayMode: BookshelfDisplayMode;
 	bookmarkFolder: string;
+	highlightStoragePath: string;
 	continuousReadingPositionAutoSaveEnabled: boolean;
 	continuousReadingPositionAutoSavePages: number;
 	lastSelectedIRDeckId: string;
@@ -133,6 +138,7 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 	bookshelfAutoViewByLocationEnabled: false,
 	bookshelfDisplayMode: DEFAULT_BOOKSHELF_DISPLAY_MODE,
 	bookmarkFolder: DEFAULT_EPUB_BOOKMARK_FOLDER,
+	highlightStoragePath: DEFAULT_HIGHLIGHT_STORAGE_PATH,
 	continuousReadingPositionAutoSaveEnabled:
 		DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_ENABLED,
 	continuousReadingPositionAutoSavePages: DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
@@ -359,6 +365,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		};
 		this.settings.bookmarkFolder =
 			normalizeEpubBookmarkFolderPath(this.settings.bookmarkFolder) || DEFAULT_EPUB_BOOKMARK_FOLDER;
+		this.settings.highlightStoragePath = normalizeHighlightStoragePath(this.settings.highlightStoragePath);
 		this.settings.selectionQuickCreateLastFolder = this.normalizeRememberedFolder(
 			this.settings.selectionQuickCreateLastFolder
 		);
@@ -418,6 +425,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.syncSelectionTranslationSettings();
 		this.settings.bookmarkFolder =
 			normalizeEpubBookmarkFolderPath(this.settings.bookmarkFolder) || DEFAULT_EPUB_BOOKMARK_FOLDER;
+		this.settings.highlightStoragePath = normalizeHighlightStoragePath(this.settings.highlightStoragePath);
 		this.settings.selectionQuickCreateLastFolder = this.normalizeRememberedFolder(
 			this.settings.selectionQuickCreateLastFolder
 		);

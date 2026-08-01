@@ -28,6 +28,8 @@ export interface EpubBasicSettingsSnapshot {
 	premiumPreviewEnabled: boolean;
 	bookmarkFolderValue: string;
 	bookmarkFolderInput: string;
+	highlightStoragePathValue: string;
+	highlightStoragePathInput: string;
 	bookNotesExportTemplateFolderValue: string;
 	bookNotesExportTemplateFolderInput: string;
 	bookNotesExportDefaultTemplatePath: string;
@@ -44,11 +46,12 @@ export interface EpubBasicSettingsSnapshot {
 export interface EpubBasicSettingsCallbacks {
 	save: () => Promise<void>;
 	setBookmarkFolderInput: (value: string) => void;
+	setHighlightStoragePathInput: (value: string) => void;
 	setBookNotesExportTemplateFolderInput: (value: string) => void;
 	setContinuousReadingPositionAutoSavePagesInput: (value: string) => void;
 	setAutoSavePagesTextControl: (control: TextComponent | null) => void;
 	updateBookmarkFolder: (folderPath: string) => Promise<void>;
-	updateInterfaceLanguage: (value: InterfaceLanguagePreference) => Promise<void>;
+	updateHighlightStoragePath: (filePath: string) => Promise<void>;
 	updatePremiumPreview: (enabled: boolean) => Promise<void>;
 	updateBookNotesExportTemplatePath: (templatePath: string) => Promise<void>;
 	updateBookNotesExportTemplateFolder: (folderPath: string) => Promise<void>;

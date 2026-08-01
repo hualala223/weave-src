@@ -876,6 +876,7 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 				},
 				notifications: {
 					bookmarkFolderUpdated: "书签目录已更新",
+					highlightStoragePathUpdated: "高亮数据文件路径已更新",
 					bookNotesExportTemplateFolderUpdated: "导出模板目录已更新",
 					premiumPreviewEnabled: "已开启高级功能预览",
 					premiumPreviewDisabled: "已关闭高级功能预览",
@@ -906,6 +907,10 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 					bookmarkFolder: "书签目录",
 					bookmarkFolderDesc: "书签文件会保存到所选文件夹，属于基础免费能力。",
 					bookmarkFolderPlaceholder: "选择文件夹路径",
+					highlightStoragePath: "高亮数据文件路径",
+					highlightStoragePathDesc:
+						"本地高亮（划线标注）数据的存储位置，默认 weave/local-storage.json。修改后旧数据会自动迁移到新路径。",
+					highlightStoragePathPlaceholder: "weave/local-storage.json",
 					bookNotesExportTemplateFolder: "导出模板目录",
 					bookNotesExportTemplateFolderDesc:
 						"导出摘录笔记时，模板文件只从该文件夹中检索与选择。",
@@ -2111,6 +2116,7 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 				},
 				notifications: {
 					bookmarkFolderUpdated: "Bookmark folder updated",
+					highlightStoragePathUpdated: "Highlight data file path updated",
 					bookNotesExportTemplateFolderUpdated: "Export template folder updated",
 					premiumPreviewEnabled: "Premium feature preview enabled",
 					premiumPreviewDisabled: "Premium feature preview disabled",
@@ -2142,6 +2148,10 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 					bookmarkFolderDesc:
 						"Bookmark files are saved to the selected folder as a free basic capability.",
 					bookmarkFolderPlaceholder: "Choose a folder path",
+					highlightStoragePath: "Highlight data file path",
+					highlightStoragePathDesc:
+						"Storage location for local highlights (selection marks), defaulting to weave/local-storage.json. Existing data migrates automatically after a change.",
+					highlightStoragePathPlaceholder: "weave/local-storage.json",
 					bookNotesExportTemplateFolder: "Export template folder",
 					bookNotesExportTemplateFolderDesc:
 						"When exporting excerpt notes, template files are searched only within this folder.",
