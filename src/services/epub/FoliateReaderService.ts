@@ -74,6 +74,10 @@ import { resolveHighlightSectionIndexForView, orderVisibleHighlightFrames } from
 import { resolveHighlightViewportGeometry } from "./reader-highlight-viewport-geometry";
 import { mapRawRectToViewport } from "./reader-viewport-rect-map";
 import {
+	createReaderTapZoneController,
+	type ReaderTapEvent,
+} from "./reader-tap-zones";
+import {
 	type FoliateOverlayerModule,
 	ReaderAnnotationOverlayRenderer,
 } from "./reader-annotation-overlayer";
@@ -345,6 +349,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private atCurrentChapterEndCached = false;
 	private footnotePreviewCallbacks = new Set<(info: ReaderFootnotePreviewInfo | null) => void>();
 	private selectionChangeCallbacks = new Set<(event: ReaderSelectionChange) => void>();
+	private readonly tapZoneController = createReaderTapZoneController({
+		shouldBlockTap: (point, doc) => this.isTapZoneBlockedByContent(point, doc),
+	});
 	private highlightClickCallbacks = new Set<(info: HighlightClickInfo) => void>();
 	private referenceBadgeClickCallbacks = new Set<(info: HighlightClickInfo) => void>();
 	private highlightDataMap = new Map<string, ReaderHighlight>();
@@ -360,6 +367,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private documentSelectionCleanups = new Map<Document, () => void>();
 	private documentHighlightClickCleanups = new Map<Document, () => void>();
 	private documentWheelCleanups = new Map<Document, () => void>();
+	private documentTapZoneCleanups = new Map<Document, () => void>();
 	private documentStyleElements = new WeakMap<Document, HTMLStyleElement>();
 	private loadedDocumentSectionIndexes = new WeakMap<Document, number>();
 	private lastSelectionByDocument = new WeakMap<Document, string>();
@@ -1586,6 +1594,17 @@ export class FoliateReaderService implements EpubReaderEngine {
 		};
 	}
 
+	/** 开关移动端点按翻页区域（tap zones）。由阅读视图依据设备与阅读模式驱动。 */
+	setTapZonesEnabled(enabled: boolean): void {
+		this.tapZoneController.setEnabled(enabled);
+	}
+
+	/** 订阅阅读区域点按事件（上 40% 上一页 / 下 60% 下一页）。 */
+	onReaderTap(callback: (event: ReaderTapEvent) => void): () => void {
+		return this.tapZoneController.onTap(callback);
+	}
+
+
 	onHighlightClick(callback: (info: HighlightClickInfo) => void): () => void {
 		this.highlightClickCallbacks.add(callback);
 		return () => {
@@ -1788,6 +1807,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.attachSelectionListeners(doc);
 		this.attachHighlightClickListeners(doc);
 		this.attachWheelListeners(doc);
+		this.attachTapZoneListeners(doc);
 		this.renderedAnnotations.clear();
 		this.lastSyncedVisibleSectionKey = "";
 		this.schedulePaginatedLayoutRecovery();
@@ -5217,6 +5237,26 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.documentSelectionCleanups.set(doc, cleanup);
 	}
 
+	private attachTapZoneListeners(doc: Document): void {
+		if (this.documentTapZoneCleanups.has(doc)) {
+			return;
+		}
+		const cleanup = this.tapZoneController.attach(doc);
+		this.documentTapZoneCleanups.set(doc, cleanup);
+	}
+
+	/** 点按翻页区域：命中高亮/划线覆盖物时不翻页（交给高亮工具条处理）。 */
+	private isTapZoneBlockedByContent(
+		point: { x: number; y: number },
+		doc: Document
+	): boolean {
+		const frame = this.getVisibleFramesWithIndex().find((item) => item.frameDocument === doc);
+		if (!frame) {
+			return false;
+		}
+		return this.findHighlightAtPointer(point.x, point.y, frame) !== null;
+	}
+
 	private attachWheelListeners(doc: Document): void {
 		if (this.documentWheelCleanups.has(doc)) {
 			return;
@@ -6670,6 +6710,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 			cleanup();
 		}
 		this.documentWheelCleanups.clear();
+		for (const cleanup of this.documentTapZoneCleanups.values()) {
+			cleanup();
+		}
+		this.documentTapZoneCleanups.clear();
 		if (this.themeChangeCleanup) {
 			this.themeChangeCleanup();
 			this.themeChangeCleanup = null;
@@ -6737,6 +6781,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.selectionChangeCallbacks.clear();
 		this.highlightClickCallbacks.clear();
 		this.referenceBadgeClickCallbacks.clear();
+		this.tapZoneController.dispose();
 	}
 
 	private resetTemporaryHighlightTimers(): void {

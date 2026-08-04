@@ -18,7 +18,7 @@
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
 	import ReferenceDetailModal from './ReferenceDetailModal.svelte';
 	import EpubPremiumFeaturePopover from './EpubPremiumFeaturePopover.svelte';
-	import { canUseEpubCanvasExcerpts, canUseEpubChapterExport, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, ensureEpubPremiumFeature, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubAnnotationIndexService, getEpubBacklinkHighlightService, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, resolveEpubWeaveOfficialAPI, warmEpubAnnotationIndexForPaths } from '../../services/epub';
+	import { canUseEpubCanvasExcerpts, canUseEpubChapterExport, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, createTapBurstTracker, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, ensureEpubPremiumFeature, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubAnnotationIndexService, getEpubBacklinkHighlightService, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, resolveEpubWeaveOfficialAPI, TAP_FLIP_GRACE_MS, TAP_TRIPLE_WINDOW_MS, warmEpubAnnotationIndexForPaths } from '../../services/epub';
 	import { EpubBookmarkService } from '../../services/epub/EpubBookmarkService';
 	import { EpubReferenceStatsService } from '../../services/epub/EpubReferenceStatsService';
 	import {
@@ -36,7 +36,7 @@
 		type WeaveEpubCanvasLayoutDirectionPayload,
 	} from '../../services/epub/canvas-excerpt-anchor';
 	import type { EpubVisibleFrameLike, ScreenshotRect } from '../../services/epub/EpubScreenshotService';
-	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubHostCapabilities, EpubLayoutMode, EpubParagraphModeReadingPosition, EpubParagraphModeTransitionStyle, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubWeaveExcerptRemovalMode, EpubWeaveOfficialAPI, EpubWeaveRemoveExcerptResult, FlashStyle, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderParagraph, ReadingPosition, TocItem, EpubChapterReadingPointDraft } from '../../services/epub';
+	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubHostCapabilities, EpubLayoutMode, EpubParagraphModeReadingPosition, EpubParagraphModeTransitionStyle, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubWeaveExcerptRemovalMode, EpubWeaveOfficialAPI, EpubWeaveRemoveExcerptResult, FlashStyle, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderParagraph, ReaderTapEvent, ReadingPosition, TocItem, EpubChapterReadingPointDraft } from '../../services/epub';
 	import { PremiumFeatureGuard, PREMIUM_FEATURES } from '../../services/premium/PremiumFeatureGuard';
 	import { getBookFormatDisplayLabel, isSupportedBookFile } from '../../services/epub/book-format';
 	import {
@@ -216,7 +216,9 @@
 			? settings.lineHeight
 			: getDefaultReaderLineHeight();
 		const pagedSafeInset = `${(effectiveLineHeight * 0.5).toFixed(3)}em`;
-		return `--epub-line-height: ${effectiveLineHeight}; --epub-paged-safe-top: ${pagedSafeInset}; --epub-paged-safe-bottom: ${pagedSafeInset};`;
+		// 底部留出拇指区：顶部 0.5 行高 + 2.8em 舒适内边距
+		const pagedSafeBottom = `calc(${pagedSafeInset} + 2.8em)`;
+		return `--epub-line-height: ${effectiveLineHeight}; --epub-paged-safe-top: ${pagedSafeInset}; --epub-paged-safe-bottom: ${pagedSafeBottom};`;
 	}
 
 	let readerService: EpubReaderEngine = untrack(() => createEpubReaderEngine(app));
@@ -237,6 +239,10 @@
 	let errorMsg = $state('');
 	let readingProgress = $state(0);
 	let paginationInfo = $state<PaginationInfo>({ currentPage: 0, totalPages: 0 });
+	let mobileFullscreen = $state(false);
+	let tapTurnTimer: number | null = null;
+	let tapTurnZone: 'prev' | 'next' | null = null;
+	const tapBurstTracker = createTapBurstTracker({ windowMs: TAP_TRIPLE_WINDOW_MS });
 	let currentChapterIndex = $state(0);
 	let showScrolledChapterNavActions = $state(false);
 	let readerVersion = $state(0);
@@ -2804,6 +2810,57 @@
 		await readerService.nextPage();
 	}
 
+	function flipPage(zone: 'prev' | 'next'): void {
+		if (zone === 'prev') {
+			void handlePrevPage();
+		} else {
+			void handleNextPage();
+		}
+	}
+
+	function cancelPendingTapTurn(): void {
+		if (tapTurnTimer) {
+			window.clearTimeout(tapTurnTimer);
+			tapTurnTimer = null;
+		}
+		tapTurnZone = null;
+	}
+
+	function scheduleTapTurn(zone: 'prev' | 'next', delayMs: number): void {
+		cancelPendingTapTurn();
+		tapTurnZone = zone;
+		tapTurnTimer = window.setTimeout(() => {
+			tapTurnTimer = null;
+			const turnZone = tapTurnZone;
+			tapTurnZone = null;
+			tapBurstTracker.reset();
+			flipPage(turnZone);
+		}, delayMs);
+	}
+
+	function toggleMobileFullscreen(): void {
+		const next = !mobileFullscreen;
+		mobileFullscreen = next;
+		document.body.classList.toggle('weave-epub-fullscreen', next);
+	}
+
+	function handleReaderTap(event: ReaderTapEvent): void {
+		if (!readerReady || settings.paragraphModeEnabled) {
+			return;
+		}
+		const count = tapBurstTracker.push({ time: performance.now() });
+		if (count >= 3) {
+			// 三连击：取消待翻页，切换全屏
+			cancelPendingTapTurn();
+			tapBurstTracker.reset();
+			toggleMobileFullscreen();
+			return;
+		}
+		// 首次点按等 100ms 宽限（给三连击留余地）；连击点按等满 300ms 窗口
+		scheduleTapTurn(event.zone, count === 1 ? TAP_FLIP_GRACE_MS : TAP_TRIPLE_WINDOW_MS);
+	}
+
+
 	async function handleJumpToPage(pageNumber: number) {
 		await readerService.goToPage(pageNumber);
 	}
@@ -4924,8 +4981,23 @@
 			unsubscribeTheme();
 			window.removeEventListener('mousedown', handleExportNotesPointerDownOutside);
 			window.removeEventListener('mousedown', handleTypographyPointerDownOutside);
+			cancelPendingTapTurn();
+			document.body.classList.remove('weave-epub-fullscreen');
 		};
 	});
+
+	$effect(() => {
+		const service = readerService;
+		const enabled = isMobileReader() && settings.flowMode === 'paginated' && !settings.paragraphModeEnabled;
+		const offTap = untrack(() => {
+			service.setTapZonesEnabled?.(enabled);
+			return service.onReaderTap?.((event) => handleReaderTap(event));
+		});
+		return () => {
+			offTap?.();
+		};
+	});
+
 
 	$effect(() => {
 		const _flowMode = settings.flowMode;
@@ -5420,19 +5492,6 @@
 
 		</div>
 
-		{#if !settings.paragraphModeEnabled && showBottomNav() && !useVerticalNav()}
-			<div class="epub-bottom-nav-slot">
-				<BottomNav
-					onPrev={handlePrevPage}
-					onNext={handleNextPage}
-					onJumpToPage={handleJumpToPage}
-					currentPage={paginationInfo.currentPage}
-					totalPages={paginationInfo.totalPages}
-					vertical={false}
-					statusText={getBottomNavStatusText()}
-					statusDetail={getBottomNavStatusDetail()}
-				/>
-			</div>
-		{/if}
+
 	{/if}
 </div>

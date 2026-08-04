@@ -24,7 +24,7 @@ export function isLargeNavButtonsEnabled(): boolean {
 }
 
 const LARGE_NAV_STYLE_CSS = `
-.clickable-icon.epub-nav-btn {
+.clickable-icon.epub-nav-btn:not(.vertical) {
 	height: 10vh !important;
 	opacity: 0;
 	border-radius: 0 !important;
@@ -32,17 +32,15 @@ const LARGE_NAV_STYLE_CSS = `
 	padding: 0 !important;
 	cursor: pointer !important;
 }
-.clickable-icon.epub-nav-btn:first-child {
+.clickable-icon.epub-nav-btn:not(.vertical):first-child {
 	width: 10% !important;
 }
-.clickable-icon.epub-nav-btn:last-child {
+.clickable-icon.epub-nav-btn:not(.vertical):last-child {
 	width: 90% !important;
 }
+/* 隐藏底部导航状态区（上一页/下一页按钮已移除） */
 .epub-nav-status {
 	display: none !important;
-}
-.epub-reader-view {
-	padding-bottom: 0 !important;
 }
 `;
 

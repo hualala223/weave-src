@@ -13,6 +13,7 @@ import type {
 } from "./types";
 import type { EpubChapterLocationFormat } from "./epub-excerpt-settings";
 import type { FlatTocExportItem } from "./epub-toc-export-scope";
+import type { ReaderTapEvent } from "./reader-tap-zones";
 
 export type EpubReaderEngineType = "foliate";
 
@@ -241,6 +242,10 @@ export interface EpubReaderEngine {
 	resize(width: number, height: number): void;
 	applyReaderAppearance(appearance: ReaderAppearanceOptions, redisplay?: boolean): Promise<void>;
 	onRelocated(callback: (position: ReadingPosition) => void): () => void;
+	/** 开关移动端点按翻页区域（上 40% 上一页 / 下 60% 下一页）。 */
+	setTapZonesEnabled?(enabled: boolean): void;
+	/** 订阅阅读内容点按事件（长按/拖动/选区/链接不会触发）。 */
+	onReaderTap?(callback: (event: ReaderTapEvent) => void): () => void;
 	setLayoutMode(
 		mode: EpubLayoutMode,
 		flowMode: EpubFlowMode,

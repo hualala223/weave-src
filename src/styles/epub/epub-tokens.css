@@ -150,7 +150,7 @@ body.styled-scrollbars
 	--epub-reading-frame-gap: clamp(10px, 1.8vw, 22px);
 	--epub-bottom-toolbar-gap: clamp(16px, 2vw, 26px);
 	--epub-paged-safe-top: 0.86em;
-	--epub-paged-safe-bottom: 0.86em;
+	--epub-paged-safe-bottom: clamp(28px, 7vh, 64px);
 	--epub-scrolled-safe-top: clamp(8px, 1vw, 14px);
 	--epub-scrolled-safe-bottom: clamp(10px, 1.2vw, 16px);
 

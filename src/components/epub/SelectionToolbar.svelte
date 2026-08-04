@@ -404,21 +404,28 @@
 		if (!toolbarEl) return;
 
 		const containerRect = containerEl.getBoundingClientRect();
+
+		// iOS（WKWebView/Safari）捏合缩放时，getBoundingClientRect 返回的是视觉视口坐标系；
+		// 而工具栏按布局坐标系做 absolute 定位。把差值折算回布局坐标，避免工具栏偏离选中文字。
+		const visualViewport = window.visualViewport;
+		const zoomScale = visualViewport?.scale ?? 1;
+		const zoomCorrection = isMobileToolbar && Platform.isIosApp && zoomScale > 1.001 ? zoomScale : 1;
 		const toRelativeRect = (rect: DOMRect) => ({
-			top: rect.top - containerRect.top,
-			left: rect.left - containerRect.left,
-			bottom: rect.bottom - containerRect.top,
-			right: rect.right - containerRect.left,
-			width: rect.width,
-			height: rect.height,
+			top: (rect.top - containerRect.top) / zoomCorrection,
+			left: (rect.left - containerRect.left) / zoomCorrection,
+			bottom: (rect.bottom - containerRect.top) / zoomCorrection,
+			right: (rect.right - containerRect.left) / zoomCorrection,
+			width: rect.width / zoomCorrection,
+			height: rect.height / zoomCorrection,
 		});
+
 		const position = computeToolbarPosition({
 			anchorRect: toRelativeRect(anchorRect),
 			anchorRects: anchorRects.map((rect) => toRelativeRect(rect)),
 			anchorPoint: anchorPoint
 				? {
-					x: anchorPoint.x - containerRect.left,
-					y: anchorPoint.y - containerRect.top,
+					x: (anchorPoint.x - containerRect.left) / zoomCorrection,
+					y: (anchorPoint.y - containerRect.top) / zoomCorrection,
 				}
 				: undefined,
 			containerWidth: containerEl.clientWidth,

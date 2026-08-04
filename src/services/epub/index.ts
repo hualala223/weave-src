@@ -147,6 +147,21 @@ export type {
 export * from "./types";
 export * from "./canvas-types";
 export {
+	createReaderTapZoneController,
+	createTapBurstTracker,
+	resolveTapZone,
+	TAP_FLIP_GRACE_MS,
+	TAP_TRIPLE_WINDOW_MS,
+	TAP_ZONE_PREV_RATIO,
+	TAP_LONG_PRESS_MS,
+	TAP_MOVE_TOLERANCE_PX,
+	TAP_RECENT_SELECTION_MS,
+	TAP_INTERACTIVE_SELECTOR,
+	type ReaderTapEvent,
+	type ReaderTapZone,
+	type TapBurstTracker,
+} from "./reader-tap-zones";
+export {
 	isBookCompleted,
 	resolveDisplayProgress,
 	resolveBookshelfReadingStatus,
