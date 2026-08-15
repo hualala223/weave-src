@@ -90,7 +90,6 @@ export { EpubReferenceStatsService } from "./EpubReferenceStatsService";
 export type { ReferenceStats, ReferenceSourceInfo } from "./EpubReferenceStatsService";
 export {
 	EpubBookmarkService,
-	EPUB_BOOKMARK_AUTO_MAINTAINED_CALLOUT,
 	type EpubBookmarkReadingState,
 	DEFAULT_EPUB_BOOKMARK_FOLDER,
 	normalizeEpubBookmarkFolderPath,

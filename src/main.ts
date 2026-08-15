@@ -357,9 +357,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.registerEvent(
 			this.app.workspace.on("layout-ready", () => {
 				bootstrapEpubAnnotationIndex(this.app);
-				void import("./services/epub/epub-bookmark-migration").then(({ maybePromptEpubBookmarkV3Migration }) =>
-					maybePromptEpubBookmarkV3Migration(this.app)
-				);
 			})
 		);
 		scheduleEpubAnnotationIndexWarmup(this.app);

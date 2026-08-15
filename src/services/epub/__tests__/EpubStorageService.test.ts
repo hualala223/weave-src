@@ -1,6 +1,7 @@
 import { Platform, TFile } from 'obsidian';
 import { EpubStorageService, flushEpubStoragePendingProgress } from '../EpubStorageService';
 import type { EpubBook } from '../types';
+import { getWeaveDataStore } from '../weave-data-store';
 
 const SYNC_EPUB_ROOT = 'weave/incremental-reading/epub-reading';
 const LOCAL_EPUB_DATA_PATH = '.obsidian/plugins/weave/state/epub-local-state.json';
@@ -10,6 +11,22 @@ const LOCAL_EPUB_STATE_ROOT = '.obsidian/plugins/weave/state/incremental-reading
 const LOCAL_EPUB_PARAGRAPH_MODE_POSITIONS_PATH =
 	'.obsidian/plugins/weave/cache/epub-paragraph-mode-positions.json';
 const LOCAL_EPUB_ARTIFACTS_ROOT = '.obsidian/plugins/weave/cache/incremental-reading/reader-artifacts/epub';
+
+/** Bookmarks now persist in the unified weave-data.json store (default data path). */
+const DATA_PATH = 'CONFIG/STORAGE';
+const WEAVE_DATA_FILE = `${DATA_PATH}/weave-data.json`;
+
+async function flushWeaveDataStore(app: any) {
+  await getWeaveDataStore(app, () => DATA_PATH).flush();
+}
+
+function readWeaveBookmarks(files: Map<string, string>): Record<string, unknown> {
+  if (!files.has(WEAVE_DATA_FILE)) {
+    return {};
+  }
+  const parsed = JSON.parse(files.get(WEAVE_DATA_FILE) || '{}');
+  return (parsed.bookmarks ?? {}) as Record<string, unknown>;
+}
 
 function resolveLocalEpubDataPath(files: Map<string, string>): string {
   return (
@@ -434,7 +451,7 @@ describe('EpubStorageService', () => {
     expect(files.has(LOCAL_EPUB_DATA_PATH)).toBe(false);
   });
 
-  it('stores reading progress in the per-book bookmark markdown file without rewriting books.json', async () => {
+  it('stores reading progress in the unified weave-data store without rewriting books.json', async () => {
     const booksPath = `${SYNC_EPUB_ROOT}/books.json`;
     const { app, files, writes } = createMemoryApp(
       {
@@ -460,12 +477,16 @@ describe('EpubStorageService', () => {
     expect(files.has(booksPath)).toBe(false);
     expect(progress?.percent).toBe(66);
     expect(writes).not.toContain(booksPath);
-    const bookmarkFile = Array.from(files.keys()).find((path) =>
-      path.includes('weave/epub-bookmarks/') && path.endsWith('.md')
-    );
-    expect(bookmarkFile).toBeTruthy();
-    expect(files.get(bookmarkFile || '') || '').toContain('readingState:');
-    expect(files.get(bookmarkFile || '') || '').toContain('percent: 66');
+
+    await flushWeaveDataStore(app);
+    const bookmarks = readWeaveBookmarks(files);
+    const record = bookmarks['Books/demo.epub'];
+    expect(record).toBeTruthy();
+    expect((record as any).readingState?.currentPosition?.percent).toBe(66);
+    // No legacy per-book markdown page is created anymore.
+    expect(
+      Array.from(files.keys()).some((path) => path.includes('weave/epub-bookmarks/') && path.endsWith('.md'))
+    ).toBe(false);
   });
 
   it('flushes debounced progress when flushPendingProgress is missing on a legacy instance', async () => {
@@ -494,7 +515,10 @@ describe('EpubStorageService', () => {
 
     const progress = await service.loadProgress('book-1');
     expect(progress?.percent).toBe(33);
-    expect(Array.from(files.keys()).some((path) => path.includes('weave/epub-bookmarks/'))).toBe(true);
+
+    await flushWeaveDataStore(app);
+    const bookmarks = readWeaveBookmarks(files);
+    expect((bookmarks['Books/demo.epub'] as any)?.readingState?.currentPosition?.percent).toBe(33);
   });
 
   it('ignores flush when the storage service reference is missing', async () => {
@@ -559,7 +583,7 @@ describe('EpubStorageService', () => {
     expect(book?.readingStats.lastReadTime).toBe(999);
   });
 
-  it('stores and loads the manual last-open bookmark in the per-book bookmark markdown file', async () => {
+  it('stores and loads the manual last-open bookmark in the unified weave-data store', async () => {
     const { app, files } = createMemoryApp(
       {
         [`${SYNC_EPUB_ROOT}/books.json`]: JSON.stringify({
@@ -579,14 +603,17 @@ describe('EpubStorageService', () => {
       savedAt: 1710000000000,
     });
 
-    const bookmarkFile = Array.from(files.keys()).find((path) =>
-      path.includes('weave/epub-bookmarks/') && path.endsWith('.md')
-    );
-    expect(bookmarkFile).toBeTruthy();
-    const bookmarkContent = files.get(bookmarkFile || '') || '';
-    expect(bookmarkContent).toContain('readingState:');
-    expect(bookmarkContent).toContain('/6/10');
+    await flushWeaveDataStore(app);
+    const bookmarks = readWeaveBookmarks(files);
+    const record = bookmarks['Books/demo.epub'] as any;
+    expect(record).toBeTruthy();
+    expect(record.readingState?.currentPosition?.cfi).toBe('/6/10');
+    expect(record.readingState?.currentPosition?.percent).toBe(61.5);
     expect(readLocalEpubData(files).books?.['book-1']?.lastOpenBookmark).toBeUndefined();
+    // No legacy per-book markdown page is created anymore.
+    expect(
+      Array.from(files.keys()).some((path) => path.includes('weave/epub-bookmarks/') && path.endsWith('.md'))
+    ).toBe(false);
 
     const restored = await service.loadLastOpenBookmark('book-1');
     expect(restored?.cfi).toBe('/6/10');

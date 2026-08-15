@@ -1,19 +1,20 @@
 import type { App } from "obsidian";
 import { TFile, normalizePath } from "obsidian";
+import { resolveDataCacheDir } from "../../config/paths";
 import { DirectoryUtils } from "../../utils/directory-utils";
 import { logger } from "../../utils/logger";
 import { isSupportedBookPath } from "./book-format";
 import { FoliateVaultPublicationParser } from "./FoliateVaultPublicationParser";
 
-export const EPUB_BOOKMARK_COVER_SUBFOLDER = "covers";
+export const EPUB_BOOKMARK_COVER_SUBFOLDER = "bookmark-covers";
 
-export function buildEpubBookmarkCoverFolderPath(bookmarkFolder: string): string {
-	const normalizedFolder = normalizePath(String(bookmarkFolder || "").trim());
-	return normalizePath(`${normalizedFolder}/${EPUB_BOOKMARK_COVER_SUBFOLDER}`);
+export function buildEpubBookmarkCoverFolderPath(dataPath: string): string {
+	const cacheRoot = resolveDataCacheDir(dataPath);
+	return normalizePath(`${cacheRoot}/${EPUB_BOOKMARK_COVER_SUBFOLDER}`);
 }
 
 export function buildEpubBookmarkCoverPath(
-	bookmarkFolder: string,
+	dataPath: string,
 	stableKey: string,
 	extension = "jpg"
 ): string {
@@ -21,7 +22,7 @@ export function buildEpubBookmarkCoverPath(
 		.trim()
 		.replace(/[\\/:*?"<>|]/g, "-");
 	return normalizePath(
-		`${buildEpubBookmarkCoverFolderPath(bookmarkFolder)}/${safeKey}.${extension}`
+		`${buildEpubBookmarkCoverFolderPath(dataPath)}/${safeKey}.${extension}`
 	);
 }
 
@@ -71,7 +72,7 @@ export async function ensureEpubBookmarkCoverPath(
 	input: {
 		bookPath: string;
 		stableKey: string;
-		bookmarkFolder: string;
+		dataPath: string;
 		existingCoverPath?: string;
 	}
 ): Promise<string | undefined> {
@@ -108,7 +109,7 @@ export async function ensureEpubBookmarkCoverPath(
 	}
 
 	const extension = resolveCoverExtension(decoded.mimeType);
-	const coverPath = buildEpubBookmarkCoverPath(input.bookmarkFolder, stableKey, extension);
+	const coverPath = buildEpubBookmarkCoverPath(input.dataPath, stableKey, extension);
 	await DirectoryUtils.ensureDirForFile(app.vault.adapter, coverPath);
 	await app.vault.adapter.writeBinary(coverPath, decoded.buffer);
 	return coverPath;
