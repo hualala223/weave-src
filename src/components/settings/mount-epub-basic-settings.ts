@@ -26,79 +26,20 @@ export function mountEpubBasicSettings(options: EpubBasicSettingsMountOptions): 
 	callbacks.setAutoSavePagesTextControl(null);
 	clearHosts(hosts);
 
-	const weaveParentFolderSetting = new Setting(hosts.reading)
-		.setName('Weave 数据根目录（父目录）')
-		.setDesc('书签、高亮、阅读状态等数据统一存放在 <父目录>/Weave/ 下。留空使用 vault 根目录下的 Weave/。修改后，未单独指定的目录会自动跟随此根目录。')
-		.setClass("epub-weave-parent-folder-setting");
+	const dataPathSetting = new Setting(hosts.reading)
+		.setName('数据路径')
+		.setDesc('书签、高亮、阅读进度、书架与溯源等全部阅读数据统一保存在该目录下的 weave-data.json 中（缓存与备份位于其 cache/ 与 backups/ 子目录）。默认 CONFIG/STORAGE。')
+		.setClass("epub-data-path-setting");
 
 	mountFolderSearchSetting({
-		setting: weaveParentFolderSetting,
-		placeholder: '选择父目录（留空 = Vault 根下的 weave/）',
-		value: snapshot.weaveParentFolderValue,
-		onInput: callbacks.setWeaveParentFolderInput,
-		onCommit: callbacks.updateWeaveParentFolder,
-		onEscape: () => snapshot.weaveParentFolderValue,
+		setting: dataPathSetting,
+		placeholder: 'CONFIG/STORAGE',
+		value: snapshot.dataPathValue,
+		onInput: callbacks.setDataPathInput,
+		onCommit: callbacks.updateDataPath,
+		onEscape: () => snapshot.dataPathValue,
 		app: plugin.app,
 		cleanupFns,
-	});
-
-	const bookmarkFolderSetting = new Setting(hosts.reading)
-		.setName('书签目录')
-		.setDesc('书签文件会保存到所选文件夹，属于基础免费能力。')
-		.setClass("epub-bookmark-setting");
-
-	mountFolderSearchSetting({
-		setting: bookmarkFolderSetting,
-		placeholder: '选择文件夹路径',
-		value: snapshot.bookmarkFolderValue,
-		onInput: callbacks.setBookmarkFolderInput,
-		onCommit: callbacks.updateBookmarkFolder,
-		onEscape: () => snapshot.bookmarkFolderValue,
-		app: plugin.app,
-		cleanupFns,
-	});
-
-	const highlightStoragePathSetting = new Setting(hosts.reading)
-		.setName('高亮数据文件路径')
-		.setDesc('本地高亮（划线标注）数据的存储位置，默认 Weave/local-storage.json。修改后旧数据会自动迁移到新路径。')
-		.setClass("epub-highlight-storage-path-setting");
-
-	highlightStoragePathSetting.addText((text) => {
-		text.setPlaceholder('weave/local-storage.json');
-		text.setValue(snapshot.highlightStoragePathInput);
-		text.onChange((value) => {
-			callbacks.setHighlightStoragePathInput(value);
-		});
-
-		const inputEl = text.inputEl;
-
-		const commitValue = () => {
-			void callbacks.updateHighlightStoragePath(inputEl.value);
-		};
-
-		const handleBlur = () => {
-			commitValue();
-		};
-
-		const handleKeydown = (event: KeyboardEvent) => {
-			if (event.key === "Enter") {
-				event.preventDefault();
-				commitValue();
-				return;
-			}
-
-			if (event.key === "Escape") {
-				callbacks.setHighlightStoragePathInput(snapshot.highlightStoragePathValue);
-				text.setValue(snapshot.highlightStoragePathValue);
-				inputEl.blur();
-			}
-		};
-
-		inputEl.addEventListener("blur", handleBlur);
-		inputEl.addEventListener("keydown", handleKeydown);
-
-		cleanupFns.push(() => inputEl.removeEventListener("blur", handleBlur));
-		cleanupFns.push(() => inputEl.removeEventListener("keydown", handleKeydown));
 	});
 
 	const autoSaveSetting = new Setting(hosts.reading)

@@ -50,9 +50,10 @@ function createPlugin(): Plugin {
 	const app = new App();
 	const plugin = new Plugin(app as any, { id: "fork-weave-epub-reader" });
 	plugin.settings = {
-		bookmarkFolder: "CONFIG/STORAGE/weave/epub-bookmarks",
-		highlightStoragePath: "CONFIG/STORAGE/weave/local-storage.json",
-		weaveParentFolder: "CONFIG/STORAGE",
+		bookmarkFolder: "weave/epub-bookmarks",
+		highlightStoragePath: "weave/local-storage.json",
+		weaveParentFolder: "",
+		dataPath: "CONFIG/STORAGE",
 		enableDebugMode: false,
 		enableLargeNavButtons: false,
 		showPremiumFeaturesPreview: false,

@@ -12,12 +12,8 @@ export interface EpubBasicSettingsHosts {
 }
 
 export interface EpubBasicSettingsSnapshot {
-	weaveParentFolderValue: string;
-	weaveParentFolderInput: string;
-	bookmarkFolderValue: string;
-	bookmarkFolderInput: string;
-	highlightStoragePathValue: string;
-	highlightStoragePathInput: string;
+	dataPathValue: string;
+	dataPathInput: string;
 	continuousReadingPositionAutoSaveEnabled: boolean;
 	continuousReadingPositionAutoSavePages: number;
 	continuousReadingPositionAutoSavePagesInput: string;
@@ -28,14 +24,10 @@ export interface EpubBasicSettingsSnapshot {
 
 export interface EpubBasicSettingsCallbacks {
 	save: () => Promise<void>;
-	setWeaveParentFolderInput: (value: string) => void;
-	setBookmarkFolderInput: (value: string) => void;
-	setHighlightStoragePathInput: (value: string) => void;
+	setDataPathInput: (value: string) => void;
 	setContinuousReadingPositionAutoSavePagesInput: (value: string) => void;
 	setAutoSavePagesTextControl: (control: TextComponent | null) => void;
-	updateWeaveParentFolder: (folderPath: string) => Promise<void>;
-	updateBookmarkFolder: (folderPath: string) => Promise<void>;
-	updateHighlightStoragePath: (filePath: string) => Promise<void>;
+	updateDataPath: (dataPath: string) => Promise<void>;
 	updateContinuousReadingPositionAutoSaveEnabled: (enabled: boolean) => Promise<void>;
 	updateContinuousReadingPositionAutoSavePages: (value: string) => Promise<void>;
 	updateSourceNavigationOpenInNewTab: (enabled: boolean) => Promise<void>;

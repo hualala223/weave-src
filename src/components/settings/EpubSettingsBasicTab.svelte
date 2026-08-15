@@ -5,8 +5,8 @@
     normalizeContinuousReadingPositionAutoSaveEnabled,
     normalizeContinuousReadingPositionAutoSavePages,
   } from "../../config/reading-position-auto-save";
-  import { EPUB_RUNTIME, normalizeEpubBookmarkFolderPath } from "../../services/epub";
-  import { normalizeHighlightStoragePath, normalizeWeaveParentFolder } from "../../config/paths";
+  import { EPUB_RUNTIME } from "../../services/epub";
+  import { normalizeDataPath } from "../../config/paths";
   import type StandaloneEpubPlugin from "../../main";
   import { createEpubBasicSettingsActions } from "./epub-basic-settings-actions";
   import { mountEpubBasicSettings } from "./mount-epub-basic-settings";
@@ -22,9 +22,7 @@
   let readingSettingsHost = $state<HTMLDivElement | null>(null);
   let diagnosticsSettingsHost = $state<HTMLDivElement | null>(null);
 
-  let bookmarkFolderInput = $state("");
-  let highlightStoragePathInput = $state("");
-  let weaveParentFolderInput = $state("");
+  let dataPathInput = $state("");
   let continuousReadingPositionAutoSavePagesInput = $state("");
   let autoSavePagesTextControl = $state<TextComponent | null>(null);
 
@@ -33,19 +31,9 @@
     stateVersion += 1;
   }
 
-  let bookmarkFolderValue = $derived.by(() => {
+  let dataPathValue = $derived.by(() => {
     stateVersion;
-    return normalizeEpubBookmarkFolderPath(plugin.settings?.bookmarkFolder);
-  });
-
-  let highlightStoragePathValue = $derived.by(() => {
-    stateVersion;
-    return normalizeHighlightStoragePath(plugin.settings?.highlightStoragePath);
-  });
-
-  let weaveParentFolderValue = $derived.by(() => {
-    stateVersion;
-    return normalizeWeaveParentFolder(plugin.settings?.weaveParentFolder);
+    return normalizeDataPath(plugin.settings?.dataPath);
   });
 
   let debugModeEnabled = $derived.by(() => {
@@ -79,23 +67,15 @@
 
   const actions = createEpubBasicSettingsActions({
     plugin,
-    getWeaveParentFolderValue: () => weaveParentFolderValue,
-    getBookmarkFolderValue: () => bookmarkFolderValue,
-    getHighlightStoragePathValue: () => highlightStoragePathValue,
+    getDataPathValue: () => dataPathValue,
     getContinuousReadingPositionAutoSaveEnabled: () => continuousReadingPositionAutoSaveEnabled,
     getContinuousReadingPositionAutoSavePages: () => continuousReadingPositionAutoSavePages,
     getSourceNavigationOpenInNewTab: () => sourceNavigationOpenInNewTab,
     getLargeNavButtonsEnabled: () => largeNavButtonsEnabled,
     getDebugModeEnabled: () => debugModeEnabled,
     getAutoSavePagesTextControl: () => autoSavePagesTextControl,
-    setWeaveParentFolderInput: (value) => {
-      weaveParentFolderInput = value;
-    },
-    setBookmarkFolderInput: (value) => {
-      bookmarkFolderInput = value;
-    },
-    setHighlightStoragePathInput: (value) => {
-      highlightStoragePathInput = value;
+    setDataPathInput: (value) => {
+      dataPathInput = value;
     },
     setContinuousReadingPositionAutoSavePagesInput: (value) => {
       continuousReadingPositionAutoSavePagesInput = value;
@@ -107,18 +87,8 @@
   });
 
   $effect(() => {
-    bookmarkFolderValue;
-    bookmarkFolderInput = bookmarkFolderValue;
-  });
-
-  $effect(() => {
-    highlightStoragePathValue;
-    highlightStoragePathInput = highlightStoragePathValue;
-  });
-
-  $effect(() => {
-    weaveParentFolderValue;
-    weaveParentFolderInput = weaveParentFolderValue;
+    dataPathValue;
+    dataPathInput = dataPathValue;
   });
 
   $effect(() => {
@@ -168,12 +138,8 @@
           diagnostics: diagnosticsSettingsHost,
         },
         snapshot: {
-          weaveParentFolderValue,
-          weaveParentFolderInput,
-          bookmarkFolderValue,
-          bookmarkFolderInput,
-          highlightStoragePathValue,
-          highlightStoragePathInput,
+          dataPathValue,
+          dataPathInput,
           continuousReadingPositionAutoSaveEnabled,
           continuousReadingPositionAutoSavePages,
           continuousReadingPositionAutoSavePagesInput,
@@ -183,14 +149,8 @@
         },
         callbacks: {
           save,
-          setWeaveParentFolderInput: (value) => {
-            weaveParentFolderInput = value;
-          },
-          setBookmarkFolderInput: (value) => {
-            bookmarkFolderInput = value;
-          },
-          setHighlightStoragePathInput: (value) => {
-            highlightStoragePathInput = value;
+          setDataPathInput: (value) => {
+            dataPathInput = value;
           },
           setContinuousReadingPositionAutoSavePagesInput: (value) => {
             continuousReadingPositionAutoSavePagesInput = value;
@@ -198,9 +158,7 @@
           setAutoSavePagesTextControl: (control) => {
             autoSavePagesTextControl = control;
           },
-          updateWeaveParentFolder: actions.updateWeaveParentFolder,
-          updateBookmarkFolder: actions.updateBookmarkFolder,
-          updateHighlightStoragePath: actions.updateHighlightStoragePath,
+          updateDataPath: actions.updateDataPath,
           updateContinuousReadingPositionAutoSaveEnabled:
             actions.updateContinuousReadingPositionAutoSaveEnabled,
           updateContinuousReadingPositionAutoSavePages:

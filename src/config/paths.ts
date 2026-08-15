@@ -584,3 +584,55 @@ export function normalizeHighlightStoragePath(path?: string): string {
 	}
 	return DEFAULT_HIGHLIGHT_STORAGE_PATH;
 }
+
+// ============================================================================
+// 统一数据路径（v4.0：weave-data.json 单一数据文件）
+// ============================================================================
+
+/** 统一数据路径默认值（vault 相对路径）。 */
+export const DEFAULT_DATA_PATH = "CONFIG/STORAGE";
+
+/** 统一数据文件名。 */
+export const WEAVE_DATA_FILE_NAME = "weave-data.json";
+
+/**
+ * 规范化用户配置的数据路径：空值/非法值回退默认 CONFIG/STORAGE。
+ */
+export function normalizeDataPath(value?: string): string {
+	const raw = String(value || "").trim();
+	if (raw) {
+		const normalized = normalizePath(raw);
+		if (normalized && normalized !== "." && normalized !== "/") {
+			return normalized;
+		}
+	}
+	return DEFAULT_DATA_PATH;
+}
+
+/**
+ * 解析生效的数据路径（vault 相对路径）。
+ */
+export function resolveDataPath(value?: string): string {
+	return normalizeDataPath(value);
+}
+
+/**
+ * 统一数据文件完整路径：<dataPath>/weave-data.json。
+ */
+export function resolveWeaveDataFilePath(dataPath?: string): string {
+	return normalizePath(`${normalizeDataPath(dataPath)}/${WEAVE_DATA_FILE_NAME}`);
+}
+
+/**
+ * 缓存目录：<dataPath>/cache（可重建数据）。
+ */
+export function resolveDataCacheDir(dataPath?: string): string {
+	return normalizePath(`${normalizeDataPath(dataPath)}/cache`);
+}
+
+/**
+ * 备份目录：<dataPath>/backups。
+ */
+export function resolveDataBackupsDir(dataPath?: string): string {
+	return normalizePath(`${normalizeDataPath(dataPath)}/backups`);
+}

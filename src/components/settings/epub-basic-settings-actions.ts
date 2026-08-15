@@ -5,26 +5,21 @@ import {
 	normalizeContinuousReadingPositionAutoSaveEnabled,
 	normalizeContinuousReadingPositionAutoSavePages,
 } from "../../config/reading-position-auto-save";
-import { normalizeEpubBookmarkFolderPath } from "../../services/epub";
-import { normalizeHighlightStoragePath, normalizeWeaveParentFolder } from "../../config/paths";
+import { normalizeDataPath } from "../../config/paths";
 import { syncLargeNavButtonStyle } from "../../services/epub/epub-large-nav-style";
 import { showNotification } from "../../utils/notifications";
 import type StandaloneEpubPlugin from "../../main";
 
 export interface EpubBasicSettingsActionDeps {
 	plugin: StandaloneEpubPlugin;
-	getWeaveParentFolderValue: () => string;
-	setWeaveParentFolderInput: (value: string) => void;
-	getBookmarkFolderValue: () => string;
-	getHighlightStoragePathValue: () => string;
+	getDataPathValue: () => string;
+	setDataPathInput: (value: string) => void;
 	getContinuousReadingPositionAutoSaveEnabled: () => boolean;
 	getContinuousReadingPositionAutoSavePages: () => number;
 	getSourceNavigationOpenInNewTab: () => boolean;
 	getLargeNavButtonsEnabled: () => boolean;
 	getDebugModeEnabled: () => boolean;
 	getAutoSavePagesTextControl: () => TextComponent | null;
-	setBookmarkFolderInput: (value: string) => void;
-	setHighlightStoragePathInput: (value: string) => void;
 	setContinuousReadingPositionAutoSavePagesInput: (value: string) => void;
 	setExcerptSettingsVersion: (updater: (value: number) => number) => void;
 	save: () => Promise<void>;
@@ -34,44 +29,16 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 	const { plugin } = deps;
 
 	return {
-		async updateWeaveParentFolder(folderPath: string): Promise<void> {
-			const normalizedFolderPath = normalizeWeaveParentFolder(folderPath);
-			if (normalizedFolderPath === deps.getWeaveParentFolderValue()) {
-				deps.setWeaveParentFolderInput(normalizedFolderPath);
+		async updateDataPath(dataPath: string): Promise<void> {
+			const normalizedPath = normalizeDataPath(dataPath);
+			if (normalizedPath === deps.getDataPathValue()) {
+				deps.setDataPathInput(normalizedPath);
 				return;
 			}
 
-			plugin.settings.weaveParentFolder = normalizedFolderPath;
+			plugin.settings.dataPath = normalizedPath;
 			await deps.save();
-			showNotification('Weave 数据根目录已更新', "success");
-		},
-
-		async updateBookmarkFolder(folderPath: string): Promise<void> {
-			const normalizedFolderPath = normalizeEpubBookmarkFolderPath(folderPath);
-			if (!normalizedFolderPath) {
-				deps.setBookmarkFolderInput(deps.getBookmarkFolderValue());
-				return;
-			}
-			if (normalizedFolderPath === deps.getBookmarkFolderValue()) {
-				deps.setBookmarkFolderInput(deps.getBookmarkFolderValue());
-				return;
-			}
-
-			plugin.settings.bookmarkFolder = normalizedFolderPath;
-			await deps.save();
-			showNotification('书签目录已更新', "success");
-		},
-
-		async updateHighlightStoragePath(filePath: string): Promise<void> {
-			const normalizedPath = normalizeHighlightStoragePath(filePath);
-			deps.setHighlightStoragePathInput(normalizedPath);
-			if (normalizedPath === deps.getHighlightStoragePathValue()) {
-				return;
-			}
-
-			plugin.settings.highlightStoragePath = normalizedPath;
-			await deps.save();
-			showNotification('高亮数据文件路径已更新', "success");
+			showNotification('数据路径已更新', "success");
 		},
 
 		async updateContinuousReadingPositionAutoSaveEnabled(enabled: boolean): Promise<void> {

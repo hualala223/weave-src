@@ -42,7 +42,6 @@ const ENTRY_FILES = [
 	"types/plugin-settings.d.ts",
 	"types/ir-point-storage-types.ts",
 	"types/ir-types.ts",
-	"types/view-card-modal-types.ts",
 	"types/obsidian-extensions.ts",
 	"types/obsidian-runtime-globals.d.ts",
 	"types/foliate-js.d.ts",
