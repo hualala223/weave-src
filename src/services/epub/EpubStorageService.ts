@@ -1,5 +1,5 @@
 import { type App, TAbstractFile, TFile } from "obsidian";
-import { errorPlainText, unknownPlainText } from "../../utils/unknown-plain-text";
+import { unknownPlainText } from "../../utils/unknown-plain-text";
 import { Platform, normalizePath } from "obsidian";
 import {
 	getPluginPathsById,
@@ -51,13 +51,11 @@ import {
 	hasRetainedLocalBookData,
 	normalizeBookMetadata,
 	normalizeBookState,
-	normalizeBookshelfIndexEntries,
 	normalizeBookshelfMembershipEntries,
 	normalizeConcealedTextMode,
 	normalizeConcealedTexts,
 	normalizeExcerptSettings,
 	normalizeLastOpenBookmark,
-	normalizeLegacyBook,
 	normalizeLegacySourceIds,
 	normalizeLocalBookRecord,
 	normalizeLocalReaderData,
@@ -91,7 +89,11 @@ import {
 	sortBookshelfPlaylists,
 	type EpubBookshelfPlaylist,
 } from "./epub-bookshelf-playlist-store";
-import { getWeaveDataStore, type WeaveDataStore } from "./weave-data-store";
+import {
+	getWeaveDataStore,
+	type WeaveDataDocument,
+	type WeaveDataStore,
+} from "./weave-data-store";
 import {
 	normalizeTocChapterMarkKey,
 	normalizeTocChapterMarkMap,
@@ -155,20 +157,6 @@ export interface EpubSourceRegistryEntry {
 }
 
 const LEGACY_BOOKSHELF_SEARCH_QUERY_STORAGE_KEY = "weave-epub-bookshelf-search-query";
-const UNIFIED_LOCAL_DATA_PARSE_RETRY_DELAY_MS = 60;
-
-export interface EpubLocalDataMigrationInspection {
-	hasUnifiedDataFile: boolean;
-	legacyFileCount: number;
-	legacyFiles: string[];
-}
-
-export interface EpubLocalDataMigrationReport {
-	migratedSectionCount: number;
-	removedLegacyFileCount: number;
-	remainingLegacyFiles: string[];
-	failures: Array<{ path: string; message: string }>;
-}
 
 export const DEFAULT_EPUB_BOOKSHELF_SETTINGS: EpubBookshelfSettings = {
 	lastScanAt: 0,
@@ -194,6 +182,7 @@ export class EpubStorageService {
 	private bookIdAliasMap = new Map<string, string>();
 	private automaticMigrationCompleted = false;
 	private inflightAutomaticMigration: Promise<void> | null = null;
+	private legacyStorageRetired = false;
 	private bookmarkService: EpubBookmarkService | null = null;
 
 	constructor(app: App) {
@@ -232,18 +221,8 @@ export class EpubStorageService {
 	}
 
 	async ensureDirectories(): Promise<void> {
-		await Promise.all([
-			this.ensureSyncBaseDirectory(),
-			this.ensureUnifiedLocalDataDirectory(),
-		]);
-	}
-
-	private async ensureSyncBaseDirectory(): Promise<void> {
-		await DirectoryUtils.ensureDirRecursive(this.app.vault.adapter, this.basePath);
-	}
-
-	private async ensureUnifiedLocalDataDirectory(): Promise<void> {
-		await DirectoryUtils.ensureDirForFile(this.app.vault.adapter, this.getUnifiedLocalDataPath());
+		const store = this.getDataStore();
+		await DirectoryUtils.ensureDirForFile(this.app.vault.adapter, store.getFilePath());
 	}
 
 	async loadBooks(options?: { hydrateStates?: boolean }): Promise<Record<string, EpubBook>> {
@@ -255,31 +234,12 @@ export class EpubStorageService {
 			}
 			return this._booksCache;
 		}
-		const { books: localBooks, authoritative } = await this.readBooksFromUnifiedLocalData();
-		if (authoritative) {
-			this._booksCache = localBooks;
-			if (shouldHydrateStates) {
-				await this.ensureBooksCacheHydrated();
-			}
-			return localBooks;
+		const { books: localBooks } = await this.readBooksFromUnifiedLocalData();
+		this._booksCache = localBooks;
+		if (shouldHydrateStates) {
+			await this.ensureBooksCacheHydrated();
 		}
-		const legacyBooks = await this.readLegacyBooks();
-		const books = {
-			...legacyBooks,
-			...localBooks,
-		};
-
-		if (Object.keys(books).length > 0) {
-			this._booksCache = books;
-			if (shouldHydrateStates) {
-				await this.ensureBooksCacheHydrated();
-			}
-			return books;
-		}
-
-		this._booksCache = {};
-		this._booksCacheHydrated = shouldHydrateStates;
-		return this._booksCache;
+		return localBooks;
 	}
 
 	private async ensureBooksCacheHydrated(): Promise<void> {
@@ -387,26 +347,10 @@ export class EpubStorageService {
 		);
 	}
 
-	private getLegacyBookStatePath(bookId: string): string {
-		return `${this.basePath}/${bookId}/state.json`;
-	}
-
-	private getConcealedTextsPath(bookId: string): string {
-		return normalizePath(`${this.getLocalReaderArtifactsRoot()}/${bookId}/concealed-texts.json`);
-	}
-
-	private getLegacyConcealedTextsPath(bookId: string): string {
-		return `${this.basePath}/${bookId}/concealed-texts.json`;
-	}
-
 	private getLegacyEpubBasePaths(): string[] {
 		return Array.from(
 			new Set([normalizePath(this.basePath), normalizePath(LEGACY_PATHS.epubReading)])
 		).filter(Boolean);
-	}
-
-	private getBookshelfMembershipPath(): string {
-		return `${this.basePath}/bookshelf-membership.json`;
 	}
 
 	private paragraphModePositionsMigrated = false;
@@ -524,17 +468,6 @@ export class EpubStorageService {
 		return Platform.isMobile ? "mobile" : "desktop";
 	}
 
-	private createEmptyLocalReaderData(): EpubReaderLocalDataFile {
-		return {
-			version: 1,
-			updatedAt: 0,
-			bookCatalogStoredLocally: false,
-			readerSettings: {},
-			canvasBindings: {},
-			books: {},
-		};
-	}
-
 	private cloneLocalReaderData(data: EpubReaderLocalDataFile): EpubReaderLocalDataFile {
 		return JSON.parse(JSON.stringify(data)) as EpubReaderLocalDataFile;
 	}
@@ -575,24 +508,6 @@ export class EpubStorageService {
 
 	private setCachedUnifiedLocalReaderData(data: EpubReaderLocalDataFile): void {
 		this.getUnifiedLocalDataCacheStore().set(this.getUnifiedLocalDataCacheKey(), data);
-	}
-
-	private async removeStoredCompatibilityFile(filePath: string): Promise<void> {
-		const normalizedPath = normalizePath(filePath || "");
-		if (!normalizedPath) {
-			return;
-		}
-
-		const adapter = this.app.vault.adapter;
-		if (!(await adapter.exists(normalizedPath))) {
-			return;
-		}
-
-		try {
-			await adapter.remove(normalizedPath);
-		} catch (error) {
-			logger.warn(`[EpubStorageService] Failed to remove compatibility file ${normalizedPath}:`, error);
-		}
 	}
 
 	private normalizePluginUiMemory(value: unknown): EpubPluginUiMemory {
@@ -676,10 +591,6 @@ export class EpubStorageService {
 		return normalizeScanIndexEntries(value);
 	}
 
-	private normalizeBookshelfIndexEntries(value: unknown): EpubBookshelfIndexEntry[] {
-		return normalizeBookshelfIndexEntries(value);
-	}
-
 	private normalizeBookshelfMembershipEntries(value: unknown): EpubBookshelfMembershipEntry[] {
 		return normalizeBookshelfMembershipEntries(value);
 	}
@@ -717,10 +628,6 @@ export class EpubStorageService {
 		return toBookFromDescriptor(descriptor, state);
 	}
 
-	private normalizeLegacyBook(value: unknown, fallbackId: string): EpubBook | null {
-		return normalizeLegacyBook(value, fallbackId);
-	}
-
 	private hasRetainedLocalBookData(record: EpubReaderLocalBookRecord): boolean {
 		return hasRetainedLocalBookData(record);
 	}
@@ -731,7 +638,6 @@ export class EpubStorageService {
 
 	private async readBooksFromUnifiedLocalData(): Promise<{
 		books: Record<string, EpubBook>;
-		authoritative: boolean;
 	}> {
 		const unifiedData = await this.readUnifiedLocalReaderData();
 		const books: Record<string, EpubBook> = {};
@@ -742,44 +648,7 @@ export class EpubStorageService {
 			}
 			books[descriptor.id || bookId] = this.toBookFromDescriptor(descriptor, record.state);
 		}
-		return {
-			books,
-			authoritative: unifiedData.bookCatalogStoredLocally === true,
-		};
-	}
-
-	private async readLegacyBooks(): Promise<Record<string, EpubBook>> {
-		const adapter = this.app.vault.adapter;
-		const currentBooksPath = `${this.basePath}/books.json`;
-		for (const booksPath of this.getLegacyEpubBasePaths().map(
-			(basePath) => `${basePath}/books.json`
-		)) {
-			if (!(await adapter.exists(booksPath))) {
-				continue;
-			}
-
-			try {
-				const content = await adapter.read(booksPath);
-				if (booksPath !== currentBooksPath && !(await adapter.exists(currentBooksPath))) {
-					await this.ensureSyncBaseDirectory();
-					await adapter.write(currentBooksPath, content);
-				}
-				const parsed = JSON.parse(content) as Record<string, unknown>;
-				const books: Record<string, EpubBook> = {};
-				for (const [bookId, bookData] of Object.entries(parsed || {})) {
-					const normalizedBook = this.normalizeLegacyBook(bookData, bookId);
-					if (!normalizedBook) {
-						continue;
-					}
-					books[normalizedBook.id || bookId] = normalizedBook;
-				}
-				return books;
-			} catch (error) {
-				logger.warn(`[EpubStorageService] Failed to parse books.json from ${booksPath}:`, error);
-			}
-		}
-
-		return {};
+		return { books };
 	}
 
 	private normalizeLocalReaderData(value: unknown): EpubReaderLocalDataFile {
@@ -792,120 +661,94 @@ export class EpubStorageService {
 			return this.cloneLocalReaderData(cached);
 		}
 
-		const adapter = this.app.vault.adapter;
-		let sourcePath: string | null = null;
-		for (const candidatePath of [this.getUnifiedLocalDataPath(), ...this.getLegacyUnifiedLocalDataPaths()]) {
-			if (await adapter.exists(candidatePath)) {
-				sourcePath = candidatePath;
-				break;
-			}
-		}
-		if (!sourcePath) {
-			const empty = this.createEmptyLocalReaderData();
-			this.setCachedUnifiedLocalReaderData(empty);
-			return this.cloneLocalReaderData(empty);
-		}
-
-		try {
-			const content = await adapter.read(sourcePath);
-			const normalized = this.normalizeLocalReaderData(JSON.parse(content));
-			this.setCachedUnifiedLocalReaderData(normalized);
-			if (sourcePath !== this.getUnifiedLocalDataPath()) {
-				await this.writeUnifiedLocalReaderData(normalized);
-				await this.removeStoredCompatibilityFile(sourcePath);
-			}
-		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to parse epub local state file, retrying:", error);
-			const recovered = await this.readUnifiedLocalReaderDataWithRetry(sourcePath);
-			if (recovered) {
-				this.setCachedUnifiedLocalReaderData(recovered);
-			} else {
-				logger.warn(
-					"[EpubStorageService] Failed to recover epub local state file; falling back to empty snapshot for this session."
-				);
-				this.setCachedUnifiedLocalReaderData(this.createEmptyLocalReaderData());
-			}
-		}
-
-		return this.cloneLocalReaderData(this.getCachedUnifiedLocalReaderData() ?? this.createEmptyLocalReaderData());
+		const document = await this.getDataStore().getDocument();
+		const data = this.normalizeLocalReaderData(
+			this.assembleLocalReaderDataFromStoreDocument(document)
+		);
+		this.setCachedUnifiedLocalReaderData(data);
+		return this.cloneLocalReaderData(data);
 	}
 
-	private async readUnifiedLocalReaderDataWithRetry(
-		sourcePath: string
-	): Promise<EpubReaderLocalDataFile | null> {
-		const adapter = this.app.vault.adapter;
-		for (let attempt = 0; attempt < 2; attempt += 1) {
-			if (attempt > 0) {
-				await new Promise((resolve) =>
-					window.setTimeout(resolve, UNIFIED_LOCAL_DATA_PARSE_RETRY_DELAY_MS)
-				);
-			}
-			try {
-				const content = await adapter.read(sourcePath);
-				return this.normalizeLocalReaderData(JSON.parse(content));
-			} catch {
-				// Retry once for transient partial-write reads during startup.
-			}
+	private assembleLocalReaderDataFromStoreDocument(
+		document: WeaveDataDocument
+	): EpubReaderLocalDataFile {
+		const data: EpubReaderLocalDataFile = {
+			version: 1,
+			updatedAt: typeof document.updatedAt === "number" ? document.updatedAt : 0,
+			bookCatalogStoredLocally: document.books !== undefined,
+		};
+		if (document.books !== undefined) {
+			data.books = document.books as Record<string, EpubReaderLocalBookRecord>;
 		}
-		return null;
+		if (document.bookshelfMembership !== undefined) {
+			data.bookshelfMembership = document.bookshelfMembership as EpubBookshelfMembershipEntry[];
+		}
+		if (document.bookshelfPlaylists !== undefined) {
+			data.bookshelfPlaylists = document.bookshelfPlaylists as EpubBookshelfPlaylist[];
+		}
+		if (document.readerSettings !== undefined) {
+			data.readerSettings = document.readerSettings as Partial<
+				Record<EpubReaderSettingsDeviceKind, EpubReaderSettings>
+			>;
+		}
+		if (document.excerptSettings !== undefined) {
+			data.excerptSettings = document.excerptSettings as EpubExcerptSettings;
+		}
+		if (document.canvasBindings !== undefined) {
+			data.canvasBindings = document.canvasBindings as Record<string, string>;
+		}
+		if (document.canvasExcerptAnchors !== undefined) {
+			data.canvasExcerptAnchors = document.canvasExcerptAnchors as Record<
+				string,
+				CanvasExcerptAnchorRecord
+			>;
+		}
+		if (document.uiMemory !== undefined) {
+			data.uiMemory = document.uiMemory as EpubPluginUiMemory;
+		}
+		if (document.tocChapterMarkSettings !== undefined) {
+			data.tocChapterMarkSettings = document.tocChapterMarkSettings as EpubTocChapterMarkSettings;
+		}
+		return data;
 	}
 
 	private async hasUnifiedLocalDataFile(): Promise<boolean> {
-		if (await this.app.vault.adapter.exists(this.getUnifiedLocalDataPath())) {
-			return true;
-		}
-		for (const legacyPath of this.getLegacyUnifiedLocalDataPaths()) {
-			if (await this.app.vault.adapter.exists(legacyPath)) {
-				return true;
-			}
-		}
-		return false;
+		const document = await this.getDataStore().getDocument();
+		return (
+			document.books !== undefined ||
+			document.bookshelfMembership !== undefined ||
+			document.bookshelfPlaylists !== undefined ||
+			document.readerSettings !== undefined ||
+			document.excerptSettings !== undefined ||
+			document.canvasBindings !== undefined ||
+			document.canvasExcerptAnchors !== undefined ||
+			document.uiMemory !== undefined ||
+			document.tocChapterMarkSettings !== undefined
+		);
 	}
 
 	private async writeUnifiedLocalReaderData(data: EpubReaderLocalDataFile): Promise<void> {
-		await this.ensureUnifiedLocalDataDirectory();
 		const normalizedData = this.normalizeLocalReaderData({
 			...data,
 			version: 1,
 			updatedAt: Date.now(),
 		});
-		const adapter = this.app.vault.adapter as typeof this.app.vault.adapter & {
-			rename?: (oldPath: string, newPath: string) => Promise<void>;
-		};
-		const targetPath = this.getUnifiedLocalDataPath();
-		const tempPath = `${targetPath}.tmp`;
-		const serialized = JSON.stringify(normalizedData);
-
-		if (typeof adapter.rename === "function") {
-			await adapter.write(tempPath, serialized);
-			try {
-				await adapter.rename(tempPath, targetPath);
-			} catch (error) {
-				if (!this.isDestinationFileAlreadyExistsError(error)) {
-					throw error;
-				}
-				// Some adapters reject overwrite-on-rename; safely fall back to direct write.
-				await adapter.write(targetPath, serialized);
-				if (typeof adapter.remove === "function") {
-					try {
-						await adapter.remove(tempPath);
-					} catch {
-						// noop
-					}
-				}
-			}
-		} else {
-			await adapter.write(targetPath, serialized);
-		}
+		const store = this.getDataStore();
+		// 先确保文档已加载，避免 mutate 基于空文档覆盖其它领域分区。
+		await store.getDocument();
+		store.mutate((document) => {
+			document.books = normalizedData.books;
+			document.bookshelfMembership = normalizedData.bookshelfMembership;
+			document.bookshelfPlaylists = normalizedData.bookshelfPlaylists;
+			document.readerSettings = normalizedData.readerSettings;
+			document.excerptSettings = normalizedData.excerptSettings;
+			document.canvasBindings = normalizedData.canvasBindings;
+			document.canvasExcerptAnchors = normalizedData.canvasExcerptAnchors;
+			document.uiMemory = normalizedData.uiMemory;
+			document.tocChapterMarkSettings = normalizedData.tocChapterMarkSettings;
+			document.updatedAt = normalizedData.updatedAt;
+		});
 		this.setCachedUnifiedLocalReaderData(normalizedData);
-	}
-
-	private isDestinationFileAlreadyExistsError(error: unknown): boolean {
-		const message =
-			typeof error === "object" && error && "message" in error
-				? errorPlainText((error as { message?: unknown }).message)
-				: errorPlainText(error);
-		return /destination file already exists/i.test(message);
 	}
 
 	private async updateUnifiedLocalReaderData(
@@ -942,10 +785,7 @@ export class EpubStorageService {
 		}
 
 		const migrationPromise = (async () => {
-			const inspection = await this.inspectLocalDataMigrationStatus();
-			if (inspection.legacyFileCount > 0) {
-				await this.migrateLegacyLocalData({ cleanupLegacyFiles: true });
-			}
+			await this.retireLegacyStorageFiles();
 			await this.migrateUnifiedDataToCanonicalBookIdentities();
 			await this.reconcileMissingBookshelfDescriptors();
 			this._booksCache = null;
@@ -1329,125 +1169,6 @@ export class EpubStorageService {
 			const shelf = (document.shelf ?? {}) as EpubShelfSectionData;
 			document.shelf = { ...shelf, scanIndex: entries };
 		});
-	}
-
-	private parseBookshelfMembershipEntries(content: string): EpubBookshelfMembershipEntry[] {
-		try {
-			return this.normalizeBookshelfMembershipEntries(JSON.parse(content));
-		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to parse bookshelf-membership.json:", error);
-			return [];
-		}
-	}
-
-	private async readStoredBookshelfMembership(): Promise<EpubBookshelfMembershipEntry[] | null> {
-		const membershipPath = this.getBookshelfMembershipPath();
-		const adapter = this.app.vault.adapter;
-		if (!(await adapter.exists(membershipPath))) {
-			return null;
-		}
-
-		try {
-			const content = await adapter.read(membershipPath);
-			return this.parseBookshelfMembershipEntries(content);
-		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to read bookshelf-membership.json:", error);
-			return null;
-		}
-	}
-
-	private async readJsonObjectFromPath(path: string): Promise<object | null> {
-		const adapter = this.app.vault.adapter;
-		if (!(await adapter.exists(path))) {
-			return null;
-		}
-
-		try {
-			return JSON.parse(await adapter.read(path)) as object;
-		} catch (error) {
-			logger.warn(`[EpubStorageService] Failed to parse JSON from ${path}:`, error);
-			return null;
-		}
-	}
-
-	private async readLegacyConcealedTexts(bookId: string): Promise<ConcealedText[] | null> {
-		for (const concealedTextsPath of [
-			this.getConcealedTextsPath(bookId),
-			...this.getLegacyEpubBasePaths().map(
-				(basePath) => `${basePath}/${bookId}/concealed-texts.json`
-			),
-		]) {
-			const parsed = await this.readJsonObjectFromPath(concealedTextsPath);
-			if (parsed == null) {
-				continue;
-			}
-			return this.normalizeConcealedTexts(parsed);
-		}
-
-		return null;
-	}
-
-	private async readLegacyReaderSettings(
-		deviceKind: EpubReaderSettingsDeviceKind
-	): Promise<EpubReaderSettings | null> {
-		const suffix = deviceKind === "mobile" ? "mobile" : "desktop";
-		for (const settingsPath of [
-			normalizePath(`${this.getLocalReaderStateRoot()}/reader-settings.${suffix}.json`),
-			...this.getLegacyEpubBasePaths().map(
-				(basePath) => `${basePath}/reader-settings.${suffix}.json`
-			),
-			...(deviceKind === this.getCurrentDeviceKind()
-				? this.getLegacyEpubBasePaths().map((basePath) => `${basePath}/reader-settings.json`)
-				: []),
-		].filter(Boolean)) {
-			const parsed = await this.readJsonObjectFromPath(settingsPath);
-			if (parsed == null) {
-				continue;
-			}
-			return this.normalizeReaderSettingsForDevice(
-				deviceKind,
-				parsed as Partial<EpubReaderSettings>
-			);
-		}
-
-		return null;
-	}
-
-	private async readLegacyExcerptSettings(): Promise<EpubExcerptSettings | null> {
-		for (const settingsPath of this.getLegacyEpubBasePaths().map(
-			(basePath) => `${basePath}/excerpt-settings.json`
-		)) {
-			const parsed = await this.readJsonObjectFromPath(settingsPath);
-			if (parsed == null) {
-				continue;
-			}
-			return this.normalizeExcerptSettings(parsed);
-		}
-		return null;
-	}
-
-	private async readLegacyCanvasBindings(): Promise<Record<string, string> | null> {
-		for (const bindingsPath of this.getLegacyEpubBasePaths().map(
-			(basePath) => `${basePath}/canvas-bindings.json`
-		)) {
-			const parsed = await this.readJsonObjectFromPath(bindingsPath);
-			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-				continue;
-			}
-
-			const normalized = Object.fromEntries(
-				Object.entries(parsed as Record<string, unknown>)
-					.map(
-						([bookId, canvasPath]) =>
-							[String(bookId || "").trim(), normalizePath(unknownPlainText(canvasPath).trim())] as const
-					)
-					.filter(([bookId, canvasPath]) => Boolean(bookId) && Boolean(canvasPath))
-			);
-			if (Object.keys(normalized).length > 0) {
-				return normalized;
-			}
-		}
-		return null;
 	}
 
 	private buildBookshelfIndexEntriesFromBooks(
@@ -2061,11 +1782,9 @@ export class EpubStorageService {
 	async loadBookshelfMembership(): Promise<EpubBookshelfMembershipEntry[]> {
 		await this.ensureAutomaticDataMigrations();
 		const unifiedData = await this.readUnifiedLocalReaderData();
-		const hasUnifiedData = await this.hasUnifiedLocalDataFile();
-		let entries =
-			hasUnifiedData && Array.isArray(unifiedData.bookshelfMembership)
-				? unifiedData.bookshelfMembership
-				: await this.readStoredBookshelfMembership();
+		let entries = Array.isArray(unifiedData.bookshelfMembership)
+			? unifiedData.bookshelfMembership
+			: null;
 
 		if (entries === null) {
 			const books = await this.loadBooks({ hydrateStates: false });
@@ -2091,7 +1810,6 @@ export class EpubStorageService {
 		await this.updateUnifiedLocalReaderData((localData) => {
 			localData.bookshelfMembership = normalizedEntries;
 		});
-		await this.removeStoredCompatibilityFile(this.getBookshelfMembershipPath());
 	}
 
 	async loadBookshelfPlaylists(): Promise<EpubBookshelfPlaylist[]> {
@@ -2702,11 +2420,6 @@ export class EpubStorageService {
 			const { books: localBooks } = await this.readBooksFromUnifiedLocalData();
 			if (Object.keys(localBooks).length > 0) {
 				this._booksCache = localBooks;
-			} else {
-				const legacyBooks = await this.readLegacyBooks();
-				if (Object.keys(legacyBooks).length > 0) {
-					this._booksCache = { ...legacyBooks };
-				}
 			}
 		}
 
@@ -3547,14 +3260,13 @@ export class EpubStorageService {
 		const unifiedData = await this.readUnifiedLocalReaderData();
 		const bookRecord = unifiedData.books?.[bookId];
 		if (
-			(await this.hasUnifiedLocalDataFile()) &&
 			bookRecord &&
 			Object.prototype.hasOwnProperty.call(bookRecord, "concealedTexts")
 		) {
 			return [...(bookRecord.concealedTexts || [])];
 		}
 
-		return (await this.readLegacyConcealedTexts(bookId)) ?? [];
+		return [];
 	}
 
 	async saveConcealedTexts(bookId: string, concealedTexts: ConcealedText[]): Promise<void> {
@@ -3656,7 +3368,6 @@ export class EpubStorageService {
 		const unifiedData = await this.readUnifiedLocalReaderData();
 		const bookRecord = unifiedData.books?.[bookId];
 		if (
-			(await this.hasUnifiedLocalDataFile()) &&
 			bookRecord &&
 			Object.prototype.hasOwnProperty.call(bookRecord, "readingReferencePoint")
 		) {
@@ -4036,17 +3747,11 @@ export class EpubStorageService {
 		const deviceKind = this.getCurrentDeviceKind();
 		const unifiedData = await this.readUnifiedLocalReaderData();
 		const unifiedSettings = unifiedData.readerSettings?.[deviceKind];
-		if (
-			(await this.hasUnifiedLocalDataFile()) &&
-			Object.prototype.hasOwnProperty.call(unifiedData.readerSettings || {}, deviceKind)
-		) {
+		if (Object.prototype.hasOwnProperty.call(unifiedData.readerSettings || {}, deviceKind)) {
 			return unifiedSettings ?? this.getDefaultReaderSettingsForCurrentDevice();
 		}
 
-		return (
-			(await this.readLegacyReaderSettings(deviceKind)) ??
-			({ ...this.getDefaultReaderSettingsForCurrentDevice() } as EpubReaderSettings)
-		);
+		return { ...this.getDefaultReaderSettingsForCurrentDevice() } as EpubReaderSettings;
 	}
 
 	async saveReaderSettings(settings: EpubReaderSettings): Promise<void> {
@@ -4064,7 +3769,7 @@ export class EpubStorageService {
 			return this.normalizeExcerptSettings(unifiedData.excerptSettings);
 		}
 
-		return (await this.readLegacyExcerptSettings()) ?? { ...DEFAULT_EPUB_EXCERPT_SETTINGS };
+		return { ...DEFAULT_EPUB_EXCERPT_SETTINGS };
 	}
 
 	async saveExcerptSettings(settings: EpubExcerptSettings): Promise<void> {
@@ -4099,86 +3804,25 @@ export class EpubStorageService {
 		return this.normalizeReaderSettingsForDevice(this.getCurrentDeviceKind(), settings);
 	}
 
-		private getLegacyReaderSettingsPath(): string {
-		return `${this.basePath}/reader-settings.json`;
-	}
-
-	private mergeArrayByKey<T>(
-		current: T[] | undefined,
-		incoming: T[],
-		getKey: (item: T, index: number) => string
-	): { merged: T[]; changed: boolean } {
-		const existing = Array.isArray(current) ? current : [];
-		if (incoming.length === 0) {
-			return {
-				merged: existing,
-				changed: false,
-			};
+	/**
+	 * 旧存储退役：删除已被 weave-data.json 取代的旧数据文件（vault 旧同步目录、
+	 * epub-local-state.json、插件缓存扫描索引等），并清理空目录。
+	 * 仅执行一次（由 ensureAutomaticDataMigrations 触发）。
+	 */
+	private async retireLegacyStorageFiles(): Promise<void> {
+		if (this.legacyStorageRetired) {
+			return;
 		}
+		this.legacyStorageRetired = true;
 
-		const merged = [...existing];
-		const keys = new Set(existing.map((item, index) => getKey(item, index)));
-		let changed = current === undefined && incoming.length > 0;
-
-		for (const [index, item] of incoming.entries()) {
-			const key = getKey(item, index);
-			if (keys.has(key)) {
-				continue;
-			}
-			keys.add(key);
-			merged.push(item);
-			changed = true;
-		}
-
-		return { merged, changed };
-	}
-
-	private async collectLegacyScopedFiles(rootPath: string, fileNames: string[]): Promise<string[]> {
-		const normalizedRoot = normalizePath(rootPath);
 		const adapter = this.app.vault.adapter as {
-			list?: (path: string) => Promise<{ files?: string[]; folders?: string[] }>;
+			remove?: (path: string) => Promise<void>;
 		};
-		if (!normalizedRoot || typeof adapter.list !== "function") {
-			return [];
+		if (typeof adapter.remove !== "function") {
+			return;
 		}
 
-		if (!(await this.app.vault.adapter.exists(normalizedRoot))) {
-			return [];
-		}
-
-		const result: string[] = [];
-		const rootListing = await adapter.list(normalizedRoot);
-		for (const filePath of rootListing.files || []) {
-			const fileName = filePath.split("/").pop() || "";
-			if (fileNames.includes(fileName)) {
-				result.push(normalizePath(filePath));
-			}
-		}
-
-		for (const folderPath of rootListing.folders || []) {
-			const listing = await adapter.list(folderPath);
-			for (const filePath of listing.files || []) {
-				const fileName = filePath.split("/").pop() || "";
-				if (fileNames.includes(fileName)) {
-					result.push(normalizePath(filePath));
-				}
-			}
-		}
-
-		return result;
-	}
-
-	private async listLegacyLocalDataFiles(): Promise<string[]> {
-		const adapter = this.app.vault.adapter;
-		const files = new Set<string>();
-		const tryAdd = async (path: string) => {
-			const normalizedPath = normalizePath(path);
-			if (normalizedPath && (await adapter.exists(normalizedPath))) {
-				files.add(normalizedPath);
-			}
-		};
-
-		for (const path of [
+		const legacyPaths = [
 			`${this.basePath}/books.json`,
 			`${this.basePath}/reader-settings.json`,
 			`${this.basePath}/reader-settings.desktop.json`,
@@ -4186,239 +3830,96 @@ export class EpubStorageService {
 			`${this.basePath}/excerpt-settings.json`,
 			`${this.basePath}/canvas-bindings.json`,
 			`${this.basePath}/bookshelf-membership.json`,
+			`${this.basePath}/epub-source-registry.json`,
+			`${this.basePath}/epub-scan-index.json`,
+			`${this.basePath}/bookshelf-index.json`,
+			this.getUnifiedLocalDataPath(),
 			...this.getLegacyUnifiedLocalDataPaths(),
 			normalizePath(`${this.getLocalReaderStateRoot()}/reader-settings.desktop.json`),
 			normalizePath(`${this.getLocalReaderStateRoot()}/reader-settings.mobile.json`),
-		]) {
-			await tryAdd(path);
-		}
-
-		for (const scopedPath of await this.collectLegacyScopedFiles(this.basePath, [
-			"bookmarks.json",
-			"highlights.json",
-			"notes.json",
-			"state.json",
-			"last-open-bookmark.json",
-			"concealed-texts.json",
-		])) {
-			files.add(scopedPath);
-		}
-
-		for (const scopedPath of await this.collectLegacyScopedFiles(this.getLocalReaderStateRoot(), [
-			"state.json",
-			"last-open-bookmark.json",
-		])) {
-			files.add(scopedPath);
-		}
-
-		for (const scopedPath of await this.collectLegacyScopedFiles(
-			this.getLocalReaderArtifactsRoot(),
-			["concealed-texts.json"]
-		)) {
-			files.add(scopedPath);
-		}
-
-		return Array.from(files).sort();
-	}
-
-	private extractLegacyBookId(filePath: string): string | null {
-		const normalizedPath = normalizePath(filePath);
-		const mappings = [
-			normalizePath(`${this.basePath}/`),
-			normalizePath(`${this.getLocalReaderStateRoot()}/`),
-			normalizePath(`${this.getLocalReaderArtifactsRoot()}/`),
+			this.getPluginAdapterPath(
+				getPluginPathsById(this.app, this.localPluginId).cache.epubScanIndex
+			),
 		];
 
-		for (const prefix of mappings) {
-			if (!normalizedPath.startsWith(prefix)) {
-				continue;
-			}
-			const relativePath = normalizedPath.slice(prefix.length);
-			const segments = relativePath.split("/").filter(Boolean);
-			if (segments.length >= 2) {
-				return segments[0] || null;
-			}
-		}
-
-		return null;
-	}
-
-	async inspectLocalDataMigrationStatus(): Promise<EpubLocalDataMigrationInspection> {
-		const legacyFiles = await this.listLegacyLocalDataFiles();
-		return {
-			hasUnifiedDataFile: await this.hasUnifiedLocalDataFile(),
-			legacyFileCount: legacyFiles.length,
-			legacyFiles,
-		};
-	}
-
-	async migrateLegacyLocalData(
-		options: { cleanupLegacyFiles?: boolean } = {}
-	): Promise<EpubLocalDataMigrationReport> {
-		const cleanupLegacyFiles = options.cleanupLegacyFiles === true;
-		const failures: Array<{ path: string; message: string }> = [];
-		const unifiedData = this.cloneLocalReaderData(await this.readUnifiedLocalReaderData());
-		let migratedSectionCount = 0;
-		let changed = false;
-
-		const markChanged = () => {
-			changed = true;
-			migratedSectionCount += 1;
-		};
-
-		const legacyBooks = await this.readLegacyBooks();
-		if (Object.keys(legacyBooks).length > 0) {
-			unifiedData.bookCatalogStoredLocally = true;
-		}
-		for (const [bookId, book] of Object.entries(legacyBooks)) {
-			unifiedData.books = unifiedData.books || {};
-			const current = unifiedData.books[bookId] || {};
-			let bookChanged = false;
-
-			if (!current.descriptor) {
-				current.descriptor = this.toStoredBookDescriptor(book);
-				bookChanged = true;
-			}
-
-			if (bookChanged) {
-				unifiedData.books[bookId] = current;
-				markChanged();
-			}
-		}
-
-		for (const deviceKind of ["desktop", "mobile"] as const) {
-			const legacySettings = await this.readLegacyReaderSettings(deviceKind);
-			if (
-				legacySettings &&
-				!Object.prototype.hasOwnProperty.call(unifiedData.readerSettings || {}, deviceKind)
-			) {
-				unifiedData.readerSettings = unifiedData.readerSettings || {};
-				unifiedData.readerSettings[deviceKind] = legacySettings;
-				markChanged();
-			}
-		}
-
-		const legacyExcerptSettings = await this.readLegacyExcerptSettings();
-		if (
-			!Object.prototype.hasOwnProperty.call(unifiedData, "excerptSettings") &&
-			legacyExcerptSettings
-		) {
-			unifiedData.excerptSettings = legacyExcerptSettings;
-			markChanged();
-		}
-
-		const legacyCanvasBindings = await this.readLegacyCanvasBindings();
-		if (
-			legacyCanvasBindings &&
-			Object.keys(legacyCanvasBindings).length > 0 &&
-			(!unifiedData.canvasBindings || Object.keys(unifiedData.canvasBindings).length === 0)
-		) {
-			unifiedData.canvasBindings = legacyCanvasBindings;
-			markChanged();
-		}
-
-		const legacyMembership = await this.readStoredBookshelfMembership();
-		if (
-			legacyMembership
-			&& !Object.prototype.hasOwnProperty.call(unifiedData, "bookshelfMembership")
-		) {
-			const mergeResult = this.mergeArrayByKey(
-				unifiedData.bookshelfMembership,
-				legacyMembership,
-				(entry) => normalizePath(entry.path || "")
-			);
-			if (mergeResult.changed) {
-				unifiedData.bookshelfMembership = mergeResult.merged;
-				markChanged();
-			}
-		}
-
-		const legacyBookIds = Array.from(
-			new Set(
-				(await this.listLegacyLocalDataFiles())
-					.map((path) => this.extractLegacyBookId(path))
-					.filter((bookId): bookId is string => Boolean(bookId))
-			)
-		).sort();
-
-		for (const bookId of legacyBookIds) {
-			unifiedData.books = unifiedData.books || {};
-			const current = unifiedData.books[bookId] || {};
-			let bookChanged = false;
-
-			const legacyConcealedTexts = await this.readLegacyConcealedTexts(bookId);
-			if (legacyConcealedTexts && legacyConcealedTexts.length > 0) {
-				const mergeResult = this.mergeArrayByKey(
-					current.concealedTexts,
-					legacyConcealedTexts,
-					(entry, index) => entry.id || `${entry.cfiRange || ""}:${entry.createdTime || 0}:${index}`
-				);
-				if (mergeResult.changed) {
-					current.concealedTexts = mergeResult.merged;
-					bookChanged = true;
+		for (const legacyPath of legacyPaths) {
+			try {
+				if (await this.app.vault.adapter.exists(legacyPath)) {
+					await adapter.remove(legacyPath);
 				}
-			}
-
-			if (bookChanged) {
-				unifiedData.books[bookId] = current;
-				markChanged();
+			} catch (error) {
+				logger.warn(`[EpubStorageService] Failed to remove legacy file ${legacyPath}:`, error);
 			}
 		}
 
-		if (changed) {
-			await this.writeUnifiedLocalReaderData(unifiedData);
-		}
-
-		let removedLegacyFileCount = 0;
-		if (cleanupLegacyFiles) {
-			const adapter = this.app.vault.adapter as {
-				remove?: (path: string) => Promise<void>;
-			};
-			for (const legacyPath of await this.listLegacyLocalDataFiles()) {
-				if (typeof adapter.remove !== "function") {
-					failures.push({
-						path: legacyPath,
-						message: "当前适配器不支持删除旧 EPUB 本地数据文件。",
-					});
-					continue;
-				}
-
-				try {
-					if (await this.app.vault.adapter.exists(legacyPath)) {
-						await adapter.remove(legacyPath);
-						removedLegacyFileCount += 1;
-					}
-				} catch (error) {
-					failures.push({
-						path: legacyPath,
-						message: error instanceof Error ? error.message : String(error),
-					});
-				}
-			}
-
-			await Promise.all([
-				DirectoryUtils.pruneEmptyDirsUnder(this.app.vault.adapter as unknown, this.basePath, {
-					preserveRoot: false,
-				}),
-				DirectoryUtils.pruneEmptyDirsUnder(
-					this.app.vault.adapter as unknown,
-					this.getLocalReaderStateRoot(),
-					{ preserveRoot: false }
-				),
-				DirectoryUtils.pruneEmptyDirsUnder(
-					this.app.vault.adapter as unknown,
-					this.getLocalReaderArtifactsRoot(),
-					{ preserveRoot: false }
-				),
+		for (const rootPath of [this.basePath, this.getLocalReaderStateRoot(), this.getLocalReaderArtifactsRoot()]) {
+			await this.removeLegacyScopedFiles(rootPath, [
+				"bookmarks.json",
+				"highlights.json",
+				"notes.json",
+				"state.json",
+				"last-open-bookmark.json",
+				"concealed-texts.json",
 			]);
 		}
 
-		return {
-			migratedSectionCount,
-			removedLegacyFileCount,
-			remainingLegacyFiles: await this.listLegacyLocalDataFiles(),
-			failures,
+		await Promise.all([
+			DirectoryUtils.pruneEmptyDirsUnder(adapter as unknown, this.basePath, {
+				preserveRoot: false,
+			}),
+			DirectoryUtils.pruneEmptyDirsUnder(adapter as unknown, this.getLocalReaderStateRoot(), {
+				preserveRoot: false,
+			}),
+			DirectoryUtils.pruneEmptyDirsUnder(adapter as unknown, this.getLocalReaderArtifactsRoot(), {
+				preserveRoot: false,
+			}),
+		]);
+	}
+
+	private async removeLegacyScopedFiles(rootPath: string, fileNames: string[]): Promise<void> {
+		const normalizedRoot = normalizePath(rootPath);
+		const adapter = this.app.vault.adapter as {
+			list?: (path: string) => Promise<{ files?: string[]; folders?: string[] }>;
+			remove?: (path: string) => Promise<void>;
 		};
+		const listFiles = adapter.list;
+		const removeFile = adapter.remove;
+		if (
+			!normalizedRoot ||
+			typeof listFiles !== "function" ||
+			typeof removeFile !== "function"
+		) {
+			return;
+		}
+
+		if (!(await this.app.vault.adapter.exists(normalizedRoot))) {
+			return;
+		}
+
+		const collect = async (folderPath: string): Promise<string[]> => {
+			const listing = await listFiles(folderPath);
+			const result: string[] = [];
+			for (const filePath of listing.files || []) {
+				const fileName = filePath.split("/").pop() || "";
+				if (fileNames.includes(fileName)) {
+					result.push(normalizePath(filePath));
+				}
+			}
+			for (const childFolder of listing.folders || []) {
+				result.push(...(await collect(childFolder)));
+			}
+			return result;
+		};
+
+		for (const legacyPath of await collect(normalizedRoot)) {
+			try {
+				if (await this.app.vault.adapter.exists(legacyPath)) {
+					await removeFile(legacyPath);
+				}
+			} catch (error) {
+				logger.warn(`[EpubStorageService] Failed to remove legacy file ${legacyPath}:`, error);
+			}
+		}
 	}
 
 	private async loadCanvasBindings(): Promise<Record<string, string>> {
@@ -4427,7 +3928,7 @@ export class EpubStorageService {
 			return { ...unifiedData.canvasBindings };
 		}
 
-		return (await this.readLegacyCanvasBindings()) ?? {};
+		return {};
 	}
 
 	private async saveCanvasBindings(bindings: Record<string, string>): Promise<void> {

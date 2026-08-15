@@ -538,25 +538,6 @@ export function getBackupPath(backupId?: string, app?: { vault: { configDir: str
 	return backupId ? `${folder}/${backupId}` : folder;
 }
 
-/**
- * 高亮数据文件（local-storage.json）默认路径：weave/ 下平铺，随库同步。
- */
-export const DEFAULT_HIGHLIGHT_STORAGE_PATH = `${WEAVE_DATA}/local-storage.json`;
-
-/**
- * 规范化用户配置的高亮数据文件路径：空值/非法值回退默认路径。
- */
-export function normalizeHighlightStoragePath(path?: string): string {
-	const raw = String(path || "").trim();
-	if (raw) {
-		const normalized = normalizePath(raw);
-		if (normalized && normalized !== "." && normalized !== "/") {
-			return normalized;
-		}
-	}
-	return DEFAULT_HIGHLIGHT_STORAGE_PATH;
-}
-
 // ============================================================================
 // 统一数据路径（v4.0：weave-data.json 单一数据文件）
 // ============================================================================
