@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
  	import { Notice, setIcon } from 'obsidian';
-	import { tr } from '../../utils/i18n';
 	import type { App } from 'obsidian';
  	import { logger } from '../../utils/logger';
 	import { findOpenEpubLeaf } from '../../utils/epub-leaf-utils';
@@ -23,8 +22,6 @@
 	}
 
  	let { app }: Props = $props();
-	let t = $derived($tr);
-
 	function getBookmarkService(): EpubBookmarkService {
 		return new EpubBookmarkService(app);
 	}
@@ -112,7 +109,7 @@
 		if (searchResults.length === 0) return [] as GroupedResults;
 		const map = new Map<string, Array<{ cfi: string; excerpt: string }>>();
 		for (const r of searchResults) {
-			const chapter = r.chapterTitle || t('epub.globalSidebar.untitledChapter');
+			const chapter = r.chapterTitle || '未命名章节';
 			if (!map.has(chapter)) map.set(chapter, []);
 			map.get(chapter)!.push({ cfi: r.cfi, excerpt: r.excerpt });
 		}
@@ -277,12 +274,12 @@
 		const now = Date.now();
 		const diff = now - timestamp;
 		const minutes = Math.floor(diff / 60000);
-		if (minutes < 1) return t('epub.globalSidebar.justNow');
-		if (minutes < 60) return t('epub.globalSidebar.minutesAgo', { count: minutes });
+		if (minutes < 1) return '刚刚';
+		if (minutes < 60) return `${minutes}分钟前`;
 		const hours = Math.floor(minutes / 60);
-		if (hours < 24) return t('epub.globalSidebar.hoursAgo', { count: hours });
+		if (hours < 24) return `${hours}小时前`;
 		const days = Math.floor(hours / 24);
-		return t('epub.globalSidebar.daysAgo', { count: days });
+		return `${days}天前`;
 	}
 
 	function escapeHtml(str: string): string {
@@ -543,7 +540,7 @@
 			await sharedState.onSetTocChapterMark(item, mark);
 		} catch (error) {
 			logger.error('[EpubGlobalSidebar] Failed to update toc chapter mark:', error);
-			new Notice(t('epub.globalSidebar.tocMarkUpdateFailed'));
+			new Notice('章节标记保存失败，请重试');
 		}
 	}
 
@@ -557,7 +554,7 @@
 			await sharedState.onSaveTocChapterMarkSettings(settings);
 		} catch (error) {
 			logger.error('[EpubGlobalSidebar] Failed to save toc chapter mark settings:', error);
-			new Notice(t('epub.globalSidebar.tocMarkSettingsSaveFailed'));
+			new Notice('圆点语义设置保存失败，请重试');
 		}
 	}
 
@@ -752,7 +749,7 @@
 				onSwitchBook={sharedState?.onSwitchBook ?? undefined}
 				onClose={returnFromBookshelfToReaderSidebar}
 				onBack={returnFromBookshelfToReaderSidebar}
-				backButtonLabel={t('epub.globalSidebar.backToDirectory')}
+				backButtonLabel={'返回书籍目录'}
 				refreshToken={bookshelfRefreshToken}
 				onSettingsClick={sharedState?.onSettingsClick ?? undefined}
 			/>
@@ -761,14 +758,14 @@
 	{#if effectiveSidebarView !== 'bookshelf' && !sharedState?.book}
 		<div class="epub-global-sidebar-empty">
 			<span class="empty-icon" use:icon={'book-open'}></span>
-			<span class="empty-text">{t('epub.globalSidebar.noBookOpen')}</span>
+			<span class="empty-text">{'尚未打开 EPUB'}</span>
 		</div>
 	{:else if effectiveSidebarView !== 'bookshelf'}
 		{#if sidebarView === 'details'}
 			<div class="epub-global-sidebar-header">
 				<div class="header-flex">
 					{#if sharedState.book.metadata.coverImage}
-						<img src={sharedState.book.metadata.coverImage} alt={t('epub.globalSidebar.coverAlt')} class="sidebar-cover" />
+						<img src={sharedState.book.metadata.coverImage} alt={'封面'} class="sidebar-cover" />
 					{:else}
 						<div class="sidebar-cover-placeholder">
 							<span use:icon={'book-open'}></span>
@@ -785,12 +782,12 @@
 							<div
 								class="book-progress-track"
 								role="progressbar"
-								aria-label={t('epub.globalSidebar.progress')}
+								aria-label={'阅读进度'}
 								aria-valuemin={0}
 								aria-valuemax={100}
 								aria-valuenow={sidebarProgressPercent}
 								aria-valuetext={`${sidebarProgressPercent}%`}
-								title={t('epub.globalSidebar.progressTitle', { progress: sidebarProgressPercent })}
+								title={`阅读进度 ${sidebarProgressPercent}%`}
 							>
 								{#each sidebarProgressSegments as segment (segment.index)}
 									<span class="book-progress-segment" class:filled={segment.filled}></span>
@@ -808,7 +805,7 @@
 							<EpubSearchInput
 								app={app}
 								bind:value={searchQuery}
-								placeholder={t('epub.globalSidebar.searchStartPlaceholder')}
+								placeholder={'输入并开始搜索...'}
 								dataSource="epub-highlights"
 								availableTags={highlightSearchMeta.availableTags}
 								availableSources={highlightSearchMeta.availableSources}
@@ -828,11 +825,11 @@
 								bind:value={searchQuery}
 								oninput={handleSearchInput}
 								onkeydown={handleSearchKeydown}
-								placeholder={t('epub.globalSidebar.searchPlaceholder')}
+								placeholder={'搜索...'}
 								class="epub-search-input"
 							/>
 							{#if searchQuery}
-								<button class="epub-search-clear" onclick={clearSearch} title={t('epub.globalSidebar.clearSearch')}>
+								<button class="epub-search-clear" onclick={clearSearch} title={'清除'}>
 									<span use:icon={'x'}></span>
 								</button>
 							{/if}
@@ -842,8 +839,8 @@
 						<button
 							class="epub-search-action-btn clickable-icon"
 							onclick={toggleBookshelfView}
-							title={t('epub.globalSidebar.bookshelf')}
-							aria-label={t('epub.globalSidebar.bookshelf')}
+							title={'书架'}
+							aria-label={'书架'}
 						>
 							<span use:icon={'library'}></span>
 						</button>
@@ -858,7 +855,7 @@
 					onclick={() => switchTab('toc')}
 				>
 					<span class="tab-icon" use:icon={'list'}></span>
-					<span class="tab-label">{t('epub.globalSidebar.tabs.toc')}</span>
+					<span class="tab-label">{'目录'}</span>
 				</button>
 				{#if sharedState.canUseExcerptNotes}
 					<button
@@ -867,7 +864,7 @@
 						onclick={() => switchTab('highlights')}
 					>
 						<span class="tab-icon" use:icon={'highlighter'}></span>
-						<span class="tab-label">{t('epub.globalSidebar.tabs.highlights')}</span>
+						<span class="tab-label">{'摘录'}</span>
 						<span class="tab-count">{highlightCount}</span>
 					</button>
 				{/if}
@@ -877,7 +874,7 @@
 					onclick={() => switchTab('bookmarks')}
 				>
 					<span class="tab-icon" use:icon={'bookmark'}></span>
-					<span class="tab-label">{t('epub.globalSidebar.tabs.bookmarks')}</span>
+					<span class="tab-label">{'书签'}</span>
 					<span class="tab-count">{bookmarkCount}</span>
 				</button>
 			</div>
@@ -887,24 +884,24 @@
 					<div class="epub-search-results">
 						{#if searching}
 							<div class="search-empty-state">
-								<EpubLoadingState message={t('epub.globalSidebar.searching')} surface />
+								<EpubLoadingState message={'搜索中...'} surface />
 							</div>
 						{:else if searched && !hasAnyResults}
-							<div class="search-empty-state">{t('epub.globalSidebar.noResults')}</div>
+							<div class="search-empty-state">{'未找到结果'}</div>
 						{:else if hasAnyResults}
 							<div class="search-toolbar">
 								<span class="search-toolbar-count">
-									{t('epub.globalSidebar.resultsCount', { count: resultCount })}
+									{`${resultCount} 个结果`}
 									{#if lastSearchedQuery && lastSearchedQuery !== searchQuery.trim()}
-										<span class="search-toolbar-stale">{t('epub.globalSidebar.queryChanged')}</span>
+										<span class="search-toolbar-stale">{' - 查询已变更'}</span>
 									{/if}
 								</span>
 								{#if activeTab === 'toc' && searchResults.length > 0}
 									<div class="search-toolbar-actions">
-										<button class="search-toolbar-btn" onclick={() => toggleAllChapters(false)} title={t('epub.globalSidebar.expandAll')}>
+										<button class="search-toolbar-btn" onclick={() => toggleAllChapters(false)} title={'展开全部'}>
 											<span use:icon={'chevrons-down'}></span>
 										</button>
-										<button class="search-toolbar-btn" onclick={() => toggleAllChapters(true)} title={t('epub.globalSidebar.collapseAll')}>
+										<button class="search-toolbar-btn" onclick={() => toggleAllChapters(true)} title={'折叠全部'}>
 											<span use:icon={'chevrons-up'}></span>
 										</button>
 									</div>

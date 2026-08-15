@@ -1,6 +1,5 @@
 <script lang="ts">
   import TabNavigation from "../ui/TabNavigation.svelte";
-  import { tr } from "../../utils/i18n";
   import type StandaloneEpubPlugin from "../../main";
   import type { EpubSettingsTabId } from "./epub-settings-types";
   import EpubSettingsBasicTab from "./EpubSettingsBasicTab.svelte";
@@ -11,11 +10,10 @@
   }
 
   let { plugin }: Props = $props();
-  let t = $derived($tr);
   let activeTab = $state<EpubSettingsTabId>("basic");
 
   let tabs = $derived.by<Array<{ id: EpubSettingsTabId; label: string; icon: string }>>(() => [
-    { id: "basic", label: t("epub.settings.tabs.basic"), icon: "" },
+    { id: "basic", label: '基础', icon: "" },
   ]);
 
   function switchTab(tabId: EpubSettingsTabId): void {

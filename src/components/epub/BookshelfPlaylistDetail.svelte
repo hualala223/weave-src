@@ -26,7 +26,7 @@
 		onBookKeydown,
 	}: BookshelfPlaylistDetailProps = $props();
 
-	const resolvedEmptyMessage = $derived(emptyMessage ?? t('epub.bookshelf.playlist.empty'));
+	const resolvedEmptyMessage = $derived(emptyMessage ?? '此书单还没有书籍。可在书架书籍的右键菜单中加入。');
 </script>
 
 <div class="epub-bookshelf-playlist-detail">

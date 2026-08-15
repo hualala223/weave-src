@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { setIcon } from 'obsidian';
-	import { tr } from '../../utils/i18n';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import {
 		isInteractiveFormTarget,
@@ -80,8 +79,6 @@
 		onSelectionChange,
 		onNavMetricsChange,
 	}: Props = $props();
-
-	let t = $derived($tr);
 	let overlayEl = $state<HTMLElement | null>(null);
 	let bodyEl = $state<HTMLElement | null>(null);
 	let textViewportEl = $state<HTMLElement | null>(null);
@@ -171,21 +168,21 @@
 
 	const surfaceOptions: Array<{
 		value: EpubParagraphModeSurfaceStyle;
-		labelKey: string;
+		label: string;
 	}> = [
-		{ value: 'spotlight', labelKey: 'epub.reader.paragraphMode.surfaceStyleSpotlight' },
-		{ value: 'blend', labelKey: 'epub.reader.paragraphMode.surfaceStyleBlend' },
-		{ value: 'dashed', labelKey: 'epub.reader.paragraphMode.surfaceStyleDashed' },
+		{ value: 'spotlight', label: '聚焦光晕' },
+		{ value: 'blend', label: '融入背景' },
+		{ value: 'dashed', label: '虚线边框' },
 	];
 
 	const transitionOptions: Array<{
 		value: EpubParagraphModeTransitionStyle;
-		labelKey: string;
+		label: string;
 	}> = [
-		{ value: 'steady', labelKey: 'epub.reader.paragraphMode.transitionStyleSteady' },
-		{ value: 'fade', labelKey: 'epub.reader.paragraphMode.transitionStyleFade' },
-		{ value: 'settle', labelKey: 'epub.reader.paragraphMode.transitionStyleSettle' },
-		{ value: 'slide', labelKey: 'epub.reader.paragraphMode.transitionStyleSlide' },
+		{ value: 'steady', label: '静稳' },
+		{ value: 'fade', label: '淡隐' },
+		{ value: 'settle', label: '轻落' },
+		{ value: 'slide', label: '水平滑页' },
 	];
 	function clampFontScale(value: number): number {
 		return Math.max(85, Math.min(135, Math.round(value)));
@@ -664,8 +661,8 @@
 				<button
 					type="button"
 					class={`clickable-icon epub-paragraph-overlay__random ${randomReadingActive ? 'is-active' : ''}`}
-					title={t('epub.reader.paragraphMode.randomReading')}
-					aria-label={t('epub.reader.paragraphMode.randomReading')}
+					title={'随机段落'}
+					aria-label={'随机段落'}
 					aria-pressed={randomReadingActive}
 					onclick={() => void onRandomParagraph?.()}
 				>
@@ -675,8 +672,8 @@
 					<button
 						type="button"
 						class={`clickable-icon epub-paragraph-overlay__settings-toggle ${settingsPanelOpen ? 'is-active' : ''}`}
-						title={t('epub.reader.paragraphMode.settingsLabel')}
-						aria-label={t('epub.reader.paragraphMode.settingsLabel')}
+						title={'段落设置'}
+						aria-label={'段落设置'}
 						aria-expanded={settingsPanelOpen}
 						bind:this={settingsButtonEl}
 						onclick={toggleSettingsPanel}
@@ -686,9 +683,9 @@
 					{#if settingsPanelOpen}
 						<div class="epub-paragraph-overlay__settings-popover" bind:this={settingsPanelEl}>
 							<div class="epub-paragraph-overlay__settings-row">
-								<div class="epub-paragraph-overlay__settings-title">{t('epub.reader.paragraphMode.surfaceStyleLabel')}</div>
+								<div class="epub-paragraph-overlay__settings-title">{'段落界面风格'}</div>
 								<label class="epub-paragraph-overlay__settings-value-wrap">
-									<span class="epub-paragraph-overlay__sr-only">{t('epub.reader.paragraphMode.surfaceStyleLabel')}</span>
+									<span class="epub-paragraph-overlay__sr-only">{'段落界面风格'}</span>
 									<select
 										class="epub-paragraph-overlay__settings-select"
 										value={surfaceStyle}
@@ -701,15 +698,15 @@
 										}}
 									>
 										{#each surfaceOptions as option (option.value)}
-											<option value={option.value}>{t(option.labelKey)}</option>
+											<option value={option.value}>{option.label}</option>
 										{/each}
 									</select>
 								</label>
 							</div>
 							<div class="epub-paragraph-overlay__settings-row">
-								<div class="epub-paragraph-overlay__settings-title">{t('epub.reader.paragraphMode.transitionStyleLabel')}</div>
+								<div class="epub-paragraph-overlay__settings-title">{'切换效果'}</div>
 								<label class="epub-paragraph-overlay__settings-value-wrap">
-									<span class="epub-paragraph-overlay__sr-only">{t('epub.reader.paragraphMode.transitionStyleLabel')}</span>
+									<span class="epub-paragraph-overlay__sr-only">{'切换效果'}</span>
 									<select
 										class="epub-paragraph-overlay__settings-select"
 										value={transitionStyle}
@@ -719,19 +716,19 @@
 										}}
 									>
 										{#each transitionOptions as option (option.value)}
-											<option value={option.value}>{t(option.labelKey)}</option>
+											<option value={option.value}>{option.label}</option>
 										{/each}
 									</select>
 								</label>
 							</div>
 							<div class="epub-paragraph-overlay__settings-row">
-								<div class="epub-paragraph-overlay__settings-title">{t('epub.reader.paragraphMode.fontScaleToggle')}</div>
-								<label class="epub-paragraph-overlay__font-slider" aria-label={t('epub.reader.paragraphMode.fontScaleLabel')}>
+								<div class="epub-paragraph-overlay__settings-title">{'字体大小'}</div>
+								<label class="epub-paragraph-overlay__font-slider" aria-label={'手动微调字号'}>
 									<button
 										type="button"
 										class="clickable-icon epub-paragraph-overlay__font-step"
-										title={t('epub.reader.paragraphMode.fontScaleDecrease')}
-										aria-label={t('epub.reader.paragraphMode.fontScaleDecrease')}
+										title={'减小字号'}
+										aria-label={'减小字号'}
 										onclick={() => void onFontScaleChange?.(clampFontScale(fontScale - 5))}
 									>
 										<span>A-</span>
@@ -742,7 +739,7 @@
 										max="135"
 										step="1"
 										value={fontScale}
-										aria-label={t('epub.reader.paragraphMode.fontScaleLabel')}
+										aria-label={'手动微调字号'}
 										oninput={(event) => {
 											const target = event.currentTarget as HTMLInputElement;
 											void onFontScaleChange?.(clampFontScale(Number(target.value)));
@@ -752,8 +749,8 @@
 									<button
 										type="button"
 										class="clickable-icon epub-paragraph-overlay__font-step"
-										title={t('epub.reader.paragraphMode.fontScaleIncrease')}
-										aria-label={t('epub.reader.paragraphMode.fontScaleIncrease')}
+										title={'增大字号'}
+										aria-label={'增大字号'}
 										onclick={() => void onFontScaleChange?.(clampFontScale(fontScale + 5))}
 									>
 										<span>A+</span>
@@ -766,8 +763,8 @@
 				<button
 					type="button"
 					class="clickable-icon epub-paragraph-overlay__close"
-					title={immersive ? t('epub.reader.paragraphMode.immersiveExit') : t('epub.reader.paragraphMode.immersiveEnter')}
-					aria-label={immersive ? t('epub.reader.paragraphMode.immersiveExit') : t('epub.reader.paragraphMode.immersiveEnter')}
+					title={immersive ? '退出沉浸式全屏' : '进入沉浸式全屏'}
+					aria-label={immersive ? '退出沉浸式全屏' : '进入沉浸式全屏'}
 					onclick={() => onToggleImmersive?.()}
 				>
 					<span use:icon={immersive ? 'minimize' : 'maximize'}></span>
@@ -775,8 +772,8 @@
 				<button
 					type="button"
 					class="clickable-icon epub-paragraph-overlay__close"
-					title={t('epub.reader.paragraphMode.close')}
-					aria-label={t('epub.reader.paragraphMode.close')}
+					title={'退出段落模式'}
+					aria-label={'退出段落模式'}
 					onclick={() => {
 						clearSelection();
 						onClose?.();
@@ -835,7 +832,7 @@
 					});
 				}}>
 					<span use:icon={'arrow-left'}></span>
-					<span>{t('epub.reader.paragraphMode.previous')}</span>
+					<span>{'上一段'}</span>
 				</button>
 				<div class="epub-paragraph-overlay__status" aria-live="polite">{getProgressLabel()}</div>
 				<button type="button" class="clickable-icon epub-paragraph-overlay__nav-btn" onclick={() => {
@@ -847,7 +844,7 @@
 					});
 				}}>
 					<span use:icon={'arrow-right'}></span>
-					<span>{t('epub.reader.paragraphMode.next')}</span>
+					<span>{'下一段'}</span>
 				</button>
 			</div>
 		</div>

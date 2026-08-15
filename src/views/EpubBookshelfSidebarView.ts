@@ -1,7 +1,6 @@
 import { type EventRef, ItemView, Notice, WorkspaceLeaf } from "obsidian";
 import { EPUB_RUNTIME } from "../services/epub";
 import { resolveRecentEpubPath } from "../utils/epub-leaf-utils";
-import { i18n, syncI18nLanguage } from "../utils/i18n";
 import { logger } from "../utils/logger";
 import { getViewSurfaceTokens } from "../utils/view-location-utils";
 import type { EpubViewHost } from "./epub-view-host";
@@ -24,7 +23,7 @@ export class EpubBookshelfSidebarView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return i18n.t("views.epubBookshelfSidebar.title");
+		return '我的书架';
 	}
 
 	getIcon(): string {
@@ -32,7 +31,6 @@ export class EpubBookshelfSidebarView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
-		syncI18nLanguage();
 		this.contentEl.empty();
 		this.contentEl.addClass("weave-epub-sidebar-view", "weave-epub-bookshelf-sidebar-view");
 		this.applySurfaceContext();
@@ -64,7 +62,7 @@ export class EpubBookshelfSidebarView extends ItemView {
 			this.contentEl.empty();
 			this.contentEl.createDiv({
 				cls: "epub-error",
-				text: i18n.t("views.epubBookshelfSidebar.loadFailed"),
+				text: '我的书架加载失败',
 			});
 		}
 	}
@@ -83,7 +81,7 @@ export class EpubBookshelfSidebarView extends ItemView {
 			await this.closeBookshelf();
 
 			if (!recentPath) {
-				new Notice(i18n.t("views.epubView.notice.noRecentBook"));
+				new Notice('暂无最近打开的 EPUB');
 				return;
 			}
 
@@ -92,7 +90,7 @@ export class EpubBookshelfSidebarView extends ItemView {
 			}
 		} catch (error) {
 			logger.error("[EpubBookshelfSidebarView] Failed to return to EPUB sidebar:", error);
-			new Notice(i18n.t("views.epubBookshelfSidebar.returnToRecentBookFailed"));
+			new Notice('返回 EPUB 目录失败');
 		}
 	}
 

@@ -42,10 +42,6 @@ vi.mock("../../epub/epub-vault-path", () => ({
 	resolveEpubVaultPath: (_app: unknown, path: string) => path,
 }));
 
-vi.mock("../../../utils/i18n", () => ({
-	i18n: { t: (key: string) => key },
-}));
-
 import { NavigationHub } from "../NavigationHub";
 
 describe("NavigationHub", () => {

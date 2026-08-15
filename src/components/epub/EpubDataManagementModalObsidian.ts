@@ -1,7 +1,6 @@
 import { App, Modal } from "obsidian";
 import { mount, unmount } from "svelte";
 import type StandaloneEpubPlugin from "../../main";
-import { i18n } from "../../utils/i18n";
 import EpubDataManagementModal from "./EpubDataManagementModal.svelte";
 
 export interface EpubDataManagementModalObsidianOptions {
@@ -19,7 +18,7 @@ export class EpubDataManagementModalObsidian extends Modal {
 	}
 
 	onOpen() {
-		this.setTitle(i18n.t("epub.dataManagement.title"));
+		this.setTitle('EPUB 数据管理');
 		this.modalEl.addClass("weave-epub-data-management-modal");
 		this.contentEl.addClass("weave-epub-data-management-modal-content");
 

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { setIcon } from 'obsidian';
 	import { onMount, tick } from 'svelte';
-	import { tr } from '../../utils/i18n';
 	import EpubLoadingState from './EpubLoadingState.svelte';
 
 	interface Props {
@@ -27,9 +26,6 @@
 		statusDetail = '',
 		busy = false,
 	}: Props = $props();
-
-	let t = $derived($tr);
-
 	let jumpPopoverOpen = $state(false);
 	let jumpInputValue = $state<string | number>('');
 	let jumpInputEl: HTMLInputElement | undefined = $state(undefined);
@@ -60,11 +56,11 @@
 	}
 
 	function getPrevLabel() {
-		return vertical ? t('epub.bottomNav.prevScreen') : t('epub.bottomNav.prevPage');
+		return vertical ? '上一屏' : '上一页';
 	}
 
 	function getNextLabel() {
-		return vertical ? t('epub.bottomNav.nextScreen') : t('epub.bottomNav.nextPage');
+		return vertical ? '下一屏' : '下一页';
 	}
 
 	function canJumpToPage() {
@@ -191,7 +187,7 @@
 				onclick={handleStatusClick}
 				onkeydown={handleStatusKeydown}
 			>
-				<span class="epub-nav-status-label">{t('epub.bottomNav.pageStatus', { current: currentPage, total: totalPages })}</span>
+				<span class="epub-nav-status-label">{`第 ${currentPage} / ${totalPages} 页`}</span>
 			</button>
 			{#if hasStatusDetail()}
 				<span class="epub-nav-status-detail" title={statusDetail}>{statusDetail}</span>
@@ -205,10 +201,10 @@
 					<span class="epub-nav-status-divider"></span>
 					<span class="epub-nav-status-total">{totalPages}</span>
 				{:else}
-					<span class="epub-nav-status-label">{t('epub.bottomNav.pageStatus', { current: currentPage, total: totalPages })}</span>
+					<span class="epub-nav-status-label">{`第 ${currentPage} / ${totalPages} 页`}</span>
 				{/if}
 			{:else}
-				<EpubLoadingState variant="compact" message={t('epub.bottomNav.locating')} />
+				<EpubLoadingState variant="compact" message={'正在定位页码…'} />
 			{/if}
 			{#if vertical && hasStatusDetail()}
 				<span class="epub-nav-status-vertical-detail" title={statusDetail}>{statusDetail}</span>
@@ -217,7 +213,7 @@
 		{#if jumpPopoverOpen}
 			<div class="epub-nav-jump-popover" class:vertical>
 				<label class="epub-nav-jump-field">
-					<span class="epub-nav-jump-label">{t('epub.bottomNav.jumpLabel')}</span>
+					<span class="epub-nav-jump-label">{'跳转页数'}</span>
 					<input
 						class="epub-nav-jump-input"
 						type="number"
@@ -240,7 +236,7 @@
 					/>
 				</label>
 				<div class="epub-nav-jump-actions">
-					<button class="clickable-icon epub-nav-jump-btn" type="button" onclick={() => void submitJumpPage()} disabled={jumpSubmitting}>{t('epub.bottomNav.jumpAction')}</button>
+					<button class="clickable-icon epub-nav-jump-btn" type="button" onclick={() => void submitJumpPage()} disabled={jumpSubmitting}>{'跳转'}</button>
 				</div>
 			</div>
 		{/if}

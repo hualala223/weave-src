@@ -3,7 +3,6 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { fromStore } from 'svelte/store';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
-	import { tr } from '../../utils/i18n';
 	import {
 		getVaultFileBasename,
 		VaultMarkdownFileSuggest,
@@ -25,10 +24,6 @@
 		filter,
 		onSelect,
 	}: Props = $props();
-
-	const trState = fromStore(tr);
-	let t = $derived(trState.current);
-
 	let inputEl = $state<HTMLInputElement | null>(null);
 	let inputValue = $state('');
 	let isFocused = $state(false);
@@ -133,7 +128,7 @@
 		<button
 			type="button"
 			class="weave-vault-file-search__clear clickable-icon"
-			aria-label={t('epub.globalSidebar.searchUi.clearSearch')}
+			aria-label={'清除搜索'}
 			onmousedown={handleClearMouseDown}
 			onclick={handleClear}
 		>

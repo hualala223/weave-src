@@ -32,7 +32,6 @@ import {
 } from "../services/navigation/navigation-intent";
 import type { CanvasViewLike, WorkspaceLeafWithGroup } from "../types/obsidian-extensions";
 import { getBookSessionManager } from "../services/epub/session/book-session-manager-access";
-import { i18n, syncI18nLanguage } from "../utils/i18n";
 import { logger } from "../utils/logger";
 import { getViewSurfaceTokens } from "../utils/view-location-utils";
 import type { ViewSurfaceTokens } from "../utils/view-location-utils";
@@ -136,12 +135,14 @@ export class EpubView extends ItemView {
 		this.plugin = plugin;
 	}
 
-	private t(key: string, params?: Record<string, string | number>): string {
-		return i18n.t(key, params);
-	}
-
 	private getCanvasDirectionLabel(direction: CanvasLayoutDirection): string {
-		return this.t(`views.epubView.direction.${direction}`);
+		const directionLabels: Record<CanvasLayoutDirection, string> = {
+			down: "向下",
+			right: "向右",
+			up: "向上",
+			left: "向左",
+		};
+		return directionLabels[direction];
 	}
 
 	private canUseReadingProgress(): boolean {
@@ -252,20 +253,20 @@ export class EpubView extends ItemView {
 		this.clearHeaderActionRefs();
 
 		if (!Platform.isMobile) {
-			this.sidebarBtn = this.addAction("list", this.t("views.epubView.menu.toggleSidebar"), () => {
+			this.sidebarBtn = this.addAction("list", '切换侧边栏', () => {
 				void this.toggleGlobalSidebar();
 			});
 		}
 
 		const registerExcerptHeaderActions = () => {
-			this.autoInsertBtn = this.addAction("zap", this.t("views.epubView.label.autoModeToolbar"), () => {
+			this.autoInsertBtn = this.addAction("zap", '自动化', () => {
 				this.autoInsertEnabled = !this.autoInsertEnabled;
 				this.updateAutoInsertBtn();
 				this.actionHandlers.setAutoInsert?.(this.autoInsertEnabled);
 			});
 			this.screenshotBtn = this.addAction(
 				"camera",
-				this.t("views.epubView.label.screenshotToolToolbar"),
+				'截图工具',
 				() => {
 					this.screenshotModeActive = !this.screenshotModeActive;
 					this.updateScreenshotBtn();
@@ -274,7 +275,7 @@ export class EpubView extends ItemView {
 			);
 			this.saveAsImageBtn = this.addAction(
 				"image",
-				this.t("views.epubView.label.screenshotSaveAsImageToolbar"),
+				'截图保存为图片',
 				() => {
 					this.screenshotSaveAsImage = !this.screenshotSaveAsImage;
 					this.updateSaveAsImageBtn();
@@ -286,12 +287,12 @@ export class EpubView extends ItemView {
 		registerExcerptHeaderActions();
 
 		if (!Platform.isMobile) {
-			this.bookmarkBtn = this.addAction("bookmark", this.t("views.epubView.menu.addBookmark"), () => {
+			this.bookmarkBtn = this.addAction("bookmark", '添加当前页书签', () => {
 				void this.actionHandlers.addBookmark?.();
 			});
 			this.readingReferenceBtn = this.addAction(
 				"flag",
-				this.t("views.epubView.label.readingPosition"),
+				'阅读位置',
 				(evt) => {
 					this.openReadingPositionMenu(evt);
 				}
@@ -301,37 +302,35 @@ export class EpubView extends ItemView {
 		if (!Platform.isMobile) {
 			this.flowBtn = this.addAction(
 				"arrow-up-down",
-				this.t("views.epubView.label.readingModePaginated"),
+				'翻页',
 				() => {
 					this.toggleFlowMode();
 				}
 			);
 			this.layoutBtn = this.addAction(
 				"scroll-text",
-				this.t("views.epubView.label.layoutSingle"),
+				'单栏',
 				() => {
 					this.cycleLayoutMode();
 				}
 			);
 			this.paragraphModeBtn = this.addAction(
 				"pilcrow",
-				this.t("views.epubView.label.paragraphModeOff"),
+				'段落模式（关）',
 				() => {
 					this.toggleParagraphMode();
 				}
 			);
 			this.canvasDirBtn = this.addAction(
 				"arrow-down",
-				this.t("views.epubView.label.canvasDirection", {
-					direction: this.getCanvasDirectionLabel("down"),
-				}),
+				`Canvas 方向：${this.getCanvasDirectionLabel("down")}`,
 				(evt) => {
 					this.showDirectionMenu(evt);
 				}
 			);
 			this.canvasBtn = this.addAction(
 				"layout-dashboard",
-				this.t("views.epubView.label.canvasOff"),
+				'Canvas 脑图（关）',
 				(evt) => {
 					this.showCanvasMenu(evt);
 				}
@@ -365,7 +364,6 @@ export class EpubView extends ItemView {
 	}
 
 	onPaneMenu(menu: Menu, source: string): void {
-		syncI18nLanguage();
 		super.onPaneMenu(menu, source);
 
 		const excerptSettings = this.actionHandlers.getExcerptSettings?.();
@@ -387,12 +385,12 @@ export class EpubView extends ItemView {
 
 	private addPaneMenuGroup(
 		menu: Menu,
-		titleKey: string,
+		title: string,
 		icon: string,
 		populate: (subMenu: Menu) => void
 	): void {
 		menu.addItem((item) => {
-			item.setTitle(this.t(titleKey));
+			item.setTitle(title);
 			item.setIcon(icon);
 			const subMenu = this.resolveMenuSubmenu(item, menu);
 			populate(subMenu);
@@ -416,7 +414,7 @@ export class EpubView extends ItemView {
 
 	private appendReadingFlowModeItems(subMenu: Menu): void {
 		subMenu.addItem((item) => {
-			item.setTitle(this.t("views.epubView.menu.flowModeScrolled"));
+			item.setTitle('连续滚动');
 			item.setIcon("scroll-text");
 			item.setChecked(this.flowMode === "scrolled");
 			item.onClick(() => {
@@ -431,7 +429,7 @@ export class EpubView extends ItemView {
 			});
 		});
 		subMenu.addItem((item) => {
-			item.setTitle(this.t("views.epubView.menu.flowModePaginated"));
+			item.setTitle('翻页');
 			item.setIcon("arrow-up-down");
 			item.setChecked(this.flowMode === "paginated");
 			item.onClick(() => {
@@ -447,11 +445,11 @@ export class EpubView extends ItemView {
 	}
 
 	private appendReadingAndDisplayPaneMenu(menu: Menu, readerSettings: EpubReaderSettings): void {
-		this.addPaneMenuGroup(menu, "views.epubView.menu.groupReadingDisplay", "book-open-text", (subMenu) => {
+		this.addPaneMenuGroup(menu, '阅读与显示', "book-open-text", (subMenu) => {
 			this.appendReadingFlowModeItems(subMenu);
 
 			subMenu.addItem((item) => {
-				item.setTitle(this.t("views.epubView.menu.scrolledSideNav"));
+				item.setTitle('连续滚动侧边翻页键');
 				item.setIcon("panel-right");
 				item.setChecked(readerSettings.showScrolledSideNav);
 				item.onClick(() => {
@@ -466,7 +464,7 @@ export class EpubView extends ItemView {
 			}
 
 			subMenu.addItem((item) => {
-				item.setTitle(this.t("views.epubView.menu.typography"));
+				item.setTitle('阅读排版调节');
 				item.setIcon("sliders-horizontal");
 				item.onClick(() => {
 					window.setTimeout(() => {
@@ -477,7 +475,7 @@ export class EpubView extends ItemView {
 
 			if (this.actionHandlers.toggleParagraphMode) {
 				subMenu.addItem((item) => {
-					item.setTitle(this.t("views.epubView.menu.paragraphMode"));
+					item.setTitle('段落模式');
 					item.setIcon("pilcrow");
 					item.setChecked(this.canUseParagraphMode() && this.paragraphModeEnabled);
 					item.onClick(() => {
@@ -488,12 +486,12 @@ export class EpubView extends ItemView {
 
 			if (this.canUseFootnotePreview()) {
 				subMenu.addItem((item) => {
-					item.setTitle(this.t("views.epubView.menu.footnoteClickAction"));
+					item.setTitle('点击脚注序号');
 					item.setIcon("mouse-pointer");
 					const footnoteMenu = this.resolveMenuSubmenu(item, subMenu);
 
 					footnoteMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.footnotePreview"));
+						subItem.setTitle('显示脚注浮窗');
 						subItem.setChecked(readerSettings.footnoteClickAction === "preview");
 						subItem.onClick(() => {
 							void this.actionHandlers.updateReaderSettings?.({
@@ -503,7 +501,7 @@ export class EpubView extends ItemView {
 					});
 
 					footnoteMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.footnoteNavigate"));
+						subItem.setTitle('跳转到脚注位置');
 						subItem.setChecked(readerSettings.footnoteClickAction === "navigate");
 						subItem.onClick(() => {
 							void this.actionHandlers.updateReaderSettings?.({
@@ -516,12 +514,12 @@ export class EpubView extends ItemView {
 
 			if (readerSettings.paragraphModeEnabled) {
 				subMenu.addItem((item) => {
-					item.setTitle(this.t("views.epubView.menu.paragraphModeSurfaceStyle"));
+					item.setTitle('段落界面风格');
 					item.setIcon("panel-top-open");
 					const surfaceMenu = this.resolveMenuSubmenu(item, subMenu);
 
 					surfaceMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.paragraphModeSurfaceStyleSpotlight"));
+						subItem.setTitle('聚焦光晕');
 						subItem.setChecked(readerSettings.paragraphModeSurfaceStyle === "spotlight");
 						subItem.onClick(() => {
 							void this.actionHandlers.updateReaderSettings?.({
@@ -531,7 +529,7 @@ export class EpubView extends ItemView {
 					});
 
 					surfaceMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.paragraphModeSurfaceStyleBlend"));
+						subItem.setTitle('融入背景');
 						subItem.setChecked(readerSettings.paragraphModeSurfaceStyle === "blend");
 						subItem.onClick(() => {
 							void this.actionHandlers.updateReaderSettings?.({
@@ -541,7 +539,7 @@ export class EpubView extends ItemView {
 					});
 
 					surfaceMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.paragraphModeSurfaceStyleDashed"));
+						subItem.setTitle('虚线边框');
 						subItem.setChecked(readerSettings.paragraphModeSurfaceStyle === "dashed");
 						subItem.onClick(() => {
 							void this.actionHandlers.updateReaderSettings?.({
@@ -552,19 +550,19 @@ export class EpubView extends ItemView {
 				});
 
 				subMenu.addItem((item) => {
-					item.setTitle(this.t("views.epubView.menu.paragraphModeTransitionStyle"));
+					item.setTitle('段落切换效果');
 					item.setIcon("refresh-cw");
 					const transitionMenu = this.resolveMenuSubmenu(item, subMenu);
 					const transitionOptions = [
-						["steady", "views.epubView.menu.paragraphModeTransitionStyleSteady"],
-						["fade", "views.epubView.menu.paragraphModeTransitionStyleFade"],
-						["settle", "views.epubView.menu.paragraphModeTransitionStyleSettle"],
-						["slide", "views.epubView.menu.paragraphModeTransitionStyleSlide"],
+						["steady", '静稳'],
+						["fade", '淡隐'],
+						["settle", '轻落'],
+						["slide", '水平滑页'],
 					] as const;
 
-					for (const [value, key] of transitionOptions) {
+					for (const [value, label] of transitionOptions) {
 						transitionMenu.addItem((subItem) => {
-							subItem.setTitle(this.t(key));
+							subItem.setTitle(label);
 							subItem.setChecked(readerSettings.paragraphModeTransitionStyle === value);
 							subItem.onClick(() => {
 								void this.actionHandlers.updateReaderSettings?.({
@@ -579,9 +577,9 @@ export class EpubView extends ItemView {
 	}
 
 	private appendBookmarksProgressPaneMenu(menu: Menu): void {
-		this.addPaneMenuGroup(menu, "views.epubView.menu.groupBookmarksProgress", "bookmark", (bookmarksMenu) => {
+		this.addPaneMenuGroup(menu, '书签与进度', "bookmark", (bookmarksMenu) => {
 			bookmarksMenu.addItem((subItem) => {
-				subItem.setTitle(this.t("views.epubView.menu.addBookmark"));
+				subItem.setTitle('添加当前页书签');
 				subItem.setIcon("bookmark");
 				subItem.onClick(() => {
 					void this.actionHandlers.addBookmark?.();
@@ -589,7 +587,7 @@ export class EpubView extends ItemView {
 			});
 
 			bookmarksMenu.addItem((subItem) => {
-				subItem.setTitle(this.t("views.epubView.label.readingPosition"));
+				subItem.setTitle('阅读位置');
 				subItem.setIcon("flag");
 				subItem.setChecked(this.hasReadingReferencePoint);
 				subItem.onClick((evt) => {
@@ -603,7 +601,7 @@ export class EpubView extends ItemView {
 	private populateExcerptToolToggleItems(excerptToolsMenu: Menu): void {
 		excerptToolsMenu.addItem((subItem) => {
 			subItem.setTitle(
-				this.t("views.epubView.menu.autoInsertMode")
+				'自动化'
 			);
 			subItem.setIcon("zap");
 			subItem.setChecked(this.canUseExcerptNotes() ? this.autoInsertEnabled : false);
@@ -616,7 +614,7 @@ export class EpubView extends ItemView {
 
 		excerptToolsMenu.addItem((subItem) => {
 			subItem.setTitle(
-				this.t("views.epubView.menu.screenshotTool")
+				'截图工具'
 			);
 			subItem.setIcon("camera");
 			subItem.setChecked(this.canUseExcerptNotes() ? this.screenshotModeActive : false);
@@ -629,7 +627,7 @@ export class EpubView extends ItemView {
 
 		excerptToolsMenu.addItem((subItem) => {
 			subItem.setTitle(
-				this.t("views.epubView.menu.screenshotSaveAsImage")
+				'截图保存为图片'
 			);
 			subItem.setIcon(this.screenshotSaveAsImage ? "image" : "code");
 			subItem.setChecked(this.canUseExcerptNotes() ? this.screenshotSaveAsImage : false);
@@ -644,7 +642,7 @@ export class EpubView extends ItemView {
 	private populateExcerptNotesSettings(subMenu: Menu, excerptSettings: EpubExcerptSettings): void {
 		if (this.canUseExcerptNotes()) {
 			subMenu.addItem((item) => {
-				item.setTitle(this.t("views.epubView.menu.excerptTimestamp"));
+				item.setTitle('摘录时间戳');
 				item.setIcon("clock");
 				item.setChecked(excerptSettings.addCreationTime);
 				item.onClick(() => {
@@ -655,17 +653,17 @@ export class EpubView extends ItemView {
 			});
 
 			subMenu.addItem((item) => {
-				item.setTitle(this.t("views.epubView.menu.chapterLocation"));
+				item.setTitle('章节定位');
 				item.setIcon("map-pin");
 				const chapterLocationMenu = this.resolveMenuSubmenu(item, subMenu);
 				const formatOptions = [
-					{ format: "root" as const, labelKey: "views.epubView.menu.chapterLocationRoot" },
-					{ format: "leaf" as const, labelKey: "views.epubView.menu.chapterLocationLeaf" },
-					{ format: "full" as const, labelKey: "views.epubView.menu.chapterLocationFull" },
+					{ format: "root" as const, label: '仅顶层（A）' },
+					{ format: "leaf" as const, label: '仅末级（C）' },
+					{ format: "full" as const, label: '完整路径（A/B/C）' },
 				];
 				for (const option of formatOptions) {
 					chapterLocationMenu.addItem((subItem) => {
-						subItem.setTitle(this.t(option.labelKey));
+						subItem.setTitle(option.label);
 						subItem.setChecked(excerptSettings.chapterLocationFormat === option.format);
 						subItem.onClick(() => {
 							if (excerptSettings.chapterLocationFormat === option.format) {
@@ -682,12 +680,12 @@ export class EpubView extends ItemView {
 
 		if (this.canUseStyledExcerpts()) {
 				subMenu.addItem((item) => {
-					item.setTitle(this.t("views.epubView.menu.concealedText"));
+					item.setTitle('隐藏文本');
 					item.setIcon("eye");
 					const concealedMenu = this.resolveMenuSubmenu(item, subMenu);
 
 					concealedMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.concealStrikethroughText"));
+						subItem.setTitle('隐藏删除线文本');
 						subItem.setChecked(excerptSettings.strikethroughDisplayMode === "conceal");
 						subItem.onClick(() => {
 							void this.actionHandlers.updateExcerptSettings?.({
@@ -700,7 +698,7 @@ export class EpubView extends ItemView {
 					});
 
 					concealedMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.showConcealedTextInSidebar"));
+						subItem.setTitle('侧边栏显示隐藏文本与删除线');
 						subItem.setChecked(excerptSettings.showStrikethroughInSidebar);
 						subItem.onClick(() => {
 							void this.actionHandlers.updateExcerptSettings?.({
@@ -718,7 +716,7 @@ export class EpubView extends ItemView {
 			return;
 		}
 
-		this.addPaneMenuGroup(menu, "views.epubView.menu.groupExcerptTools", "highlighter", (excerptToolsMenu) => {
+		this.addPaneMenuGroup(menu, '摘录工具与设置', "highlighter", (excerptToolsMenu) => {
 			this.populateExcerptToolToggleItems(excerptToolsMenu);
 
 			if (this.filePath) {
@@ -737,8 +735,8 @@ export class EpubView extends ItemView {
 			menu.addItem((item) => {
 				item.setTitle(
 					this.canvasModeActive
-						? this.t("views.epubView.label.canvasOn")
-						: this.t("views.epubView.label.canvasOff")
+						? 'Canvas 脑图（开）'
+						: 'Canvas 脑图（关）'
 				);
 				item.setIcon("layout-dashboard");
 				item.setChecked(this.canvasModeActive);
@@ -814,7 +812,6 @@ export class EpubView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
-		syncI18nLanguage();
 		this.isOpen = true;
 		this.toolbarHandlersReady = false;
 		this.contentEl.empty();
@@ -907,7 +904,7 @@ export class EpubView extends ItemView {
 		this.inlineToolbarEl = shellEl.createDiv({ cls: "epub-left-inline-toolbar" });
 		this.inlineToolbarToggleBtn = this.createInlineToolbarButton(
 			"chevrons-right",
-			this.t("views.epubView.label.inlineToolbarExpand"),
+			'展开 EPUB 工具栏',
 			() => {
 				this.inlineToolbarExpanded = !this.inlineToolbarExpanded;
 				this.updateInlineToolbarExpandedState();
@@ -921,14 +918,14 @@ export class EpubView extends ItemView {
 		});
 		this.inlineSidebarBtn = this.appendInlineActionButton(
 			"list",
-			this.t("views.epubView.menu.toggleSidebar"),
+			'切换侧边栏',
 			() => {
 				void this.toggleGlobalSidebar();
 			}
 		);
 		this.inlineSaveAsImageBtn = this.appendInlineActionButton(
 			"image",
-			this.t("views.epubView.label.saveAsImageOn"),
+			'保存为图片文件（开）',
 			() => {
 				this.screenshotSaveAsImage = !this.screenshotSaveAsImage;
 				this.updateSaveAsImageBtn();
@@ -937,7 +934,7 @@ export class EpubView extends ItemView {
 		);
 		this.inlineScreenshotBtn = this.appendInlineActionButton(
 			"camera",
-			this.t("views.epubView.label.screenshotToolOff"),
+			'截图工具（关）',
 			() => {
 				this.screenshotModeActive = !this.screenshotModeActive;
 				this.updateScreenshotBtn();
@@ -946,7 +943,7 @@ export class EpubView extends ItemView {
 		);
 		this.inlineAutoInsertBtn = this.appendInlineActionButton(
 			"zap",
-			this.t("views.epubView.label.autoModeOff"),
+			'自动模式（关：复制，开：插入）',
 			() => {
 				this.autoInsertEnabled = !this.autoInsertEnabled;
 				this.updateAutoInsertBtn();
@@ -955,44 +952,42 @@ export class EpubView extends ItemView {
 		);
 		this.inlineFlowBtn = this.appendInlineActionButton(
 			"arrow-up-down",
-			this.t("views.epubView.label.readingModePaginated"),
+			'翻页',
 			() => {
 				this.toggleFlowMode();
 			}
 		);
 		this.inlineLayoutBtn = this.appendInlineActionButton(
 			"scroll-text",
-			this.t("views.epubView.label.layoutSingle"),
+			'单栏',
 			() => {
 				this.cycleLayoutMode();
 			}
 		);
 		this.inlineParagraphModeBtn = this.appendInlineActionButton(
 			"pilcrow",
-			this.t("views.epubView.label.paragraphModeOff"),
+			'段落模式（关）',
 			() => {
 				this.toggleParagraphMode();
 			}
 		);
 		this.inlineCanvasDirBtn = this.appendInlineActionButton(
 			"arrow-down",
-			this.t("views.epubView.label.canvasDirection", {
-				direction: this.getCanvasDirectionLabel("down"),
-			}),
+			`Canvas 方向：${this.getCanvasDirectionLabel("down")}`,
 			(evt) => {
 				this.showDirectionMenu(evt);
 			}
 		);
 		this.inlineCanvasBtn = this.appendInlineActionButton(
 			"layout-dashboard",
-			this.t("views.epubView.label.canvasOff"),
+			'Canvas 脑图（关）',
 			(evt) => {
 				this.showCanvasMenu(evt);
 			}
 		);
 		this.inlineReadingReferenceBtn = this.appendInlineActionButton(
 			"flag",
-			this.t("views.epubView.label.readingPosition"),
+			'阅读位置',
 			(evt) => {
 				this.openReadingPositionMenu(evt);
 			}
@@ -1040,8 +1035,8 @@ export class EpubView extends ItemView {
 		}
 		const icon = this.inlineToolbarExpanded ? "chevrons-left" : "chevrons-right";
 		const label = this.inlineToolbarExpanded
-			? this.t("views.epubView.label.inlineToolbarCollapse")
-			: this.t("views.epubView.label.inlineToolbarExpand");
+			? '收起 EPUB 工具栏'
+			: '展开 EPUB 工具栏';
 		setIcon(this.inlineToolbarToggleBtn, icon);
 		this.inlineToolbarToggleBtn.setAttribute("aria-label", label);
 		this.inlineToolbarToggleBtn.setAttribute("title", label);
@@ -1129,7 +1124,7 @@ export class EpubView extends ItemView {
 			}
 		}
 
-		return this.t("views.epubView.emptyState.bookshelfTitle");
+		return '我的书架';
 	}
 
 	private getResolvedHeaderTitle(): string {
@@ -1440,16 +1435,14 @@ export class EpubView extends ItemView {
 			this.actionHandlers.bindCanvasPath?.(foundCanvasPath);
 			this.updateCanvasBtn();
 			new Notice(
-				this.t("views.epubView.notice.canvasLinked", {
-					name: foundCanvasPath.split("/").pop() || foundCanvasPath,
-				})
+				`Canvas 已关联：${foundCanvasPath.split("/").pop() || foundCanvasPath}`
 			);
 		} else if (!foundCanvasPath && this.linkedCanvasPath) {
 			this.linkedCanvasPath = null;
 			this.canvasModeActive = false;
 			this.actionHandlers.unbindCanvas?.();
 			this.updateCanvasBtn();
-			new Notice(this.t("views.epubView.notice.canvasUnlinked"));
+			new Notice('Canvas 已取消关联');
 		}
 	}
 
@@ -1514,7 +1507,7 @@ export class EpubView extends ItemView {
 	private async returnFromBookshelfToRecentBook(): Promise<void> {
 		const recentPath = await resolveRecentEpubPath(this.app);
 		if (!recentPath) {
-			new Notice(this.t("views.epubView.notice.noRecentBook"));
+			new Notice('暂无最近打开的 EPUB');
 			return;
 		}
 
@@ -1561,12 +1554,7 @@ export class EpubView extends ItemView {
 
 	private updateFlowBtn(): void {
 		const icon = this.flowMode === "scrolled" ? "scroll-text" : "arrow-up-down";
-		const label = this.t("views.epubView.label.readingMode", {
-			mode:
-				this.flowMode === "scrolled"
-					? this.t("views.epubView.label.readingModeScrolled")
-					: this.t("views.epubView.label.readingModePaginated"),
-		});
+		const label = `阅读模式：${this.flowMode === "scrolled" ? '连续滚动' : '翻页'}`;
 		this.applyActionButtonState(this.flowBtn, {
 			icon,
 			label,
@@ -1585,10 +1573,10 @@ export class EpubView extends ItemView {
 			double: "book-open",
 		};
 		const layoutLabels: Record<EpubLayoutMode, string> = {
-			paginated: this.t("views.epubView.label.layoutSingle"),
-			double: this.t("views.epubView.label.layoutDouble"),
+			paginated: '单栏',
+			double: '双栏',
 		};
-		const label = this.t("views.epubView.label.layout", { layout: layoutLabels[this.layoutMode] });
+		const label = `布局：${layoutLabels[this.layoutMode]}`;
 		const icon = iconMap[this.layoutMode];
 		this.applyActionButtonState(this.layoutBtn, {
 			icon,
@@ -1606,8 +1594,8 @@ export class EpubView extends ItemView {
 		const canUseParagraphMode = this.canUseParagraphMode();
 		const visible = this.shouldShowToolbarFeature();
 		const baseLabel = this.paragraphModeEnabled
-			? this.t("views.epubView.label.paragraphModeOn")
-			: this.t("views.epubView.label.paragraphModeOff");
+			? '段落模式（开）'
+			: '段落模式（关）';
 		const label = baseLabel;
 		this.applyActionButtonState(this.paragraphModeBtn, {
 			icon: "pilcrow",
@@ -1626,12 +1614,10 @@ export class EpubView extends ItemView {
 	private updateSaveAsImageBtn(): void {
 		const icon = this.screenshotSaveAsImage ? "image" : "code";
 		const label = Platform.isMobile
-			? this.t("views.epubView.label.screenshotSaveAsImageToolbar")
-			: this.t(
-					this.screenshotSaveAsImage
-						? "views.epubView.label.saveAsImageOn"
-						: "views.epubView.label.saveAsImageOff"
-			  );
+			? '截图保存为图片'
+			: this.screenshotSaveAsImage
+				? '保存为图片文件（开）'
+				: '保存为嵌入链接（关）';
 		const visible = this.shouldShowToolbarFeature();
 		this.applyActionButtonState(this.saveAsImageBtn, {
 			icon,
@@ -1649,12 +1635,10 @@ export class EpubView extends ItemView {
 
 	private updateScreenshotBtn(): void {
 		const label = Platform.isMobile
-			? this.t("views.epubView.label.screenshotToolToolbar")
-			: this.t(
-					this.screenshotModeActive
-						? "views.epubView.label.screenshotToolOn"
-						: "views.epubView.label.screenshotToolOff"
-			  );
+			? '截图工具'
+			: this.screenshotModeActive
+				? '截图工具（开）'
+				: '截图工具（关）';
 		const visible = this.shouldShowToolbarFeature();
 		this.applyActionButtonState(this.screenshotBtn, {
 			label,
@@ -1670,12 +1654,10 @@ export class EpubView extends ItemView {
 
 	private updateAutoInsertBtn(): void {
 		const label = Platform.isMobile
-			? this.t("views.epubView.label.autoModeToolbar")
-			: this.t(
-					this.autoInsertEnabled
-						? "views.epubView.label.autoModeOn"
-						: "views.epubView.label.autoModeOff"
-			  );
+			? '自动化'
+			: this.autoInsertEnabled
+				? '自动模式（开：插入）'
+				: '自动模式（关：复制，开：插入）';
 		const visible = this.shouldShowToolbarFeature();
 		this.applyActionButtonState(this.autoInsertBtn, {
 			label,
@@ -1691,8 +1673,8 @@ export class EpubView extends ItemView {
 
 	private getReadingPositionAutoSaveStateLabel(): string {
 		return this.readingPositionAutoSaveEnabled
-			? this.t("views.epubView.label.readingPositionAutoSaveOn")
-			: this.t("views.epubView.label.readingPositionAutoSaveOff");
+			? '开'
+			: '关';
 	}
 
 	private getReadingPositionActionLabel(): string {
@@ -1700,22 +1682,19 @@ export class EpubView extends ItemView {
 			return this.getReadingPositionAutoSaveStateLabel();
 		}
 		return this.hasReadingReferencePoint
-			? this.t("views.epubView.label.readingPositionRecorded")
-			: this.t("views.epubView.label.readingPosition");
+			? '阅读位置已记录'
+			: '阅读位置';
 	}
 
 	private getReadingPositionActionTooltip(): string {
 		const autoSave = this.getReadingPositionAutoSaveStateLabel();
 		if (!this.canUseReadingReference()) {
-			return this.t("views.epubView.label.readingPositionTooltip", { autoSave });
+			return `阅读位置 · 连续阅读自动更新：${autoSave}`;
 		}
 		if (this.hasReadingReferencePoint) {
-			return this.t("views.epubView.label.readingPositionTooltipRecorded", {
-				title: this.t("views.epubView.label.readingPositionRecorded"),
-				autoSave,
-			});
+			return `${'阅读位置已记录'} · 连续阅读自动更新：${autoSave}`;
 		}
-		return this.t("views.epubView.label.readingPositionTooltip", { autoSave });
+		return `阅读位置 · 连续阅读自动更新：${autoSave}`;
 	}
 
 	private openReadingPositionMenu(evt: MouseEvent | Event): void {
@@ -1759,8 +1738,8 @@ export class EpubView extends ItemView {
 
 	private updateCanvasBtn(): void {
 		const label = this.canvasModeActive
-			? this.t("views.epubView.label.canvasOn")
-			: this.t("views.epubView.label.canvasOff");
+			? 'Canvas 脑图（开）'
+			: 'Canvas 脑图（关）';
 		const visible = this.shouldShowToolbarFeature();
 		this.applyActionButtonState(this.canvasBtn, {
 			icon: "layout-dashboard",
@@ -1817,9 +1796,7 @@ export class EpubView extends ItemView {
 			up: "arrow-up",
 			left: "arrow-left",
 		};
-		const label = this.t("views.epubView.label.canvasDirection", {
-			direction: this.getCanvasDirectionLabel(this.canvasDirection),
-		});
+		const label = `Canvas 方向：${this.getCanvasDirectionLabel(this.canvasDirection)}`;
 		const icon = iconMap[this.canvasDirection];
 		this.applyActionButtonState(this.canvasDirBtn, {
 			icon,
@@ -1847,19 +1824,19 @@ export class EpubView extends ItemView {
 			const currentPath = canvasService.getCanvasPath();
 			if (currentPath) {
 				menu.addItem((_item) => {
-					_item.setTitle(this.t("views.epubView.label.canvasCurrent", { path: currentPath }));
+					_item.setTitle(`当前：${currentPath}`);
 					_item.setIcon("file");
 					_item.setDisabled(true);
 				});
 				menu.addItem((_item) => {
-					_item.setTitle(this.t("views.epubView.label.canvasOpen"));
+					_item.setTitle('打开 canvas');
 					_item.setIcon("external-link");
 					_item.onClick(() => this.openCanvasFile(currentPath));
 				});
 			}
 			menu.addSeparator();
 			menu.addItem((_item) => {
-				_item.setTitle(this.t("views.epubView.label.canvasDisconnect"));
+				_item.setTitle('断开 canvas');
 				_item.setIcon("unlink");
 				_item.onClick(() => {
 					this.canvasModeActive = false;
@@ -1869,7 +1846,7 @@ export class EpubView extends ItemView {
 			});
 		} else {
 			menu.addItem((_item) => {
-				_item.setTitle(this.t("views.epubView.label.canvasNew"));
+				_item.setTitle('新建 canvas');
 				_item.setIcon("plus");
 				_item.onClick(() => this.createAndBindCanvas(canvasService));
 			});
@@ -1908,12 +1885,12 @@ export class EpubView extends ItemView {
 			this.canvasModeActive = true;
 			this.actionHandlers.bindCanvasPath?.(canvasPath);
 			this.updateCanvasBtn();
-			new Notice(this.t("views.epubView.notice.canvasCreated", { path: canvasPath }));
+			new Notice(`Canvas 已创建：${canvasPath}`);
 
 			this.openCanvasFile(canvasPath);
 		} catch (e) {
 			logger.error("[EpubView] Failed to create canvas:", e);
-			new Notice(this.t("views.epubView.notice.canvasCreateFailed"));
+			new Notice('Canvas 创建失败');
 		}
 	}
 
@@ -1922,7 +1899,7 @@ export class EpubView extends ItemView {
 			this.canvasModeActive = true;
 			this.actionHandlers.bindCanvasPath?.(path);
 			this.updateCanvasBtn();
-			new Notice(this.t("views.epubView.notice.canvasConnected", { path }));
+			new Notice(`Canvas 已连接：${path}`);
 		} catch (e) {
 			logger.error("[EpubView] Failed to bind canvas:", e);
 		}

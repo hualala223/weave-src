@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { setIcon, Platform } from 'obsidian';
 	import { tick, untrack } from 'svelte';
-	import { tr } from '../../utils/i18n';
 	import type { EpubReaderEngine, HighlightClickInfo } from '../../services/epub';
 	import {
 		computeToolbarPosition,
@@ -37,8 +36,6 @@
 		onCopyText,
 		onDismiss
 	}: Props = $props();
-	let t = $derived($tr);
-
 	let toolbarEl: HTMLDivElement | undefined = $state(undefined);
 	let posTop = $state(0);
 	let posLeft = $state(0);
@@ -50,11 +47,11 @@
 
 	const colors = ['yellow', 'blue', 'red', 'purple', 'green'] as const;
 	let colorLabels = $derived.by<Record<(typeof colors)[number], string>>(() => ({
-		yellow: t('epub.highlightToolbar.yellow'),
-		blue: t('epub.highlightToolbar.blue'),
-		red: t('epub.highlightToolbar.red'),
-		purple: t('epub.highlightToolbar.purple'),
-		green: t('epub.highlightToolbar.green')
+		yellow: '黄色',
+		blue: '蓝色',
+		red: '红色',
+		purple: '紫色',
+		green: '绿色'
 	}));
 	const isMobileToolbar = Platform.isMobile || activeDocument.body.classList.contains('is-mobile');
 
@@ -230,17 +227,17 @@
 			<div class="highlight-main-row">
 				<div class="highlight-actions-shell">
 					<div class="toolbar-row actions-row highlight-actions-row concealment-actions">
-						<button class="clickable-icon action-item" onclick={() => onTemporarilyReveal(info)} title={t('epub.highlightToolbar.temporaryRevealTitle')}>
+						<button class="clickable-icon action-item" onclick={() => onTemporarilyReveal(info)} title={'暂时显示隐藏文本'}>
 							<span class="action-icon" use:icon={'eye'}></span>
-							<span class="action-label">{t('epub.highlightToolbar.temporaryReveal')}</span>
+							<span class="action-label">{'暂显'}</span>
 						</button>
-						<button class="clickable-icon action-item" onclick={() => onCopyText(info)} title={t('epub.highlightToolbar.copyHiddenTitle')}>
+						<button class="clickable-icon action-item" onclick={() => onCopyText(info)} title={'复制隐藏文本'}>
 							<span class="action-icon" use:icon={'clipboard-copy'}></span>
-							<span class="action-label">{t('epub.highlightToolbar.copy')}</span>
+							<span class="action-label">{'复制'}</span>
 						</button>
-						<button class="clickable-icon action-item accent concealment-reset" onclick={() => onDelete(info)} title={t('epub.highlightToolbar.resetHiddenTitle')}>
+						<button class="clickable-icon action-item accent concealment-reset" onclick={() => onDelete(info)} title={'恢复文本显示'}>
 							<span class="action-icon" use:icon={'eye'}></span>
-							<span class="action-label">{t('epub.highlightToolbar.resetHidden')}</span>
+							<span class="action-label">{'恢复'}</span>
 						</button>
 					</div>
 				</div>
@@ -254,8 +251,8 @@
 								class="color-btn {c}"
 								class:active={c === info.color}
 								onclick={() => onChangeColor(info, c)}
-								title={t('epub.highlightToolbar.switchColor', { color: colorLabels[c] })}
-								aria-label={t('epub.highlightToolbar.switchColorAria', { color: colorLabels[c] })}
+								title={`切换为${colorLabels[c]}`}
+								aria-label={`切换为${colorLabels[c]}颜色`}
 							>
 								<span class="color-btn-core"></span>
 							</button>
@@ -264,13 +261,13 @@
 
 					<div class="highlight-style-shell">
 						<div class="toolbar-row highlight-style-row">
-							<button class="clickable-icon action-item icon-only style-action-item" class:accent={info.style === 'underline'} onclick={() => handleStyleToggle(info, 'underline')} title={t('epub.highlightToolbar.underline')} aria-label={t('epub.highlightToolbar.underline')}>
+							<button class="clickable-icon action-item icon-only style-action-item" class:accent={info.style === 'underline'} onclick={() => handleStyleToggle(info, 'underline')} title={'下划线'} aria-label={'下划线'}>
 								<span class="action-icon style-icon underline-style-icon" use:icon={'underline'}></span>
 							</button>
-							<button class="clickable-icon action-item icon-only style-action-item" class:accent={info.style === 'strikethrough'} onclick={() => handleStyleToggle(info, 'strikethrough')} title={t('epub.highlightToolbar.strikethrough')} aria-label={t('epub.highlightToolbar.strikethrough')}>
+							<button class="clickable-icon action-item icon-only style-action-item" class:accent={info.style === 'strikethrough'} onclick={() => handleStyleToggle(info, 'strikethrough')} title={'删除线'} aria-label={'删除线'}>
 								<span class="action-icon style-icon strikethrough-style-icon" use:icon={'strikethrough'}></span>
 							</button>
-							<button class="clickable-icon action-item icon-only style-action-item" class:accent={info.style === 'wavy'} onclick={() => handleStyleToggle(info, 'wavy')} title={t('epub.highlightToolbar.wavy')} aria-label={t('epub.highlightToolbar.wavy')}>
+							<button class="clickable-icon action-item icon-only style-action-item" class:accent={info.style === 'wavy'} onclick={() => handleStyleToggle(info, 'wavy')} title={'波浪线'} aria-label={'波浪线'}>
 								<span class="action-icon style-icon wavy-style-icon" use:icon={'pen-tool'}></span>
 							</button>
 						</div>
@@ -279,22 +276,22 @@
 
 				<div class="highlight-actions-shell">
 					<div class="toolbar-row actions-row highlight-actions-row">
-						<button class="clickable-icon action-item highlight-type-action" class:accent={!info.style} onclick={() => onChangeStyle(info, undefined)} title={t('epub.highlightToolbar.highlightTitle')} aria-label={t('epub.highlightToolbar.highlightTitle')}>
+						<button class="clickable-icon action-item highlight-type-action" class:accent={!info.style} onclick={() => onChangeStyle(info, undefined)} title={'切换为高亮'} aria-label={'切换为高亮'}>
 							<span class="action-icon highlight-style-icon" use:icon={'highlighter'}></span>
-							<span class="action-label">{t('epub.highlightToolbar.highlight')}</span>
+							<span class="action-label">{'高亮'}</span>
 						</button>
-						<button class="clickable-icon action-item comment-action" class:accent={Boolean(info.hasCommentDivider)} onclick={() => onEditComment(info)} title={t('epub.highlightToolbar.commentTitle')} aria-label={t('epub.highlightToolbar.commentTitle')}>
+						<button class="clickable-icon action-item comment-action" class:accent={Boolean(info.hasCommentDivider)} onclick={() => onEditComment(info)} title={'编辑想法'} aria-label={'编辑想法'}>
 							<span class="action-icon" use:icon={'message-square'}></span>
-							<span class="action-label">{t('epub.highlightToolbar.comment')}</span>
+							<span class="action-label">{'想法'}</span>
 						</button>
-						<button class="clickable-icon action-item copy-action" onclick={() => onCopyText(info)} title={t('epub.highlightToolbar.copyTitle')}>
+						<button class="clickable-icon action-item copy-action" onclick={() => onCopyText(info)} title={'复制文本'}>
 							<span class="action-icon" use:icon={'clipboard-copy'}></span>
-							<span class="action-label">{t('epub.highlightToolbar.copy')}</span>
+							<span class="action-label">{'复制'}</span>
 						</button>
 						<div class="row-divider"></div>
-						<button class="clickable-icon action-item delete delete-action" disabled={deleting} onclick={() => onDelete(info)} title={t('epub.highlightToolbar.deleteTitle')}>
+						<button class="clickable-icon action-item delete delete-action" disabled={deleting} onclick={() => onDelete(info)} title={'删除高亮'}>
 							<span class="action-icon" use:icon={'trash-2'}></span>
-							<span class="action-label">{t('epub.highlightToolbar.delete')}</span>
+							<span class="action-label">{'删除'}</span>
 						</button>
 					</div>
 				</div>

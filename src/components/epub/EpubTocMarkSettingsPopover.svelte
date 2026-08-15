@@ -2,7 +2,6 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { Platform } from 'obsidian';
 	import { autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom';
-	import { tr } from '../../utils/i18n';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import type { EpubTocChapterMark } from '../../services/epub/epub-toc-chapter-mark';
 	import type { EpubTocChapterMarkSettings } from '../../services/epub/epub-toc-chapter-mark-settings';
@@ -23,8 +22,6 @@
 	}
 
 	let { open, anchor, settings, onClose, onSave }: Props = $props();
-	let t = $derived($tr);
-
 	let popoverEl: HTMLDivElement | undefined = $state(undefined);
 	let posTop = $state(0);
 	let posLeft = $state(0);
@@ -236,9 +233,9 @@
 		style={`top: ${posTop}px; left: ${posLeft}px;`}
 		bind:this={popoverEl}
 		role="dialog"
-		aria-label={t('epub.toc.markSettingsTitle')}
+		aria-label={'圆点语义设置'}
 	>
-		<div class="epub-toc-mark-settings-popover__title">{t('epub.toc.markSettingsTitle')}</div>
+		<div class="epub-toc-mark-settings-popover__title">{'圆点语义设置'}</div>
 
 		<ul class="epub-toc-mark-settings-popover__list">
 			{#each draftRows as row (row.mark)}
@@ -254,7 +251,7 @@
 								class="epub-toc-mark-settings-popover__color-input"
 								type="color"
 								value={row.color}
-								aria-label={t('epub.toc.markSettingsColorAria', { label: row.label })}
+								aria-label={`选择 ${row.label} 的颜色`}
 								oninput={(event) => {
 									const target = event.currentTarget;
 									if (domInstanceOf(target, HTMLInputElement)) {
@@ -289,7 +286,7 @@
 				onclick={handleResetDefaults}
 				disabled={saving}
 			>
-				{t('epub.toc.markSettingsReset')}
+				{'恢复默认'}
 			</button>
 			<div class="epub-toc-mark-settings-popover__primary-actions">
 				<button
@@ -298,7 +295,7 @@
 					onclick={onClose}
 					disabled={saving}
 				>
-					{t('epub.toc.markSettingsCancel')}
+					{'取消'}
 				</button>
 				<button
 					type="button"
@@ -306,7 +303,7 @@
 					onclick={() => void handleSave()}
 					disabled={saving}
 				>
-					{t('epub.toc.markSettingsSave')}
+					{'保存'}
 				</button>
 			</div>
 		</div>

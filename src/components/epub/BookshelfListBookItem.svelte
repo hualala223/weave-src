@@ -78,7 +78,7 @@
 			{/if}
 			{#if file.translator}
 				<div class="book-meta-text book-translator">
-					{t('epub.bookshelf.translator', { name: file.translator })}
+					{`译者：${file.translator}`}
 				</div>
 			{/if}
 			{#if file.publisher}
@@ -89,14 +89,12 @@
 	{#if isContinueReading}
 		{#if file.lastReadTime > 0}
 			<div class="book-meta-footer">
-				{t('epub.bookshelf.continueReadingLastRead', {
-					time: formatBookshelfLastReadTime(file.lastReadTime),
-				})}
+				{`上次阅读 ${formatBookshelfLastReadTime(file.lastReadTime)}`}
 			</div>
 		{:else if file.statsLine}
 			<div class="book-meta-footer">{file.statsLine}</div>
 		{/if}
-		<div class="book-continue-action">{t('epub.bookshelf.continueReadingCta')}</div>
+		<div class="book-continue-action">{'继续阅读'}</div>
 	{:else if file.statsLine}
 		<div class="book-meta-footer">{file.statsLine}</div>
 	{/if}
@@ -106,7 +104,7 @@
 			className="book-list-progress-badge"
 			progress={file.progress}
 			valueText={`${clampedProgress}%`}
-			titleText={t('epub.bookshelf.progress', { progress: clampedProgress })}
+			titleText={`阅读进度 ${clampedProgress}%`}
 		/>
 	{/if}
 </div>

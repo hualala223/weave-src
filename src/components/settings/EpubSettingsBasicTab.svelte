@@ -6,7 +6,6 @@
     normalizeContinuousReadingPositionAutoSavePages,
   } from "../../config/reading-position-auto-save";
   import { EPUB_RUNTIME, normalizeEpubBookmarkFolderPath } from "../../services/epub";
-  import { normalizeInterfaceLanguagePreference, tr } from "../../utils/i18n";
   import { normalizeHighlightStoragePath, normalizeWeaveParentFolder } from "../../config/paths";
   import type StandaloneEpubPlugin from "../../main";
   import { createEpubBasicSettingsActions } from "./epub-basic-settings-actions";
@@ -17,8 +16,6 @@
   }
 
   let { plugin }: Props = $props();
-  let t = $derived($tr);
-
   let stateVersion = $state(0);
   let excerptSettingsVersion = $state(0);
   let interfaceSettingsHost = $state<HTMLDivElement | null>(null);
@@ -80,18 +77,11 @@
     );
   });
 
-  let interfaceLanguageValue = $derived.by(() => {
-    stateVersion;
-    return normalizeInterfaceLanguagePreference(plugin.settings?.interfaceLanguage);
-  });
-
   const actions = createEpubBasicSettingsActions({
     plugin,
-    getTranslate: () => t,
     getWeaveParentFolderValue: () => weaveParentFolderValue,
     getBookmarkFolderValue: () => bookmarkFolderValue,
     getHighlightStoragePathValue: () => highlightStoragePathValue,
-    getInterfaceLanguageValue: () => interfaceLanguageValue,
     getContinuousReadingPositionAutoSaveEnabled: () => continuousReadingPositionAutoSaveEnabled,
     getContinuousReadingPositionAutoSavePages: () => continuousReadingPositionAutoSavePages,
     getSourceNavigationOpenInNewTab: () => sourceNavigationOpenInNewTab,
@@ -166,21 +156,18 @@
     }
 
     excerptSettingsVersion;
-    t;
 
     let dispose: (() => void) | undefined;
 
     untrack(() => {
       dispose = mountEpubBasicSettings({
         plugin,
-        t,
         hosts: {
           interface: interfaceSettingsHost,
           reading: readingSettingsHost,
           diagnostics: diagnosticsSettingsHost,
         },
         snapshot: {
-          interfaceLanguageValue,
           weaveParentFolderValue,
           weaveParentFolderInput,
           bookmarkFolderValue,
@@ -214,7 +201,6 @@
           updateWeaveParentFolder: actions.updateWeaveParentFolder,
           updateBookmarkFolder: actions.updateBookmarkFolder,
           updateHighlightStoragePath: actions.updateHighlightStoragePath,
-          updateInterfaceLanguage: actions.updateInterfaceLanguage,
           updateContinuousReadingPositionAutoSaveEnabled:
             actions.updateContinuousReadingPositionAutoSaveEnabled,
           updateContinuousReadingPositionAutoSavePages:
@@ -233,21 +219,21 @@
 <section class="epub-settings-section epub-settings-section--compact">
   <div class="epub-settings-group epub-settings-group--panel epub-settings-group--preview-first">
     <div class="epub-settings-group-header">
-      <h3 class="epub-settings-group-title with-accent-bar accent-cyan">{t("epub.settings.groups.interface")}</h3>
+      <h3 class="epub-settings-group-title with-accent-bar accent-cyan">{'界面'}</h3>
     </div>
     <div bind:this={interfaceSettingsHost} class="epub-native-settings-host"></div>
   </div>
 
   <div class="epub-settings-group epub-settings-group--panel">
     <div class="epub-settings-group-header">
-      <h3 class="epub-settings-group-title with-accent-bar accent-purple">{t("epub.settings.groups.reading")}</h3>
+      <h3 class="epub-settings-group-title with-accent-bar accent-purple">{'阅读位置与书签'}</h3>
     </div>
     <div bind:this={readingSettingsHost} class="epub-native-settings-host"></div>
   </div>
 
   <div class="epub-settings-group epub-settings-group--panel">
     <div class="epub-settings-group-header">
-      <h3 class="epub-settings-group-title with-accent-bar accent-cyan">{t("epub.settings.groups.diagnostics")}</h3>
+      <h3 class="epub-settings-group-title with-accent-bar accent-cyan">{'开发与诊断'}</h3>
     </div>
     <div bind:this={diagnosticsSettingsHost} class="epub-native-settings-host"></div>
   </div>

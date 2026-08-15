@@ -2,7 +2,6 @@ import type { App } from "obsidian";
 import { getPluginPathsById } from "../../config/paths";
 import { CURRENT_PLUGIN_ID } from "../../config/plugin-runtime";
 import { DirectoryUtils } from "../../utils/directory-utils";
-import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
 import { TagExtractor } from "../../utils/tag-extractor";
 import type { EpubBacklinkHighlightService } from "./EpubBacklinkHighlightService";
@@ -565,8 +564,8 @@ export class EpubHighlightViewSnapshotService {
 			commentText: highlight.commentText || "",
 			hasCommentDivider,
 			commentStateLabel: hasCommentDivider
-				? i18n.t("epub.notes.commented")
-				: i18n.t("epub.notes.uncommented"),
+				? '有想法'
+				: '无想法',
 			color,
 			colorLabel: this.getHighlightColorLabel(color),
 			noteType,

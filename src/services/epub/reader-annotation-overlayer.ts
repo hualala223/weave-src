@@ -9,8 +9,6 @@ import {
 	type RawViewportRect,
 } from "./reader-highlight-geometry";
 import { setSvgInteractionAttributes } from "./svg-interaction";
-import { i18n } from "../../utils/i18n";
-
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 export type FoliateOverlayerModule = {
@@ -355,7 +353,7 @@ export class ReaderAnnotationOverlayRenderer {
 		hitArea.setAttribute("fill", "#000000");
 		hitArea.setAttribute("fill-opacity", "0.001");
 		hitArea.setAttribute("role", "button");
-		hitArea.setAttribute("aria-label", i18n.t("epub.reader.commentMarkerAria"));
+		hitArea.setAttribute("aria-label", '编辑摘录想法');
 		setSvgInteractionAttributes(hitArea, { cursor: "pointer", pointerEvents: "auto" });
 
 		const handleMarkerClick = (event: Event) => {
@@ -464,7 +462,7 @@ export class ReaderAnnotationOverlayRenderer {
 		hitArea.setAttribute("fill", "#000000");
 		hitArea.setAttribute("fill-opacity", "0.001");
 		hitArea.setAttribute("role", "button");
-		hitArea.setAttribute("aria-label", i18n.t("epub.reader.referenceBadgeAria", { count }));
+		hitArea.setAttribute("aria-label", `查看 ${count} 条引用来源`);
 		setSvgInteractionAttributes(hitArea, { cursor: "pointer", pointerEvents: "auto" });
 		const badgeRect = createViewportRectFromRawRect({
 			left: Math.max(targetRect.left, badgeX - 1.25),

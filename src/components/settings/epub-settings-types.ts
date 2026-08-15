@@ -1,15 +1,9 @@
 import type { TextComponent } from "obsidian";
-import type { InterfaceLanguagePreference } from "../../utils/i18n";
 import type StandaloneEpubPlugin from "../../main";
 
 export type EpubSettingsTabId = "basic";
 
 export type SettingsCleanupFn = () => void;
-
-export type EpubSettingsTranslateFn = (
-	key: string,
-	params?: Record<string, string | number>
-) => string;
 
 export interface EpubBasicSettingsHosts {
 	interface: HTMLElement;
@@ -18,7 +12,6 @@ export interface EpubBasicSettingsHosts {
 }
 
 export interface EpubBasicSettingsSnapshot {
-	interfaceLanguageValue: InterfaceLanguagePreference;
 	weaveParentFolderValue: string;
 	weaveParentFolderInput: string;
 	bookmarkFolderValue: string;
@@ -43,7 +36,6 @@ export interface EpubBasicSettingsCallbacks {
 	updateWeaveParentFolder: (folderPath: string) => Promise<void>;
 	updateBookmarkFolder: (folderPath: string) => Promise<void>;
 	updateHighlightStoragePath: (filePath: string) => Promise<void>;
-	updateInterfaceLanguage: (value: InterfaceLanguagePreference) => Promise<void>;
 	updateContinuousReadingPositionAutoSaveEnabled: (enabled: boolean) => Promise<void>;
 	updateContinuousReadingPositionAutoSavePages: (value: string) => Promise<void>;
 	updateSourceNavigationOpenInNewTab: (enabled: boolean) => Promise<void>;
@@ -53,7 +45,6 @@ export interface EpubBasicSettingsCallbacks {
 
 export interface EpubBasicSettingsMountOptions {
 	plugin: StandaloneEpubPlugin;
-	t: EpubSettingsTranslateFn;
 	hosts: EpubBasicSettingsHosts;
 	snapshot: EpubBasicSettingsSnapshot;
 	callbacks: EpubBasicSettingsCallbacks;

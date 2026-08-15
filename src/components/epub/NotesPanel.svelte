@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import type { App } from 'obsidian';
 	import { Menu, Notice, setIcon } from 'obsidian';
-	import { tr } from '../../utils/i18n';
 	import { showObsidianConfirm } from '../../utils/obsidian-confirm';
 	import { logger } from '../../utils/logger';
 	import { parseSearchQuery, type DateRange, type SearchQuery } from '../../utils/search-parser';
@@ -82,8 +81,6 @@
 		}),
 		onNavigate,
 	}: Props = $props();
-	let t = $derived($tr);
-
 	function iconAction(node: HTMLElement, name: string) {
 		setIcon(node, name);
 		return {
@@ -236,7 +233,7 @@
 	}
 
 	function getEmptyExcerptHint(text?: string): string {
-		return String(text || '').trim() ? '' : t('epub.notes.emptyExcerpt');
+		return String(text || '').trim() ? '' : '摘录内容为空';
 	}
 
 	function navigateToHighlight(hl: EpubDisplayHighlight) {
@@ -259,7 +256,7 @@
 			return chapterTitle;
 		}
 		if (typeof highlight.chapterIndex === 'number' && highlight.chapterIndex >= 0) {
-			return t('epub.bookmarks.chapterFallback', { chapter: highlight.chapterIndex + 1 });
+			return `第 ${highlight.chapterIndex + 1} 章`;
 		}
 		return '';
 	}
@@ -322,7 +319,7 @@
 			}
 
 			if ([
-				t('epub.notes.commented').toLowerCase(),
+				'有想法'.toLowerCase(),
 				'有批注',
 				'有想法',
 				'有',
@@ -335,7 +332,7 @@
 			}
 
 			if ([
-				t('epub.notes.uncommented').toLowerCase(),
+				'无想法'.toLowerCase(),
 				'无批注',
 				'无想法',
 				'无',
@@ -406,10 +403,7 @@
 	);
 
 	let selectionCountLabel = $derived(
-		t('epub.notes.selectionCount', {
-			selected: selectedHighlights.length,
-			total: filteredHighlights.length,
-		})
+		`已选 ${selectedHighlights.length} / ${filteredHighlights.length}`
 	);
 
 	$effect(() => {
@@ -465,7 +459,7 @@
 	async function deleteHighlightItem(highlight: EpubDisplayHighlight, quiet = false): Promise<boolean> {
 		if (!onDeleteHighlight) {
 			if (!quiet) {
-				new Notice(t('epub.reader.highlightDeleteFailed'));
+				new Notice('删除高亮失败');
 			}
 			return false;
 		}
@@ -478,11 +472,11 @@
 		}
 		const confirmed = await showObsidianConfirm(
 			app,
-			t('epub.notes.batchDeleteConfirm', { count: selectedHighlights.length }),
+			`确定删除 ${selectedHighlights.length} 条摘录笔记？`,
 			{
-				title: t('epub.reader.highlightDeleteChoiceTitle'),
-				confirmText: t('epub.notes.menu.deleteSelected'),
-				cancelText: t('epub.reader.highlightDeleteChoiceCancel'),
+				title: '删除摘录笔记',
+				confirmText: '删除所选摘录',
+				cancelText: '取消',
 				confirmClass: 'mod-warning',
 			}
 		);
@@ -500,10 +494,10 @@
 				}
 			}
 			if (deletedCount > 0) {
-				new Notice(t('epub.notes.batchDeleted', { count: deletedCount }));
+				new Notice(`已删除 ${deletedCount} 条摘录`);
 			}
 			if (deletedCount < selectedHighlights.length) {
-				new Notice(t('epub.notes.batchDeleteFailed'));
+				new Notice('部分摘录删除失败');
 			}
 			exitSelectionMode();
 		} finally {
@@ -518,7 +512,7 @@
 
 		if (selectionMode) {
 			menu.addItem((item) => {
-				item.setTitle(t('epub.notes.menu.deleteSelected'));
+				item.setTitle('删除所选摘录');
 				item.setIcon('trash');
 				item.setDisabled(selectedHighlights.length === 0 || !onDeleteHighlight || batchDeleting);
 				item.onClick(() => {
@@ -527,7 +521,7 @@
 			});
 			menu.addSeparator();
 			menu.addItem((item) => {
-				item.setTitle(t('epub.notes.menu.selectAll'));
+				item.setTitle('全选当前结果');
 				item.setIcon('check-check');
 				item.setDisabled(filteredHighlights.length === 0);
 				item.onClick(() => {
@@ -535,7 +529,7 @@
 				});
 			});
 			menu.addItem((item) => {
-				item.setTitle(t('epub.notes.menu.deselectAll'));
+				item.setTitle('取消全选');
 				item.setIcon('ban');
 				item.setDisabled(selectedHighlights.length === 0);
 				item.onClick(() => {
@@ -544,7 +538,7 @@
 			});
 			menu.addSeparator();
 			menu.addItem((item) => {
-				item.setTitle(t('epub.notes.menu.exitBatchSelect'));
+				item.setTitle('退出批量选择');
 				item.setIcon('x');
 				item.onClick(() => {
 					exitSelectionMode();
@@ -552,7 +546,7 @@
 			});
 		} else {
 			menu.addItem((item) => {
-				item.setTitle(t('epub.notes.menu.batchSelect'));
+				item.setTitle('批量选择');
 				item.setIcon('check-square');
 				item.onClick(() => {
 					enterSelectionMode();
@@ -571,7 +565,7 @@
 
 		if (!selectionMode) {
 			menu.addItem((item) => {
-				item.setTitle(t('epub.notes.menu.batchSelect'));
+				item.setTitle('批量选择');
 				item.setIcon('check-square');
 				item.onClick(() => {
 					enterSelectionMode(highlight);
@@ -580,7 +574,7 @@
 		}
 
 		menu.addItem((item) => {
-			item.setTitle(t('epub.notes.menu.delete'));
+			item.setTitle('删除摘录');
 			item.setIcon('trash');
 			item.setDisabled(!onDeleteHighlight || batchDeleting);
 			item.onClick(() => {
@@ -876,13 +870,13 @@
 	oncontextmenu={showPanelContextMenu}
 >
 	{#if preparing}
-		<EpubLoadingState message={t('epub.notes.preparing')} surface />
+		<EpubLoadingState message={'正在准备摘录索引…'} surface />
 	{:else if filteredHighlights.length === 0}
 		<div class="epub-placeholder">
 			{#if highlights.length === 0}
-				{t('epub.notes.empty')}
+				{'暂时还没有摘录，阅读时选中文本后就可以在这里回看。'}
 			{:else}
-				{t('epub.notes.noMatches')}
+				{'没有匹配的摘录，请尝试调整 tag:、source:、comment:、type:、color: 或 chapter: 条件。'}
 			{/if}
 		</div>
 	{:else}
@@ -890,7 +884,7 @@
 			<div
 				class="epub-notes-selection-float"
 				role="toolbar"
-				aria-label={t('epub.notes.menu.batchSelect')}
+				aria-label={'批量选择'}
 				aria-live="polite"
 			>
 				<span class="epub-notes-selection-count" aria-label={selectionCountLabel}>
@@ -903,8 +897,8 @@
 					<button
 						type="button"
 						class="clickable-icon epub-notes-selection-icon-btn epub-notes-selection-icon-btn--danger"
-						title={t('epub.notes.menu.deleteSelected')}
-						aria-label={t('epub.notes.menu.deleteSelected')}
+						title={'删除所选摘录'}
+						aria-label={'删除所选摘录'}
 						disabled={selectedHighlights.length === 0 || !onDeleteHighlight || batchDeleting}
 						onclick={() => void deleteSelectedHighlights()}
 					>
@@ -913,8 +907,8 @@
 					<button
 						type="button"
 						class="clickable-icon epub-notes-selection-icon-btn"
-						title={t('epub.notes.menu.exitBatchSelect')}
-						aria-label={t('epub.notes.menu.exitBatchSelect')}
+						title={'退出批量选择'}
+						aria-label={'退出批量选择'}
 						onclick={exitSelectionMode}
 					>
 						<span use:iconAction={'x'}></span>
@@ -923,7 +917,7 @@
 			</div>
 		{/if}
 		{#if syncing}
-			<div class="epub-notes-sync-hint" aria-live="polite">{t('epub.notes.syncing')}</div>
+			<div class="epub-notes-sync-hint" aria-live="polite">{'正在同步摘录…'}</div>
 		{/if}
 		{#if filteredHighlights.length > 0}
 			<section class="notes-section">
@@ -937,7 +931,7 @@
 							onContextMenu={(event) => showHighlightContextMenu(event, hl)}
 							color={hl.color}
 							quoteText={hl.text}
-							commentText={hl.hasCommentDivider ? (hl.commentText || t('epub.notes.emptyComment')) : getEmptyExcerptHint(hl.text)}
+							commentText={hl.hasCommentDivider ? (hl.commentText || '想法为空') : getEmptyExcerptHint(hl.text)}
 							commentMuted={!hl.hasCommentDivider}
 							metaLeft={getSourceLabel(hl.sourceFile)}
 							metaRightPrefix={formatTime(hl.createdTime)}

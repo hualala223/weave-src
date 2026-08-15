@@ -296,13 +296,7 @@ scripts/*
 !scripts/check-bundle-footprint.cjs
 !scripts/find-unreachable-src.cjs
 !scripts/verify-plugin-scope.cjs
-!scripts/build-quality-overlays.py
-!scripts/i18n-validate.ts
-!scripts/export-zh-snapshot.ts
-!scripts/export-i18n-keys.ts
-!scripts/export-tutorial-en.ts
-!scripts/curated-overlay-data/
-!scripts/curated-overlay-data/**
+!scripts/check-no-i18n.cjs
 scripts/.plugin-scope-unreachable.txt
 
 # 测试文件
@@ -317,13 +311,6 @@ COMMIT_MSG.txt
 
 # 庆祝消息等非必要数据
 celebration-messages.json
-
-# i18n 临时拆分文件（正式语言包在 src/utils/i18n/flat-locales/）
-scripts/locale-work/
-src/utils/i18n/flat-locales/ja-JP.json
-src/utils/i18n/flat-locales/ko-KR.json
-src/components/epub/tutorial-locales/ja-JP.json
-src/components/epub/tutorial-locales/ko-KR.json
 
 # public 目录
 public/

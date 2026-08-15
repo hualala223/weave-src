@@ -1,5 +1,4 @@
 import { Notice, TFile, TFolder, type App, normalizePath } from "obsidian";
-import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
 import type { VaultConfigLike } from "../../types/obsidian-extensions";
 import { getElectronRemoteModule } from "../../utils/electron-screenshot-access";
@@ -195,7 +194,7 @@ export class EpubScreenshotService {
 		const arrayBuffer = await blob.arrayBuffer();
 		await this.writeVaultBinaryFile(fullPath, arrayBuffer);
 
-		new Notice(i18n.t("views.epubView.notice.screenshotSaved", { fileName }));
+		new Notice(`截图已保存：${fileName}`);
 		return fullPath;
 	}
 

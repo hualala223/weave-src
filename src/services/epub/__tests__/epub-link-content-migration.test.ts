@@ -16,13 +16,6 @@ vi.mock("../../../utils/obsidian-confirm", () => ({
 	showObsidianConfirm: showObsidianConfirmMock,
 }));
 
-vi.mock("../../../utils/i18n", () => ({
-	i18n: {
-		t: (key: string, vars?: Record<string, unknown>) =>
-			`${key}:${JSON.stringify(vars || {})}`,
-	},
-}));
-
 vi.mock("../EpubLinkService", () => ({
 	EpubLinkService: class MockEpubLinkService {
 		constructor(_app: unknown) {}

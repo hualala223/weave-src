@@ -47,14 +47,6 @@ import { registerCanvasExcerptAnchorCacheWarmup } from "./services/epub/canvas-e
 import { registerCanvasDirectionMenu } from "./services/epub/register-canvas-direction-menu";
 import { registerCanvasExcerptAnchorMenu } from "./services/epub/register-canvas-excerpt-anchor-menu";
 import { logger } from "./utils/logger";
-import {
-	initI18n,
-	i18n,
-	normalizeInterfaceLanguagePreference,
-	setInterfaceLanguagePreference,
-	syncI18nLanguage,
-	type InterfaceLanguagePreference,
-} from "./utils/i18n";
 import { vaultStorage } from "./utils/vault-local-storage";
 import {
 	DEFAULT_BOOKSHELF_DISPLAY_MODE,
@@ -76,7 +68,6 @@ interface StandaloneEpubPluginSettings {
 	lastSelectedIRDeckId: string;
 	selectionQuickCreateLastFolder: string;
 	sourceNavigationOpenInNewTab: boolean;
-	interfaceLanguage: InterfaceLanguagePreference;
 }
 
 const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
@@ -93,7 +84,6 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 	lastSelectedIRDeckId: "",
 	selectionQuickCreateLastFolder: "",
 	sourceNavigationOpenInNewTab: true,
-	interfaceLanguage: "auto",
 };
 
 type PersistedStandaloneEpubPluginSettings = Omit<
@@ -228,10 +218,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.syncBookshelfDisplaySettings();
 		this.syncReadingPositionAutoSaveSettings();
 		this.settings.sourceNavigationOpenInNewTab = this.settings.sourceNavigationOpenInNewTab !== false;
-		this.settings.interfaceLanguage = normalizeInterfaceLanguagePreference(
-			this.settings.interfaceLanguage
-		);
-		setInterfaceLanguagePreference(this.settings.interfaceLanguage);
 		if (this.hasLegacyRememberedUiKeys(loadedData)) {
 			await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
 			await this.persistSettingsData();
@@ -239,12 +225,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 	}
 
 	async saveSettings(): Promise<void> {
-		this.settings.interfaceLanguage = normalizeInterfaceLanguagePreference(
-			this.settings.interfaceLanguage
-		);
-		setInterfaceLanguagePreference(this.settings.interfaceLanguage);
-		syncI18nLanguage();
-
 		this.syncDebugSettings();
 		this.syncBookshelfDisplaySettings();
 		this.syncReadingPositionAutoSaveSettings();
@@ -336,7 +316,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		registerEpubWorkspaceViews(
 			this,
 			"[Standalone EPUB]",
-			i18n.t("epub.commands.standalonePluginLabel")
+			'独立 EPUB 插件'
 		);
 		this.workspaceViewsRegistered = true;
 	}
@@ -345,7 +325,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		await this.loadSettings();
 		syncLargeNavButtonStyle(this.settings.enableLargeNavButtons === true);
 		await vaultStorage.initialize(this.app);
-		initI18n(this.settings.interfaceLanguage);
 		registerEpubHost(this.app, this);
 		configureNavigationHub(this.app, {
 			getSourceNavigationOpenInNewTab: () => this.settings.sourceNavigationOpenInNewTab !== false,
@@ -384,31 +363,20 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 				scheduleEpubAnnotationIndexWarmup(this.app, 8_000);
 			}
 		);
-		this.registerEvent(this.app.workspace.on("layout-change", () => {
-			syncI18nLanguage();
-		}));
-		this.registerDomEvent(window, "focus", () => {
-			syncI18nLanguage();
-		});
-		this.registerDomEvent(activeDocument, "visibilitychange", () => {
-			if (!activeDocument.hidden) {
-				syncI18nLanguage();
-			}
-		});
-		this.addRibbonIcon("library", i18n.t("views.epubBookshelfSidebar.title"), () => {
+		this.addRibbonIcon("library", '我的书架', () => {
 			void this.openEpubBookshelf();
 		});
 
 		this.addCommand({
 			id: "open-epub-bookshelf",
-			name: i18n.t("views.epubBookshelfSidebar.title"),
+			name: '我的书架',
 			callback: () => {
 				void this.openEpubBookshelf();
 			},
 		});
 		this.addCommand({
 			id: "open-active-epub-reader",
-			name: i18n.t("commands.openEpubReader.name"),
+			name: '打开 EPUB 阅读器',
 			checkCallback: (checking) => {
 				const activeFile = this.app.workspace.getActiveFile();
 				const canOpen = activeFile instanceof TFile && isSupportedBookFile(activeFile);
@@ -435,7 +403,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		await openEpubBookshelf(
 			this.app,
 			"[Standalone EPUB]",
-			`${i18n.t("views.epubBookshelfSidebar.title")}${i18n.t("notifications.error.openFailed")}`
+			`${'我的书架'}${'打开失败'}`
 		);
 	}
 
@@ -444,8 +412,8 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			this.app,
 			filePath,
 			"[Standalone EPUB]",
-			i18n.t("views.epubView.notice.bookFileMissing"),
-			i18n.t("views.epubView.notice.bookOpenFailed")
+			'未找到对应的书籍文件',
+			'打开书籍失败'
 		);
 	}
 }

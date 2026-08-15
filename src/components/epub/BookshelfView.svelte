@@ -26,7 +26,6 @@
         } from '../../services/epub/book-progress';
         import { epubActiveDocumentStore } from '../../stores/epub-active-document-store';
         import { getNavigationHub } from '../../services/navigation/navigation-hub-access';
-        import { currentLanguage, tr } from '../../utils/i18n';
         import EpubSearchInput from './EpubSearchInput.svelte';
         import EpubLoadingState from './EpubLoadingState.svelte';
         import BookshelfToolbar from './BookshelfToolbar.svelte';
@@ -145,13 +144,12 @@
                 onSettingsClick,
                 surfaceContext,
         }: Props = $props();
-        let t = $derived($tr);
         let activePlaylistId = $state<string | null>(null);
         let bookshelfPlaylists = $state<EpubBookshelfPlaylist[]>([]);
         let effectiveBackButtonLabel = $derived(
                 activePlaylistId
-                        ? t('epub.bookshelf.playlist.backToShelf')
-                        : (backButtonLabel || t('epub.bookshelf.back'))
+                        ? '返回书架'
+                        : (backButtonLabel || '返回上一视图')
         );
 
         let epubFiles = $state<EpubFileInfo[]>([]);
@@ -190,11 +188,11 @@
         function getLocalizedReadingStatus(status: BookshelfReadingStatus): string {
                 switch (status) {
                         case '阅读中':
-                                return t('epub.bookshelf.status.reading');
+                                return '阅读中';
                         case '已读完':
-                                return t('epub.bookshelf.status.finished');
+                                return '已读完';
                         default:
-                                return t('epub.bookshelf.status.unread');
+                                return '未开始';
                 }
         }
 
@@ -388,8 +386,8 @@
                 coverImage?: string | undefined
         ): BookMetadata {
                 return {
-                        title: pickFirstText(liveMetadata?.title, storedMetadata?.title) || t('epub.bookshelf.untitled'),
-                        author: pickFirstText(liveMetadata?.author, storedMetadata?.author) || t('epub.bookshelf.unknownAuthor'),
+                        title: pickFirstText(liveMetadata?.title, storedMetadata?.title) || '未命名书籍',
+                        author: pickFirstText(liveMetadata?.author, storedMetadata?.author) || '未知作者',
                         publisher: pickFirstText(liveMetadata?.publisher, storedMetadata?.publisher),
                         language: pickFirstText(liveMetadata?.language, storedMetadata?.language),
                         identifier: pickFirstText(liveMetadata?.identifier, storedMetadata?.identifier),
@@ -809,9 +807,7 @@
                         return '';
                 }
 
-                return t('epub.bookshelf.chapterCount', {
-                        count: new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(chapterCount),
-                });
+                return `${new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(chapterCount)} 章`;
         }
 
         function formatBookshelfWordCount(wordCount: number | undefined): string {
@@ -819,33 +815,13 @@
                         return '';
                 }
 
-                const isChinese = get(currentLanguage) === 'zh-CN' || get(currentLanguage) === 'zh-TW';
-
-                if (isChinese) {
-                        if (wordCount >= 10000) {
-                                return t('epub.bookshelf.wordCountWan', {
-                                        value: formatCompactWordCountValue(wordCount / 10000),
-                                });
-                        }
-                        if (wordCount >= 1000) {
-                                return t('epub.bookshelf.wordCountKilo', {
-                                        value: formatCompactWordCountValue(wordCount / 1000),
-                                });
-                        }
-                        return t('epub.bookshelf.wordCountChars', {
-                                value: new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(wordCount),
-                        });
+                if (wordCount >= 10000) {
+                        return `${formatCompactWordCountValue(wordCount / 10000)} 万字`;
                 }
-
                 if (wordCount >= 1000) {
-                        return t('epub.bookshelf.wordCountKilo', {
-                                value: formatCompactWordCountValue(wordCount / 1000),
-                        });
+                        return `${formatCompactWordCountValue(wordCount / 1000)} 千字`;
                 }
-
-                return t('epub.bookshelf.wordCountChars', {
-                        value: new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(wordCount),
-                });
+                return `${new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(wordCount)} 字`;
         }
 
         function handleBookKeydown(event: KeyboardEvent, path: string) {
@@ -872,21 +848,18 @@
 
         function formatPlaylistUpdatedLabel(updatedAt: number): string {
                 if (!Number.isFinite(updatedAt) || updatedAt <= 0) {
-                        return t('epub.bookshelf.playlist.updatedUnknown');
+                        return '最近更新';
                 }
                 const formatted = formatBookshelfLastReadTime(updatedAt);
                 return formatted
-                        ? t('epub.bookshelf.playlist.updated', { time: formatted })
-                        : t('epub.bookshelf.playlist.updatedUnknown');
+                        ? `更新于 ${formatted}`
+                        : '最近更新';
         }
 
         function buildPlaylistMetaLine(playlist: EpubBookshelfPlaylist): string {
                 const validPaths = new Set(epubFiles.map((file) => file.path));
                 const resolvedCount = playlist.bookPaths.filter((path) => validPaths.has(path)).length;
-                return t('epub.bookshelf.playlist.rowMeta', {
-                        count: resolvedCount,
-                        updated: formatPlaylistUpdatedLabel(playlist.updatedAt),
-                });
+                return `${resolvedCount} 本书 · ${formatPlaylistUpdatedLabel(playlist.updatedAt)}`;
         }
 
         function getPlaylistCoverUrls(playlist: EpubBookshelfPlaylist): Array<string | null> {
@@ -909,12 +882,12 @@
         async function createBookshelfPlaylist(initialBookPath?: string) {
                 const { EpubBookRenameModal } = await import('../modals/EpubBookRenameModal');
                 const modal = new EpubBookRenameModal(app, {
-                        title: t('epub.bookshelf.playlist.createTitle'),
-                        label: t('epub.bookshelf.playlist.renameLabel'),
-                        placeholder: t('epub.bookshelf.playlist.renamePlaceholder'),
-                        confirmLabel: t('epub.bookshelf.playlist.createConfirm'),
-                        cancelLabel: t('epub.bookshelf.playlist.createCancel'),
-                        initialTitle: t('epub.bookshelf.playlist.defaultName'),
+                        title: '新建书单',
+                        label: '书单名称',
+                        placeholder: '输入书单名称',
+                        confirmLabel: '创建',
+                        cancelLabel: '取消',
+                        initialTitle: '新书单',
                 });
                 const name = await modal.openAndWait();
                 if (!name?.trim()) {
@@ -929,7 +902,7 @@
                         activePlaylistId = playlist.id;
                 } catch (error) {
                         logger.error('Failed to create bookshelf playlist:', error);
-                        new Notice(t('epub.bookshelf.playlist.createFailed'));
+                        new Notice('我的书架：创建书单失败');
                 }
         }
 
@@ -937,10 +910,10 @@
                 try {
                         await storageService.addBookToBookshelfPlaylist(playlistId, bookPath);
                         bookshelfPlaylists = await storageService.loadBookshelfPlaylists();
-                        new Notice(t('epub.bookshelf.playlist.addedToPlaylist'));
+                        new Notice('我的书架：已加入书单');
                 } catch (error) {
                         logger.error('Failed to add book to playlist:', error);
-                        new Notice(t('epub.bookshelf.playlist.addFailed'));
+                        new Notice('我的书架：加入书单失败');
                 }
         }
 
@@ -951,10 +924,10 @@
                 try {
                         await storageService.removeBookFromBookshelfPlaylist(activePlaylistId, bookPath);
                         bookshelfPlaylists = await storageService.loadBookshelfPlaylists();
-                        new Notice(t('epub.bookshelf.playlist.removedFromPlaylist'));
+                        new Notice('我的书架：已从书单中移除');
                 } catch (error) {
                         logger.error('Failed to remove book from playlist:', error);
-                        new Notice(t('epub.bookshelf.playlist.removeFailed'));
+                        new Notice('我的书架：从书单移除失败');
                 }
         }
 
@@ -965,11 +938,11 @@
                 }
                 const { EpubBookRenameModal } = await import('../modals/EpubBookRenameModal');
                 const modal = new EpubBookRenameModal(app, {
-                        title: t('epub.bookshelf.playlist.rename'),
-                        label: t('epub.bookshelf.playlist.renameLabel'),
-                        placeholder: t('epub.bookshelf.playlist.renamePlaceholder'),
-                        confirmLabel: t('epub.bookshelf.playlist.createConfirm'),
-                        cancelLabel: t('epub.bookshelf.playlist.createCancel'),
+                        title: '重命名书单',
+                        label: '书单名称',
+                        placeholder: '输入书单名称',
+                        confirmLabel: '创建',
+                        cancelLabel: '取消',
                         initialTitle: playlist.name,
                 });
                 const name = await modal.openAndWait();
@@ -981,7 +954,7 @@
                         bookshelfPlaylists = await storageService.loadBookshelfPlaylists();
                 } catch (error) {
                         logger.error('Failed to rename bookshelf playlist:', error);
-                        new Notice(t('epub.bookshelf.playlist.renameFailed'));
+                        new Notice('我的书架：重命名书单失败');
                 }
         }
 
@@ -994,7 +967,7 @@
                         }
                 } catch (error) {
                         logger.error('Failed to delete bookshelf playlist:', error);
-                        new Notice(t('epub.bookshelf.playlist.deleteFailed'));
+                        new Notice('我的书架：删除书单失败');
                 }
         }
 
@@ -1002,7 +975,7 @@
                 event.preventDefault();
                 const menu = new Menu();
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.playlist.rename'))
+                        item.setTitle('重命名书单')
                                 .setIcon('pencil')
                                 .onClick(() => {
                                         void renameBookshelfPlaylistById(playlistId);
@@ -1010,7 +983,7 @@
                 });
                 menu.addSeparator();
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.playlist.delete'))
+                        item.setTitle('删除书单')
                                 .setIcon('trash')
                                 .onClick(() => {
                                         void deleteBookshelfPlaylistById(playlistId);
@@ -1039,7 +1012,7 @@
                 }
                 menu.addSeparator();
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.playlist.createNew'))
+                        item.setTitle('新建书单')
                                 .setIcon('plus')
                                 .onClick(() => {
                                         void createBookshelfPlaylist(bookPath);
@@ -1115,14 +1088,14 @@
 
                         if (showNotice) {
                                 const message = result.removedPaths.length > 0
-                                        ? t('epub.bookshelf.refreshSuccessWithCleanup', { count: result.removedPaths.length })
-                                        : t('epub.bookshelf.refreshSuccess');
+                                        ? `EPUB：我的书架已刷新，并清理 ${result.removedPaths.length} 条失效书籍记录`
+                                        : 'EPUB：我的书架已刷新';
                                 new Notice(message);
                         }
                 } catch (error) {
                         logger.error('Failed to refresh EPUB bookshelf:', error);
                         if (showNotice) {
-                                new Notice(t('epub.bookshelf.refreshFailed'));
+                                new Notice('EPUB：刷新我的书架失败');
                         }
                 } finally {
                         loadingBooks = false;
@@ -1164,9 +1137,9 @@
         function getBookDisplayName(filePath: string): string {
                 const file = app.vault.getAbstractFileByPath(filePath);
                 if (file instanceof TFile) {
-                        return file.basename || t('epub.bookshelf.currentBook');
+                        return file.basename || '当前书籍';
                 }
-                return stripSupportedBookExtension(filePath.split('/').pop() || '') || t('epub.bookshelf.currentBook');
+                return stripSupportedBookExtension(filePath.split('/').pop() || '') || '当前书籍';
         }
 
         async function resolveActiveBookPath(filePath: string): Promise<string | null> {
@@ -1220,7 +1193,7 @@
                 if (!resolvedPath) {
                         if (await storageService.isBookshelfSourceMissing(filePath)) {
                                 await removeMissingBookshelfEntry(filePath);
-                                new Notice(t('epub.bookshelf.notFoundRemoved'));
+                                new Notice('这本书的源文件已不存在，已从书架移除');
                         }
                         openingBookPath = null;
                         return;
@@ -1230,7 +1203,7 @@
                 if (!(file instanceof TFile) || !isSupportedBookFile(file)) {
                         if (await storageService.isBookshelfSourceMissing(filePath)) {
                                 await removeMissingBookshelfEntry(filePath);
-                                new Notice(t('epub.bookshelf.notFoundRemoved'));
+                                new Notice('这本书的源文件已不存在，已从书架移除');
                         }
                         openingBookPath = null;
                         return;
@@ -1279,14 +1252,14 @@
                         await refreshBookshelf();
 
                         if (result.removedBookId || result.removedMembership) {
-                                new Notice(t('epub.bookshelf.removeSuccess'));
+                                new Notice('我的书架：已从书架中移除');
                                 return;
                         }
 
-                        new Notice(t('epub.bookshelf.removeMissing'));
+                        new Notice('我的书架：这本书已不在我的书架中');
                 } catch (error) {
                         logger.error('Failed to remove book from bookshelf:', error);
-                        new Notice(t('epub.bookshelf.removeFailed'));
+                        new Notice('我的书架：从书架中移除失败');
                 }
         }
 
@@ -1303,7 +1276,7 @@
                 if (!(file instanceof TFile) || !isSupportedBookFile(file)) {
                         if (await storageService.isBookshelfSourceMissing(filePath)) {
                                 await removeMissingBookshelfEntry(filePath);
-                                new Notice(t('epub.bookshelf.notFoundRemoved'));
+                                new Notice('这本书的源文件已不存在，已从书架移除');
                         }
                         return null;
                 }
@@ -1404,21 +1377,21 @@
 
                         if (result.fileDeleted) {
                                 const retainedExcerptText = highlightStats.available
-                                        ? t('epub.bookshelf.excerptsRetained', { count: highlightStats.totalHighlights })
-                                        : t('epub.bookshelf.excerptsUntouched');
-                                new Notice(t('epub.bookshelf.deleteSuccess', { extra: retainedExcerptText }));
+                                        ? `；关联摘录 ${highlightStats.totalHighlights} 条仍保留在原笔记文件中`
+                                        : '；原有摘录笔记不会被删除';
+                                new Notice(`我的书架：已删除书籍文件${retainedExcerptText}`);
                                 return;
                         }
 
                         if (result.removedBookIds.length > 0 || result.removedMembershipEntries > 0 || result.removedScanEntries > 0) {
-                                new Notice(t('epub.bookshelf.deleteMissingAndCleaned'));
+                                new Notice('我的书架：书籍文件已不存在，已清理关联缓存');
                                 return;
                         }
 
-                        new Notice(t('epub.bookshelf.deleteMissing'));
+                        new Notice('我的书架：这本书已不存在');
                 } catch (error) {
                         logger.error('Failed to delete tracked book file:', error);
-                        new Notice(t('epub.bookshelf.deleteFailed'));
+                        new Notice('我的书架：删除书籍文件失败');
                 }
         }
 
@@ -1445,7 +1418,7 @@
                         modal.open();
                 } catch (error) {
                         logger.error('Failed to show EPUB book info:', error);
-                        new Notice(t('epub.bookshelf.loadInfoFailed'));
+                        new Notice('我的书架：读取书籍完整信息失败');
                 }
         }
 
@@ -1458,11 +1431,11 @@
 
                         const { VaultFileSuggestModal } = await import('../../modals/VaultFileSuggestModal');
                         const modal = new VaultFileSuggestModal(app, {
-                                placeholder: t('epub.bookshelf.customCover.placeholder'),
+                                placeholder: '搜索并选择封面图片',
                                 filter: isVaultImageFile,
                                 allowEmptySelection: true,
-                                emptySelectionLabel: t('epub.bookshelf.customCover.reset'),
-                                emptySelectionDescription: t('epub.bookshelf.customCover.resetDescription'),
+                                emptySelectionLabel: '恢复默认封面',
+                                emptySelectionDescription: '使用书籍内置封面',
                                 icon: 'image',
                         });
                         const selection = await modal.openAndGetSelection();
@@ -1473,7 +1446,7 @@
                         const coverPath = selection.status === 'selected' ? selection.file.path : null;
                         const saved = await storageService.setBookshelfCustomCover(resolvedPath, coverPath);
                         if (!saved) {
-                                new Notice(t('epub.bookshelf.customCover.notOnShelf'));
+                                new Notice('我的书架：当前书籍不在书架中');
                                 return;
                         }
 
@@ -1501,12 +1474,12 @@
 
                         new Notice(
                                 coverPath
-                                        ? t('epub.bookshelf.customCover.success')
-                                        : t('epub.bookshelf.customCover.resetSuccess')
+                                        ? '我的书架：已更新书籍封面'
+                                        : '我的书架：已恢复默认封面'
                         );
                 } catch (error) {
                         logger.error('Failed to customize bookshelf cover:', error);
-                        new Notice(t('epub.bookshelf.customCover.failed'));
+                        new Notice('我的书架：更新书籍封面失败');
                 }
         }
 
@@ -1519,7 +1492,7 @@
                         await storageService.markBookCompleted(context.storedBook.id);
                         await refreshBookshelf();
                         const title = context.metadata.title?.trim() || context.file.name;
-                        new Notice(t('epub.reader.bookCompletionMarked', { title }));
+                        new Notice(`已标记《${title}》为已读完`);
                 } catch (error) {
                         logger.error('Failed to mark book as completed:', error);
                 }
@@ -1545,7 +1518,7 @@
                         metadata: {
                                 ...context.metadata,
                                 title: nextTitle,
-                                author: context.metadata.author || t('epub.bookshelf.unknownAuthor'),
+                                author: context.metadata.author || '未知作者',
                                 chapterCount: context.metadata.chapterCount ?? 0,
                         },
                         currentPosition: { chapterIndex: 0, cfi: '', percent: 0 },
@@ -1621,12 +1594,12 @@
                                 || context.file.basename;
                         const { EpubBookRenameModal } = await import('../modals/EpubBookRenameModal');
                         const modal = new EpubBookRenameModal(app, {
-                                title: t('epub.bookshelf.rename.title'),
-                                label: t('epub.bookshelf.rename.label'),
-                                placeholder: t('epub.bookshelf.rename.placeholder'),
-                                hint: t('epub.bookshelf.rename.hint'),
-                                confirmLabel: t('epub.bookshelf.rename.confirm'),
-                                cancelLabel: t('epub.bookshelf.rename.cancel'),
+                                title: '重命名书籍',
+                                label: '书籍名称',
+                                placeholder: '输入新的书籍名称',
+                                hint: '书架、阅读器标签与书签笔记将同步使用此名称。',
+                                confirmLabel: '保存',
+                                cancelLabel: '取消',
                                 initialTitle: currentTitle,
                         });
                         const nextTitle = await modal.openAndWait();
@@ -1642,10 +1615,10 @@
                         }
                         broadcastRenamedBookTitle(savedBook);
                         dispatchBookshelfDataChanged();
-                        new Notice(t('epub.bookshelf.rename.success', { title: nextTitle }));
+                        new Notice(`已重命名为「${nextTitle}」`);
                 } catch (error) {
                         logger.error('Failed to rename book from shelf:', error);
-                        new Notice(t('epub.bookshelf.rename.failed'));
+                        new Notice('我的书架：重命名失败');
                 }
         }
 
@@ -1658,7 +1631,7 @@
                         await storageService.clearBookCompletion(context.storedBook.id);
                         await refreshBookshelf();
                         const title = context.metadata.title?.trim() || context.file.name;
-                        new Notice(t('epub.reader.bookCompletionCleared', { title }));
+                        new Notice(`已取消《${title}》的已读完标记`);
                 } catch (error) {
                         logger.error('Failed to clear book completion:', error);
                 }
@@ -1669,19 +1642,19 @@
                 const meta = bookMetaByPath.get(filePath);
                 const menu = new Menu();
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.menu.openInNewTab'))
+                        item.setTitle('在新标签页打开')
                                 .setIcon('external-link')
                                 .onClick(() => openBookInNewTab(filePath));
                 });
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.menu.viewFullInfo'))
+                        item.setTitle('查看书籍完整信息')
                                 .setIcon('info')
                                 .onClick(() => {
                                         void showBookInfo(filePath);
                                 });
                 });
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.menu.rename'))
+                        item.setTitle('重命名')
                                 .setIcon('pencil')
                                 .onClick(() => {
                                         void renameBookFromShelf(filePath);
@@ -1689,7 +1662,7 @@
                 });
                 if (meta?.readingStatus === '已读完') {
                         menu.addItem((item) => {
-                                item.setTitle(t('epub.bookshelf.menu.clearCompleted'))
+                                item.setTitle('取消已读完标记')
                                         .setIcon('rotate-ccw')
                                         .onClick(() => {
                                                 void clearBookCompletionFromShelf(filePath);
@@ -1697,7 +1670,7 @@
                         });
                 } else {
                         menu.addItem((item) => {
-                                item.setTitle(t('epub.bookshelf.menu.markCompleted'))
+                                item.setTitle('标记为已读完')
                                         .setIcon('check-circle')
                                         .onClick(() => {
                                                 void markBookCompletedFromShelf(filePath);
@@ -1705,7 +1678,7 @@
                         });
                 }
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.menu.customCover'))
+                        item.setTitle('自定义书籍封面')
                                 .setIcon('image')
                                 .onClick(() => {
                                         void customizeBookCover(filePath);
@@ -1714,7 +1687,7 @@
                 menu.addSeparator();
                 if (activePlaylistId) {
                         menu.addItem((item) => {
-                                item.setTitle(t('epub.bookshelf.playlist.removeFromPlaylist'))
+                                item.setTitle('从书单中移除')
                                         .setIcon('minus-circle')
                                         .onClick(() => {
                                                 void removeBookFromActivePlaylist(filePath);
@@ -1723,7 +1696,7 @@
                         menu.addSeparator();
                 }
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.playlist.addToPlaylist'))
+                        item.setTitle('加入书单')
                                 .setIcon('library')
                                 .onClick(() => {
                                         openAddToPlaylistMenu(e, filePath);
@@ -1731,14 +1704,14 @@
                 });
                 menu.addSeparator();
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.menu.removeFromShelf'))
+                        item.setTitle('从书架中移除')
                                 .setIcon('trash')
                                 .onClick(() => {
                                         void removeBookFromShelf(filePath);
                                 });
                 });
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.menu.deleteBookFile'))
+                        item.setTitle('删除书籍文件')
                                 .setIcon('trash-2')
                                 .onClick(() => {
                                         void deleteBookFile(filePath);
@@ -1750,7 +1723,7 @@
         function buildBylineText(meta?: BookshelfBookMeta): string {
                 const values = [
                         meta?.author?.trim() || '',
-                        meta?.translator?.trim() ? t('epub.bookshelf.translator', { name: meta.translator.trim() }) : '',
+                        meta?.translator?.trim() ? `译者：${meta.translator.trim()}` : '',
                         meta?.publisher?.trim() || '',
                 ].filter(Boolean);
                 return values.join(' · ');
@@ -1959,29 +1932,29 @@
         });
 
         let activeSearchSummary = $derived.by(() => {
-                return searchQuery.trim() ? t('epub.bookshelf.queryLabel', { query: searchQuery.trim() }) : '';
+                return searchQuery.trim() ? `条件“${searchQuery.trim()}”` : '';
         });
 
         let emptyStateMessage = $derived.by(() => {
                 if (activePlaylistId && activePlaylistBooks.length > 0 && hasActiveSearchCriteria()) {
                         return activeSearchSummary
-                                ? t('epub.bookshelf.noMatchesWithQuery', { query: activeSearchSummary })
-                                : t('epub.bookshelf.noMatches');
+                                ? `未找到匹配 ${activeSearchSummary} 的结果`
+                                : '未找到匹配结果';
                 }
                 if (epubFiles.length > 0) {
-                        return activeSearchSummary ? t('epub.bookshelf.noMatchesWithQuery', { query: activeSearchSummary }) : t('epub.bookshelf.noMatches');
+                        return activeSearchSummary ? `未找到匹配 ${activeSearchSummary} 的结果` : '未找到匹配结果';
                 }
-                return t('epub.bookshelf.empty');
+                return '我的书架中还没有书籍或漫画，先去扫描库中书籍和漫画并加入书架吧。';
         });
 
         let activePlaylistEmptyMessage = $derived.by(() => {
                 if (activePlaylistBooks.length === 0) {
-                        return t('epub.bookshelf.playlist.empty');
+                        return '此书单还没有书籍。可在书架书籍的右键菜单中加入。';
                 }
                 if (hasActiveSearchCriteria()) {
                         return emptyStateMessage;
                 }
-                return t('epub.bookshelf.playlist.empty');
+                return '此书单还没有书籍。可在书架书籍的右键菜单中加入。';
         });
 
         function handleBookshelfSettingsChanged(event: Event) {
@@ -2029,7 +2002,7 @@
                                 mode
                         }
                 }));
-                new Notice(t('epub.bookshelf.switchDisplayMode', { mode: getBookshelfDisplayModeOption(mode).label }));
+                new Notice(`我的书架已切换为${getBookshelfDisplayModeOption(mode).label}`);
         }
 
         function dispatchBookshelfDataChanged(): void {
@@ -2054,7 +2027,7 @@
         ) {
                 const entries = scanEntries ?? await storageService.loadScanIndex();
                 if (entries.length === 0) {
-                        new Notice(t('epub.bookshelf.vaultScanEmpty'));
+                        new Notice('我的书架：当前仓库中未发现书籍或漫画');
                         return;
                 }
 
@@ -2063,14 +2036,14 @@
                 const modal = new EpubBookshelfImportModal(app, {
                         entries,
                         membership,
-                        title: t('epub.bookshelf.vaultScanTitle'),
+                        title: '扫描库中书籍和漫画',
                                 onConfirm: async (paths: string[]) => {
                                         const addedEntries = await storageService.addBooksToBookshelf(paths);
                                         if (addedEntries.length === 0) {
                                                 new Notice(
                                                         paths.length > 0
-                                                                ? t('epub.bookshelf.vaultScanAddFailed')
-                                                                : t('epub.bookshelf.vaultScanAlreadyAdded')
+                                                                ? '我的书架：所选书籍无法加入（路径无法解析或存在重名冲突），请刷新扫描后重试'
+                                                                : '我的书架：所选书籍或漫画已在书架中'
                                                 );
                                                 return;
                                         }
@@ -2080,7 +2053,7 @@
                                         app,
                                         addedEntries.map((entry) => entry.path)
                                 );
-                                new Notice(t('epub.bookshelf.vaultScanAdded', { count: addedEntries.length }));
+                                new Notice(`我的书架：已加入 ${addedEntries.length} 本书籍或漫画`);
                         },
                 });
                 modal.open();
@@ -2092,14 +2065,14 @@
                         notifyBookshelfChanged(false);
 
                         if (scanEntries.length === 0) {
-                                new Notice(t('epub.bookshelf.vaultScanEmpty'));
+                                new Notice('我的书架：当前仓库中未发现书籍或漫画');
                                 return;
                         }
 
                         await openScanImportModal(scanEntries);
                 } catch (error) {
                         logger.error('Failed to scan vault EPUB files:', error);
-                        new Notice(t('epub.bookshelf.vaultScanFailed'));
+                        new Notice('我的书架：扫描书籍和漫画失败');
                 }
         }
 
@@ -2108,14 +2081,14 @@
                         await refreshBookshelf(true);
                 } catch (error) {
                         logger.error('Failed to refresh EPUB bookshelf:', error);
-                        new Notice(t('epub.bookshelf.refreshFailed'));
+                        new Notice('EPUB：刷新我的书架失败');
                 }
         }
 
         function openFallbackSettingsMenu(event: MouseEvent) {
                 const menu = new Menu();
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.menu.displayFeatures'))
+                        item.setTitle('书架显示功能')
                                 .setIcon('library');
                         const subMenu = (item as any).setSubmenu();
 
@@ -2132,21 +2105,21 @@
                 });
                 menu.addSeparator();
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.playlist.createNew'))
+                        item.setTitle('新建书单')
                                 .setIcon('plus')
                                 .onClick(() => {
                                         void createBookshelfPlaylist();
                                 });
                 });
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.menu.scanVault'))
+                        item.setTitle('扫描仓库书籍和漫画')
                                 .setIcon('scan-search')
                                 .onClick(() => {
                                         void scanVaultAndPromptImport();
                                 });
                 });
                 menu.addItem((item) => {
-                        item.setTitle(t('epub.bookshelf.menu.refresh'))
+                        item.setTitle('刷新书架')
                                 .setIcon('refresh-cw')
                                 .onClick(() => {
                                         void requestBookshelfRefresh();
@@ -3459,7 +3432,7 @@
                         app={app}
                         bind:value={searchQuery}
                         onClear={clearSearchCriteria}
-                        placeholder={t('epub.bookshelf.searchPlaceholder')}
+                        placeholder={'搜索书籍，或输入 status:、author:、created:'}
                         dataSource="bookshelf"
                         availableStatuses={localizedBookshelfReadingStatusOptions}
                         availableAuthors={availableAuthorOptions}
@@ -3474,7 +3447,7 @@
 
 {#if loadingBooks && epubFiles.length > 0}
         <div class="epub-bookshelf-loading-banner">
-                <EpubLoadingState variant="inline" message={t('epub.bookshelf.refreshing')} />
+                <EpubLoadingState variant="inline" message={'正在加载书架数据…'} />
         </div>
 {/if}
 
@@ -3494,7 +3467,7 @@
                 />
         {:else if loadingBooks && epubFiles.length === 0}
                 <div class="epub-placeholder">
-                        <EpubLoadingState message={t('epub.bookshelf.refreshing')} />
+                        <EpubLoadingState message={'正在加载书架数据…'} />
                 </div>
         {:else if showBookshelfEmptyState}
                 <div class="epub-placeholder">
@@ -3590,7 +3563,7 @@
                                                                 }}
                                                                 index={filteredFiles.length + playlistIndex}
                                                                 coverUrls={getPlaylistCoverUrls(playlist)}
-                                                                badgeLabel={t('epub.bookshelf.playlist.coverBadge')}
+                                                                badgeLabel={'书单'}
                                                                 onOpen={openPlaylistDetail}
                                                                 onKeydown={handlePlaylistKeydown}
                                                                 onContextMenu={handlePlaylistContextMenu}

@@ -53,7 +53,6 @@ function createPlugin(): Plugin {
 		bookmarkFolder: "CONFIG/STORAGE/weave/epub-bookmarks",
 		highlightStoragePath: "CONFIG/STORAGE/weave/local-storage.json",
 		weaveParentFolder: "CONFIG/STORAGE",
-		interfaceLanguage: "zh-CN",
 		enableDebugMode: false,
 		enableLargeNavButtons: false,
 		showPremiumFeaturesPreview: false,

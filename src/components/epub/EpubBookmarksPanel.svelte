@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { setIcon, type App } from 'obsidian';
 	import { onMount } from 'svelte';
-	import { tr } from '../../utils/i18n';
 	import EpubLoadingState from './EpubLoadingState.svelte';
 	import { logger } from '../../utils/logger';
 	import { EpubBookmarkService, type EpubBookmarkRecord } from '../../services/epub/EpubBookmarkService';
@@ -16,8 +15,6 @@
 	}
 
 	let { app, book, bookmarkRevision = 0, onDeleteBookmark, onNavigate }: Props = $props();
-	let t = $derived($tr);
-
 	let bookmarks = $state<EpubBookmarkRecord[]>([]);
 	let loading = $state(false);
 	let deletingBookmarkId = $state('');
@@ -52,7 +49,7 @@
 
 	function getChapterLabel(bookmark: EpubBookmarkRecord): string {
 		return String(bookmark.chapterTitle || '').trim()
-			|| t('epub.bookmarks.chapterFallback', { chapter: bookmark.chapterIndex + 1 });
+			|| `第 ${bookmark.chapterIndex + 1} 章`;
 	}
 
 	function getPageLabel(bookmark: EpubBookmarkRecord): string {
@@ -150,12 +147,12 @@
 <div class="epub-bookmarks-panel">
 	{#if loading}
 		<div class="bm-empty">
-			<EpubLoadingState message={t('epub.bookmarks.loading')} />
+			<EpubLoadingState message={'正在加载书签…'} />
 		</div>
 	{:else if bookmarks.length === 0}
 		<div class="bm-empty">
-			<div class="bm-empty-label">{t('epub.bookmarks.empty')}</div>
-			<div class="bm-empty-hint">{t('epub.bookmarks.hint')}</div>
+			<div class="bm-empty-label">{'暂无书签'}</div>
+			<div class="bm-empty-hint">{'点击阅读器顶部书签按钮即可保存当前位置'}</div>
 		</div>
 	{:else}
 		<div class="bm-list">
@@ -163,7 +160,7 @@
 				{@const pageLabel = getPageLabel(bookmark)}
 				{@const createdTime = formatTime(bookmark.createdAt)}
 				<div class="bm-item">
-					<button class="bm-item-main" type="button" onclick={() => navigateToBookmark(bookmark)} aria-label={t('epub.bookmarks.goto', { chapter: getChapterLabel(bookmark) })}>
+					<button class="bm-item-main" type="button" onclick={() => navigateToBookmark(bookmark)} aria-label={`跳转到 ${getChapterLabel(bookmark)}`}>
 						<span class="bm-item-meta-row bm-item-meta-row--top">
 							<span class="bm-item-time" title={createdTime}>{createdTime}</span>
 							{#if pageLabel}
@@ -179,8 +176,8 @@
 							class="bm-item-delete"
 							type="button"
 							onclick={(event) => void handleDeleteBookmark(event, bookmark)}
-							aria-label={t('epub.bookmarks.deleteWithChapter', { chapter: getChapterLabel(bookmark) })}
-							title={t('epub.bookmarks.delete')}
+							aria-label={`删除书签 ${getChapterLabel(bookmark)}`}
+							title={'删除书签'}
 							disabled={deletingBookmarkId === bookmark.id}
 						>
 							<span class="bm-item-delete-icon" use:icon={'trash-2'}></span>

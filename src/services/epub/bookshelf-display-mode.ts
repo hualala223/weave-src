@@ -1,5 +1,3 @@
-import { i18n } from "../../utils/i18n";
-
 export type BookshelfSurfaceContext = "main" | "sidebar";
 
 export type BookshelfDisplayMode = "adaptive" | "list" | "grid" | "covers";
@@ -22,12 +20,19 @@ const BOOKSHELF_DISPLAY_MODE_META: Array<Pick<BookshelfDisplayModeOption, "mode"
 	{ mode: "covers", icon: "library" },
 ];
 
+const BOOKSHELF_DISPLAY_MODE_LABELS: Record<BookshelfDisplayMode, { label: string; description: string }> = {
+	adaptive: { label: "跟随位置", description: "侧边栏列表，内容区卡片。" },
+	list: { label: "列表详情", description: "突出标题、作者、标签和进度。" },
+	grid: { label: "卡片网格", description: "显示封面与关键信息。" },
+	covers: { label: "仅看封面", description: "切换到纯封面书墙。" },
+};
+
 function buildBookshelfDisplayModeOption(mode: BookshelfDisplayMode, icon: string): BookshelfDisplayModeOption {
 	return {
 		mode,
 		icon,
-		label: i18n.t(`epub.displayMode.${mode}.label`),
-		description: i18n.t(`epub.displayMode.${mode}.description`),
+		label: BOOKSHELF_DISPLAY_MODE_LABELS[mode].label,
+		description: BOOKSHELF_DISPLAY_MODE_LABELS[mode].description,
 	};
 }
 

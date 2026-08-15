@@ -1,5 +1,4 @@
 import { Notice, TFile, TFolder, type App, normalizePath } from "obsidian";
-import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
 import { generateCardUUID } from "../identifier/WeaveIDGenerator";
 import {
@@ -267,7 +266,7 @@ export class EpubCanvasService {
 			return node;
 		} catch (e) {
 			logger.error(`[EpubCanvasService] Failed to ${logLabel}:`, e);
-			new Notice(i18n.t("views.epubView.notice.canvasAddNodeFailed"));
+			new Notice('添加节点到 canvas 失败');
 			return null;
 		}
 	}

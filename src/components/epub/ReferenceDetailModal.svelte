@@ -3,7 +3,6 @@
 	import { computePosition, flip, offset, shift } from '@floating-ui/dom';
 	import type { EpubReaderEngine, HighlightClickInfo } from '../../services/epub';
 	import type { ReferenceSourceInfo, ReferenceStats } from '../../services/epub/EpubReferenceStatsService';
-	import { tr } from '../../utils/i18n';
 	import { createEventBinder, isEventOutsideToolbar } from './toolbar-positioning';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 
@@ -26,8 +25,6 @@
 		onClose,
 		onNavigate,
 	}: Props = $props();
-	let t = $derived($tr);
-
 	let popoverEl: HTMLDivElement | undefined = $state(undefined);
 	let posTop = $state(0);
 	let posLeft = $state(0);
@@ -223,9 +220,9 @@
 		aria-modal="false"
 		aria-labelledby="epub-reference-popover-heading"
 	>
-		<section class="epub-reference-popover__list" aria-label={t('epub.reader.referenceDetail.listAria')}>
+		<section class="epub-reference-popover__list" aria-label={'引用来源列表'}>
 			<h2 id="epub-reference-popover-heading" class="epub-reference-popover__subtitle">
-				{t('epub.reader.referenceDetail.title')}
+				{'引用该摘录笔记的来源文档'}
 			</h2>
 			<ol class="epub-reference-popover__items">
 				{#each stats.sources as source, index (source.key)}
@@ -235,7 +232,7 @@
 							class="epub-reference-popover__item"
 							onclick={() => void handleNavigate(source)}
 							disabled={navigatingKey === source.key}
-							aria-label={t('epub.reader.referenceDetail.itemAria', { index: index + 1, name: source.displayName })}
+							aria-label={`打开第 ${index + 1} 条来源：${source.displayName}`}
 							title={source.file}
 						>
 							<span class="epub-reference-popover__line">{index + 1}.{source.displayName}</span>

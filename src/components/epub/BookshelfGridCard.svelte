@@ -72,14 +72,14 @@
 			{#if file.bylineText}
 				<div class="card-author">{file.bylineText}</div>
 			{/if}
-			<div class="card-continue-cta">{t('epub.bookshelf.continueReadingCta')}</div>
+			<div class="card-continue-cta">{'继续阅读'}</div>
 		{:else}
 			{#if file.author}
 				<div class="card-author">{file.author}</div>
 			{/if}
 			{#if file.translator}
 				<div class="card-author card-translator">
-					{t('epub.bookshelf.translator', { name: file.translator })}
+					{`译者：${file.translator}`}
 				</div>
 			{/if}
 			{#if file.publisher}

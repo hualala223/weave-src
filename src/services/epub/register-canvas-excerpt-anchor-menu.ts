@@ -1,5 +1,4 @@
 import { Notice, type App, type Plugin } from "obsidian";
-import { i18n } from "../../utils/i18n";
 import {
 	getCanvasExcerptAnchorState,
 	readCanvasExcerptAnchorStateFromCache,
@@ -19,7 +18,7 @@ async function toggleCanvasExcerptAnchorLock(
 ): Promise<void> {
 	const normalizedNodeId = String(nodeId || "").trim();
 	if (!normalizedNodeId) {
-		new Notice(i18n.t("epub.reader.canvasExcerptAnchorSelectOne"));
+		new Notice("请先选中一个 canvas 节点");
 		return;
 	}
 
@@ -27,13 +26,7 @@ async function toggleCanvasExcerptAnchorLock(
 	const isLocked = String(current.lockedNodeId || "").trim() === normalizedNodeId;
 	const nextLock = isLocked ? null : normalizedNodeId;
 	await setCanvasExcerptAnchorLock(app, canvasPath, nextLock);
-	new Notice(
-		i18n.t(
-			nextLock
-				? "epub.reader.canvasExcerptAnchorLocked"
-				: "epub.reader.canvasExcerptAnchorUnlocked"
-		)
-	);
+	new Notice(nextLock ? "已固定摘录锚点" : "已取消固定摘录锚点");
 }
 
 function registerCanvasNodePinMenu(app: App, plugin: Plugin): void {
@@ -49,11 +42,9 @@ function registerCanvasNodePinMenu(app: App, plugin: Plugin): void {
 		menu.addItem((item) => {
 			item
 				.setTitle(
-					i18n.t(
-						isLocked
-							? "epub.reader.canvasExcerptAnchorUnlock"
-							: "epub.reader.canvasExcerptAnchorLock"
-					)
+					isLocked
+						? "取消固定阅读器摘录锚点"
+						: "固定阅读器摘录锚点"
 				)
 				.setIcon("pin")
 				.setChecked(isLocked)

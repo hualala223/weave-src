@@ -4,7 +4,6 @@ import { deflateRaw, inflateRaw } from "pako";
 import { generateBlockID } from "../identifier/WeaveIDGenerator";
 import { logger } from "../../utils/logger";
 import { EPUB_RUNTIME } from "./epub-runtime";
-import { i18n } from "../../utils/i18n";
 import { createSupportedBookWikilinkRegex } from "./book-link-patterns";
 import {
 	getBookFormatDisplayLabel,
@@ -1246,7 +1245,7 @@ export class EpubLinkService {
 		if (
 			!ensureBookSourceLocationAccess(
 				this.app,
-				i18n.t("epub.reader.sourceLocationFeatureNotice")
+				'双向链接定位是高级功能，请激活许可证后使用'
 			)
 		) {
 			return;
@@ -1281,7 +1280,7 @@ export class EpubLinkService {
 		if (
 			!ensureBookSourceLocationAccess(
 				this.app,
-				i18n.t("epub.reader.sourceLocationFeatureNotice")
+				'双向链接定位是高级功能，请激活许可证后使用'
 			)
 		) {
 			return;

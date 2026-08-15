@@ -114,14 +114,8 @@ vi.mock('obsidian', () => {
 });
 
 import { EpubBookshelfSidebarView } from './EpubBookshelfSidebarView';
-import { currentLanguage, i18n, initI18n } from '../utils/i18n';
 
 describe('EpubBookshelfSidebarView', () => {
-	beforeEach(() => {
-		initI18n();
-		currentLanguage.set('zh-CN');
-	});
-
 	afterEach(() => {
 		mountSpy.mockClear();
 		unmountSpy.mockClear();
@@ -208,6 +202,6 @@ describe('EpubBookshelfSidebarView', () => {
 
 		await mountCall[1].props.onBack?.();
 		expect(plugin.openEpubReader).not.toHaveBeenCalled();
-		expect(noticeSpy).toHaveBeenCalledWith(i18n.t('views.epubView.notice.noRecentBook'));
+		expect(noticeSpy).toHaveBeenCalledWith('暂无最近打开的 EPUB');
 	});
 });

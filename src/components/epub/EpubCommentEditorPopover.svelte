@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
-	import { tr } from '../../utils/i18n';
 	import type { EpubReaderEngine, HighlightClickInfo } from '../../services/epub';
 	import { computeToolbarPosition, TOOLBAR_EDGE_MARGIN } from './toolbar-positioning';
 	import {
@@ -38,8 +37,6 @@
 		onSave,
 		onClose,
 	}: Props = $props();
-	let t = $derived($tr);
-
 	let popoverEl: HTMLDivElement | undefined = $state(undefined);
 	let textareaEl: HTMLTextAreaElement | undefined = $state(undefined);
 	let posTop = $state(0);
@@ -406,15 +403,15 @@
 			class="epub-comment-editor__textarea"
 			bind:this={textareaEl}
 			value={draftText}
-			placeholder={t('epub.reader.commentEditor.placeholder')}
-			aria-label={t('epub.reader.commentEditor.ariaLabel')}
+			placeholder={'输入你的想法'}
+			aria-label={'EPUB 想法内容'}
 			disabled={saving}
 			onfocus={handleTextareaFocus}
 			oninput={(event) => onDraftTextChange((event.currentTarget as HTMLTextAreaElement).value)}
 		></textarea>
 		<div class="epub-comment-editor__actions">
-			<button type="button" class="epub-comment-editor__cancel" disabled={saving} onclick={onClose}>{t('epub.reader.commentEditor.cancel')}</button>
-			<button type="button" class="mod-cta" disabled={saving} onclick={onSave}>{saving ? t('epub.reader.commentEditor.saving') : t('epub.reader.commentEditor.save')}</button>
+			<button type="button" class="epub-comment-editor__cancel" disabled={saving} onclick={onClose}>{'取消'}</button>
+			<button type="button" class="mod-cta" disabled={saving} onclick={onSave}>{saving ? '保存中...' : '保存想法'}</button>
 		</div>
 	</div>
 {/if}

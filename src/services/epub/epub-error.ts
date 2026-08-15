@@ -1,5 +1,4 @@
 import { extractErrorMessage } from "../../types/utility-types";
-import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
 import { BOOK_LOAD_HARD_TIMEOUT_MS } from "./book-load-session";
 import { getBookFormatDisplayLabel, isSupportedBookPath } from "./book-format";
@@ -150,35 +149,32 @@ function buildUserMessage(
 	const format = resolveBookFormatLabel(filePath);
 	switch (code) {
 		case "file_not_found":
-			return i18n.t("epub.errors.fileNotFound");
+			return 'EPUB 文件不存在或已被移动，请确认源文件仍在库中';
 		case "load_timeout":
-			return i18n.t("epub.errors.loadTimeout", {
-				format: format || "EPUB",
-				seconds: String(Math.round(BOOK_LOAD_HARD_TIMEOUT_MS / 1000)),
-			});
+			return `${format || "EPUB"} 加载超时（已超过 ${String(Math.round(BOOK_LOAD_HARD_TIMEOUT_MS / 1000))} 秒），请刷新书架后重试`;
 		case "invalid_archive":
-			return i18n.t("epub.errors.invalidArchive");
+			return '该 EPUB 压缩包已损坏，或当前读取到的文件数据不完整，暂时无法打开';
 		case "missing_container":
-			return i18n.t("epub.errors.missingContainer");
+			return '该 EPUB 缺少必要的容器索引，当前无法打开';
 		case "missing_package_document":
-			return i18n.t("epub.errors.missingPackageDocument");
+			return '该 EPUB 缺少必要的 package 文档，当前无法打开';
 		case "invalid_markup":
 			return operation === "toc"
-				? i18n.t("epub.errors.invalidMarkupToc")
-				: i18n.t("epub.errors.invalidMarkupOpen");
+				? '该 EPUB 的目录或章节文档格式异常，当前无法读取目录'
+				: '该 EPUB 的章节文档格式异常，当前无法正常打开';
 		case "invalid_cfi_target":
 			return operation === "navigate"
-				? i18n.t("epub.errors.invalidCfiNavigate")
-				: i18n.t("epub.errors.invalidCfiFallback");
+				? '该 EPUB 的内部定位信息异常，无法跳转到目标位置'
+				: '该 EPUB 的内部导航结构异常，但已自动回退到可用阅读位置';
 		case "render_failed":
-			return i18n.t("epub.errors.renderFailed");
+			return 'EPUB 阅读器渲染失败，请重试或切换阅读模式后再试';
 		case "toc_load_failed":
-			return i18n.t("epub.errors.tocLoadFailed");
+			return 'EPUB 目录加载失败，请稍后重试';
 		default:
 			if (rawMessage && rawMessage !== "未知错误" && rawMessage !== "Unknown error") {
-				return i18n.t("epub.errors.unknownWithMessage", { message: rawMessage });
+				return `EPUB 处理失败：${rawMessage}`;
 			}
-			return i18n.t("epub.errors.unknown");
+			return 'EPUB 处理失败';
 	}
 }
 

@@ -1,6 +1,4 @@
 import * as EpubCfi from "./epub-cfi";
-import { i18n } from "../../utils/i18n";
-
 type PlainTextBookSection = {
 	id: string;
 	title: string;
@@ -180,11 +178,11 @@ function resolveHref(
 }
 
 function defaultPlainTextSectionTitle(): string {
-	return i18n.t("epub.plainText.defaultSectionTitle");
+	return '正文';
 }
 
 function numberedPlainTextSectionTitle(index: number): string {
-	return i18n.t("epub.plainText.numberedSectionTitle", { index });
+	return `正文 ${index}`;
 }
 
 function buildSections(text: string): Array<{ title: string; text: string }> {

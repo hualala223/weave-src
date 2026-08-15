@@ -36,7 +36,7 @@ export function formatBookshelfLastReadTime(timestamp: number): string {
 		return "";
 	}
 	try {
-		return new Intl.DateTimeFormat(undefined, {
+		return new Intl.DateTimeFormat("zh-CN", {
 			month: "numeric",
 			day: "numeric",
 			hour: "2-digit",

@@ -57,7 +57,6 @@
 	} from '../../services/epub/bookshelf-data-events';
 	import { epubActiveDocumentStore } from '../../stores/epub-active-document-store';
 	import { logger } from '../../utils/logger';
-	import { tr } from '../../utils/i18n';
 	import { getOpenEpubFilePath, pathsReferToSameOpenBook } from '../../utils/epub-leaf-utils';
 	import { showObsidianChoice, showObsidianConfirm } from '../../utils/obsidian-confirm';
 	import { UnifiedThemeManager } from '../../utils/theme-detection';
@@ -158,8 +157,6 @@
 		onCanvasStateChange,
 		onCanvasLayoutDirectionChange
 	}: Props = $props();
-	let t = $derived($tr);
-
 	function getDefaultReaderLineHeight(): number {
 		return getDefaultReaderSettings().lineHeight;
 	}
@@ -294,7 +291,7 @@
 			getReaderReady: () => readerReady,
 			getReaderService: () => readerService,
 			getSourceLocateOverlay: () => sourceLocateOverlay,
-			getLocateOverlayLabel: () => t('epub.reader.locateSourcePosition'),
+			getLocateOverlayLabel: () => '定位到溯源位置',
 			onPendingChange: (hasPending) => {
 				hasPendingBookLocate = hasPending;
 			},
@@ -398,7 +395,7 @@
 
 
 	function getReadingPositionLabel(percent: number): string {
-		return t('epub.reader.readingPosition', { percent: Math.round(percent) });
+		return `阅读位置 ${Math.round(percent)}%`;
 	}
 
 
@@ -553,7 +550,7 @@
 				});
 				if (rect) {
 					sourceLocateOverlay.showAtRect(rect, {
-						label: t('epub.reader.paragraphMode.exitAnchor'),
+						label: '段落阅读位置',
 						icon: 'bookmark',
 						durationMs: 3200,
 					});
@@ -647,7 +644,7 @@
 				});
 				if (rect) {
 					sourceLocateOverlay.showAtRect(rect, {
-						label: t('epub.reader.paragraphMode.exitAnchor'),
+						label: '段落阅读位置',
 						icon: 'bookmark',
 						durationMs: 3200,
 					});
@@ -715,8 +712,8 @@
 					}
 					await persistParagraphModeReadingProgress(activeLocation);
 					if (shouldNotifySaved) {
-						showTransientStatus(t('epub.reader.paragraphMode.positionSaved'), 2200);
-						new Notice(t('epub.reader.paragraphMode.positionSaved'));
+						showTransientStatus('已记录段落阅读位置并定位正文', 2200);
+						new Notice('已记录段落阅读位置并定位正文');
 					}
 				} catch (error) {
 					logger.warn('[EpubReaderApp] Failed to persist paragraph mode reading progress on exit:', error);
@@ -968,7 +965,7 @@
 			if (shouldStartDetachedSession) {
 				clearParagraphModeDetachedSession();
 			}
-			showTransientStatus(t('epub.reader.paragraphMode.randomReadingUnavailable'), 2200);
+			showTransientStatus('没有可跳转的段落', 2200);
 			return;
 		}
 
@@ -1513,7 +1510,7 @@
 		});
 		notifyBookshelfProgressChanged(currentBook.filePath);
 		const title = currentBook.metadata.title?.trim() || currentBook.filePath;
-		new Notice(t('epub.reader.bookCompletionMarked', { title }));
+		new Notice(`已标记《${title}》为已读完`);
 	}
 
 	async function handleBookEndAdvanceAttempt(): Promise<boolean> {
@@ -1538,10 +1535,10 @@
 		const title = currentBook.metadata.title?.trim() || currentBook.filePath;
 		const confirmed = await showObsidianConfirm(
 			app,
-			t('epub.reader.bookCompletionConfirmMessage', { title }),
+			`你已到达《${title}》的末尾。是否将本书标记为已读完？\n\n标记后阅读进度将保持 100%，续读位置仍会照常记录。`,
 			{
-				title: t('epub.reader.bookCompletionConfirmTitle'),
-				confirmText: t('epub.reader.bookCompletionConfirmButton'),
+				title: '标记为已读完',
+				confirmText: '标记已读完',
 			}
 		);
 		bookCompletionPromptOpen = false;
@@ -1556,7 +1553,7 @@
 	async function openScanImportModal(scanEntries?: Awaited<ReturnType<typeof storageService.loadScanIndex>>) {
 		const entries = scanEntries ?? await storageService.loadScanIndex();
 		if (entries.length === 0) {
-			new Notice(t('epub.bookshelf.vaultScanEmpty'));
+			new Notice('我的书架：当前仓库中未发现书籍或漫画');
 			return;
 		}
 
@@ -1565,14 +1562,14 @@
 		const modal = new EpubBookshelfImportModal(app, {
 			entries,
 			membership,
-			title: t('epub.bookshelf.vaultScanTitle'),
+			title: '扫描库中书籍和漫画',
 			onConfirm: async (paths: string[]) => {
 				const addedEntries = await storageService.addBooksToBookshelf(paths);
 				if (addedEntries.length === 0) {
 					new Notice(
 						paths.length > 0
-							? t('epub.bookshelf.vaultScanAddFailed')
-							: t('epub.bookshelf.vaultScanAlreadyAdded')
+							? '我的书架：所选书籍无法加入（路径无法解析或存在重名冲突），请刷新扫描后重试'
+							: '我的书架：所选书籍或漫画已在书架中'
 					);
 					return;
 				}
@@ -1581,7 +1578,7 @@
 					addedEntries.map((entry) => entry.path)
 				);
 				dispatchEpubBookshelfDataChanged();
-				new Notice(t('epub.bookshelf.vaultScanAdded', { count: addedEntries.length }));
+				new Notice(`我的书架：已加入 ${addedEntries.length} 本书籍或漫画`);
 			},
 		});
 		modal.open();
@@ -1593,14 +1590,14 @@
 			dispatchEpubBookshelfDataChanged();
 
 			if (scanEntries.length === 0) {
-				new Notice(t('epub.bookshelf.vaultScanEmpty'));
+				new Notice('我的书架：当前仓库中未发现书籍或漫画');
 				return;
 			}
 
 			await openScanImportModal(scanEntries);
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to scan vault EPUB files:', error);
-			new Notice(t('epub.bookshelf.vaultScanFailed'));
+			new Notice('我的书架：扫描书籍和漫画失败');
 		}
 	}
 
@@ -1679,7 +1676,7 @@
 		void source;
 		purgeOrphanHighlightFromReader(info);
 		if (!options?.quiet) {
-			new Notice(t('epub.reader.highlightDeleted'));
+			new Notice('高亮已删除');
 		}
 		reloadHighlightsAfterExcerptMutation();
 	}
@@ -1829,9 +1826,9 @@
 			if (!isSupportedBookFile(vaultFile)) {
 				if (await storageService.isBookshelfSourceMissing(targetFilePath)) {
 					await storageService.removeMissingBookshelfEntry(targetFilePath);
-					throw new Error(t('epub.bookshelf.notFoundRemoved'));
+					throw new Error('这本书的源文件已不存在，已从书架移除');
 				}
-				throw new Error(t('views.epubView.notice.bookFileMissing'));
+				throw new Error('未找到对应的书籍文件');
 			}
 
 			const existingBook =
@@ -1852,9 +1849,7 @@
 			if (existingBook && !reusableBook) {
 				await storageService.removeBookByFilePath(canonicalFilePath);
 				showTransientStatus(
-					t('epub.reader.fileUpdatedRebuilt', {
-						format: getBookFormatDisplayLabel(canonicalFilePath),
-					}),
+					`检测到 ${getBookFormatDisplayLabel(canonicalFilePath)} 文件已更新，已按新导入重建阅读缓存`,
 					3200
 				);
 			}
@@ -1944,7 +1939,7 @@
 				`[EpubReaderApp] Failed to load ${getBookFormatDisplayLabel(targetFilePath)}:`,
 				error
 			);
-			setError(`${error instanceof Error ? error.message : t('epub.reader.unknownError')}`);
+			setError(`${error instanceof Error ? error.message : '未知错误'}`);
 		} finally {
 			if (!isStaleBookLoad(loadToken)) {
 				loading = false;
@@ -1976,7 +1971,7 @@
 
 	async function handleSetTocChapterMark(item: TocItem, mark: EpubTocChapterMark | null): Promise<void> {
 		if (!book) {
-			new Notice(t('epub.reader.bookNotLoaded'));
+			new Notice('未加载书籍');
 			return;
 		}
 		const href = String(item.href || '').trim();
@@ -1993,7 +1988,7 @@
 			});
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to update TOC chapter mark:', error);
-			new Notice(t('epub.globalSidebar.tocMarkUpdateFailed'));
+			new Notice('章节标记保存失败，请重试');
 			throw error;
 		}
 	}
@@ -2010,7 +2005,7 @@
 			});
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to save TOC chapter mark settings:', error);
-			new Notice(t('epub.globalSidebar.tocMarkSettingsSaveFailed'));
+			new Notice('圆点语义设置保存失败，请重试');
 			throw error;
 		}
 	}
@@ -2038,7 +2033,7 @@
 
 	async function addBookmark() {
 		if (!book) {
-			new Notice(t('epub.reader.bookNotLoaded'));
+			new Notice('未加载书籍');
 			return;
 		}
 		try {
@@ -2047,7 +2042,7 @@
 				pos.cfi || readerService.getCurrentCFI() || book.currentPosition?.cfi || ''
 			);
 			if (!currentCfi) {
-				new Notice(t('epub.reader.readingPositionUnavailable'));
+				new Notice('无法获取当前阅读位置');
 				return;
 			}
 
@@ -2075,32 +2070,32 @@
 			});
 			bookmarkRevision += 1;
 			epubActiveDocumentStore.setSharedState({ bookmarkRevision });
-			new Notice(result.created ? t('epub.reader.bookmarkAdded') : t('epub.reader.bookmarkExists'));
+			new Notice(result.created ? '书签已添加' : '当前页已有书签');
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to add bookmark:', error);
-			new Notice(t('epub.reader.bookmarkActionFailed'));
+			new Notice('书签操作失败');
 		}
 	}
 
 	async function deleteBookmarkById(bookmarkId: string): Promise<boolean> {
 		if (!book) {
-			new Notice(t('epub.reader.bookNotLoaded'));
+			new Notice('未加载书籍');
 			return false;
 		}
 
 		try {
 			const deleted = await bookmarkService.deleteBookmark(book, bookmarkId);
 			if (!deleted) {
-				new Notice(t('epub.reader.bookmarkMissing'));
+				new Notice('书签不存在或已删除');
 				return false;
 			}
 			bookmarkRevision += 1;
 			epubActiveDocumentStore.setSharedState({ bookmarkRevision });
-			new Notice(t('epub.reader.bookmarkDeleted'));
+			new Notice('书签已删除');
 			return true;
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to delete bookmark:', error);
-			new Notice(t('epub.reader.bookmarkDeleteFailed'));
+			new Notice('删除书签失败');
 			return false;
 		}
 	}
@@ -2147,24 +2142,24 @@
 
 	async function saveReadingReferencePoint() {
 		if (!book) {
-			new Notice(t('epub.reader.bookNotLoaded'));
+			new Notice('未加载书籍');
 			return;
 		}
 
 		try {
 			const point = await buildReadingReferencePoint();
 			if (!point) {
-				new Notice(t('epub.reader.readingPositionUnavailable'));
+				new Notice('无法获取当前阅读位置');
 				return;
 			}
 
 			await storageService.saveReadingReferencePoint(book.id, point);
 			updateReadingReferencePointState(point);
-			showTransientStatus(t('epub.reader.referenceSavedStatus', { title: point.title }), 2600);
-			new Notice(t('epub.reader.referenceSaved'));
+			showTransientStatus(`已记录参考位置：${point.title}`, 2600);
+			new Notice('参考阅读位置已记录');
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to save reading reference point:', error);
-			new Notice(t('epub.reader.referenceSaveFailed'));
+			new Notice('记录参考阅读位置失败');
 		}
 	}
 
@@ -2197,37 +2192,37 @@
 
 	async function goToReadingReferencePoint() {
 		if (!readingReferencePoint?.cfi) {
-			new Notice(t('epub.reader.referenceMissing'));
+			new Notice('尚未记录参考阅读位置');
 			return;
 		}
 		try {
-			const referenceTitle = readingReferencePoint.title || t('epub.reader.referenceFallbackTitle');
+			const referenceTitle = readingReferencePoint.title || '参考阅读位置';
 			requestBookLocate({
 				cfi: readingReferencePoint.cfi,
 				flashStyle: 'highlight',
 				showLocateOverlay: true,
 			});
-			showTransientStatus(t('epub.reader.referenceJumpedStatus', { title: referenceTitle }), 2200);
-			new Notice(t('epub.reader.referenceJumped'));
+			showTransientStatus(`已跳转到参考位置：${referenceTitle}`, 2200);
+			new Notice('已跳转到参考阅读位置');
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to jump to reading reference point:', error);
-			new Notice(t('epub.reader.referenceJumpFailed'));
+			new Notice('跳转到参考阅读位置失败');
 		}
 	}
 
 	async function clearReadingReferencePoint() {
 		if (!book) {
-			new Notice(t('epub.reader.bookNotLoaded'));
+			new Notice('未加载书籍');
 			return;
 		}
 		try {
 			await storageService.deleteReadingReferencePoint(book.id);
 			updateReadingReferencePointState(null);
-			showTransientStatus(t('epub.reader.referenceCleared'), 2200);
-			new Notice(t('epub.reader.referenceCleared'));
+			showTransientStatus('已清除参考阅读位置', 2200);
+			new Notice('已清除参考阅读位置');
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to clear reading reference point:', error);
-			new Notice(t('epub.reader.referenceClearFailed'));
+			new Notice('清除参考阅读位置失败');
 		}
 	}
 
@@ -2245,21 +2240,21 @@
 			});
 			menu.addSeparator();
 			menu.addItem((item) => {
-				item.setTitle(t('epub.reader.referenceJumpMenu'));
+				item.setTitle('跳转到已记录位置');
 				item.setIcon('locate-fixed');
 				item.onClick(() => {
 					void goToReadingReferencePoint();
 				});
 			});
 			menu.addItem((item) => {
-				item.setTitle(t('epub.reader.referenceUpdateMenu'));
+				item.setTitle('更新为当前位置');
 				item.setIcon('flag');
 				item.onClick(() => {
 					void saveReadingReferencePoint();
 				});
 			});
 			menu.addItem((item) => {
-				item.setTitle(t('epub.reader.referenceClearMenu'));
+				item.setTitle('清除已记录位置');
 				item.setIcon('trash-2');
 				item.onClick(() => {
 					void clearReadingReferencePoint();
@@ -2267,7 +2262,7 @@
 			});
 		} else if (canUseReference) {
 			menu.addItem((item) => {
-				item.setTitle(t('epub.reader.referenceRecordMenu'));
+				item.setTitle('记录当前阅读位置');
 				item.setIcon('flag');
 				item.onClick(() => {
 					void saveReadingReferencePoint();
@@ -2281,7 +2276,7 @@
 
 		if (canUseProgress) {
 			menu.addItem((item) => {
-				item.setTitle(t('epub.reader.readingPositionAutoSaveMenu'));
+				item.setTitle('连续阅读后自动更新');
 				item.setIcon(autoSaveEnabled ? 'locate-fixed' : 'map-pinned');
 				item.setChecked(autoSaveEnabled);
 				item.onClick(() => {
@@ -2291,8 +2286,8 @@
 						onReadingPositionAutoSaveChange?.();
 						new Notice(
 							nextEnabled
-								? t('epub.reader.autoSaveEnabled')
-								: t('epub.reader.autoSaveDisabled')
+								? '已开启自动记录阅读位置'
+								: '已关闭自动记录阅读位置'
 						);
 					})();
 				});
@@ -2374,12 +2369,12 @@
 						mode,
 					},
 				}));
-				new Notice(t('epub.bookshelf.switchDisplayMode', { mode: getBookshelfDisplayModeOption(mode).label }));
+				new Notice(`我的书架已切换为${getBookshelfDisplayModeOption(mode).label}`);
 			})();
 		};
 
 		menu.addItem((item) => {
-			item.setTitle(t('epub.reader.displayFeatures'));
+			item.setTitle('书架显示功能');
 			item.setIcon('library');
 			const subMenu = (item as any).setSubmenu();
 
@@ -2396,7 +2391,7 @@
 		});
 
 		menu.addItem((item) => {
-			item.setTitle(t('epub.reader.scanVault'));
+			item.setTitle('扫描库中书籍和漫画');
 			item.setIcon('scan-search');
 			item.onClick(() => {
 				void scanVaultAndPromptImport();
@@ -2404,7 +2399,7 @@
 		});
 
 		menu.addItem((item) => {
-			item.setTitle(t('epub.reader.refreshBookshelf'));
+			item.setTitle('刷新书架');
 			item.setIcon('refresh-cw');
 			item.onClick(() => {
 				void requestBookshelfRefresh();
@@ -2482,18 +2477,14 @@
 
 	function getReadingReferenceTitleText(): string {
 		if (!readingReferencePoint) {
-			return t('epub.reader.sessionDeltaLabel');
+			return '本次阅读累计新增';
 		}
 		const currentDelta = getReadingReferenceDeltaText();
 		const resumePercent = Math.max(0, Math.round(readingReferencePoint.percent));
 		const title = String(
 			readingReferencePoint.title || getReadingPositionLabel(resumePercent)
 		).trim();
-		return t('epub.reader.sessionDeltaTitle', {
-			delta: currentDelta,
-			percent: resumePercent,
-			title,
-		});
+		return `本次阅读累计新增：${currentDelta}；自动续读点：${resumePercent}%（${title}）`;
 	}
 
 	function showMenuAtAnchor(menu: Menu, event: MouseEvent | KeyboardEvent) {
@@ -2665,7 +2656,7 @@
 
 		const moved = await readerService.prevChapter?.();
 		if (!moved) {
-			new Notice(t('epub.reader.prevChapterExists'));
+			new Notice('已经是第一章节');
 			return;
 		}
 
@@ -2679,7 +2670,7 @@
 
 		const moved = await readerService.nextChapter?.();
 		if (!moved) {
-			new Notice(t('epub.reader.nextChapterExists'));
+			new Notice('已经是最后一章节');
 			return;
 		}
 
@@ -2726,12 +2717,12 @@
 	function insertToEditor(content: string): string | null {
 		const leaf = getLastActiveMarkdownLeaf?.();
 		if (!leaf) {
-			new Notice(t('epub.reader.markdownEditorMissing'));
+			new Notice('未找到活动的 Markdown 编辑器');
 			return null;
 		}
 		const view = leaf.view;
 		if (!(view instanceof MarkdownView) || !view.editor) {
-			new Notice(t('epub.reader.markdownEditorMissing'));
+			new Notice('未找到活动的 Markdown 编辑器');
 			return null;
 		}
 		const editor = view.editor;
@@ -2749,9 +2740,9 @@
 	async function copyTextToClipboard(content: string) {
 		try {
 			await navigator.clipboard.writeText(content);
-			new Notice(t('epub.reader.copiedToClipboard'));
+			new Notice('已复制到剪贴板');
 		} catch (_e) {
-			new Notice(t('epub.reader.copyFailed'));
+			new Notice('复制失败');
 		}
 	}
 
@@ -2760,9 +2751,9 @@
 			await navigator.clipboard.write([
 				new ClipboardItem({ [blob.type]: blob })
 			]);
-			new Notice(t('epub.reader.imageCopied'));
+			new Notice('图片已复制到剪贴板');
 		} catch (_e) {
-			new Notice(t('epub.reader.imageCopyFailed'));
+			new Notice('图片复制失败');
 		}
 	}
 
@@ -2784,15 +2775,15 @@
 	function showCanvasAddedNotice(
 		anchorMode: ReturnType<EpubCanvasService['getLastInsertAnchorMode']>
 	): void {
-		const noticeKey =
+		const noticeText =
 			anchorMode === 'locked'
-				? 'epub.reader.addedToCanvasLocked'
+				? '已添加到 Canvas（从固定锚点延伸）'
 				: anchorMode === 'selection'
-					? 'epub.reader.addedToCanvasSelection'
+					? '已添加到 Canvas（从选中节点延伸）'
 					: anchorMode === 'chain'
-						? 'epub.reader.addedToCanvasChain'
-						: 'epub.reader.addedToCanvas';
-		new Notice(t(noticeKey));
+						? '已添加到 Canvas（续写上一节点）'
+						: '已添加到 Canvas';
+		new Notice(noticeText);
 	}
 
 	async function addToCanvas(
@@ -2910,16 +2901,16 @@
 
 	function getHighlightStyleLabel(highlight: ReaderHighlight): string | null {
 		if (highlight.presentation === 'conceal') {
-			return t('epub.reader.concealed');
+			return '隐藏';
 		}
 
 		switch (highlight.style) {
 			case 'underline':
-				return t('epub.reader.underline');
+				return '下划线';
 			case 'strikethrough':
-				return t('epub.reader.strikethrough');
+				return '删除线';
 			case 'wavy':
-				return t('epub.reader.wavy');
+				return '波浪线';
 			default:
 				return null;
 		}
@@ -2962,7 +2953,7 @@
 	async function handleConcealSelection(text: string, cfiRange: string) {
 // Always allow (gate removed)
 		if (!book) {
-			new Notice(t('epub.reader.bookNotReady'));
+			new Notice('当前书籍尚未加载完成');
 			return;
 		}
 
@@ -2977,16 +2968,16 @@
 				canonicalCfi || cfiRange,
 				'mask'
 			);
-			new Notice(t('epub.reader.hideTextSuccess'));
+			new Notice('已隐藏所选文本');
 			void reloadHighlights();
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to conceal selection:', error);
-			new Notice(t('epub.reader.hideTextFailed'));
+			new Notice('隐藏文本失败，请重试');
 		}
 	}
 
 	function requestSourceBookLocate(nav: BookLocateIntent): boolean {
-		if (!ensureBookSourceLocationAccess(app, t('epub.reader.sourceLocationFeatureNotice'))) {
+		if (!ensureBookSourceLocationAccess(app, '双向链接定位是高级功能，请激活许可证后使用')) {
 			return false;
 		}
 		epubNavigation.requestBookLocate(nav);
@@ -3398,13 +3389,13 @@
 			readerService.removeHighlight(info.cfiRange);
 			if (!book) {
 				if (!quiet) {
-					new Notice(t('epub.reader.bookNotReady'));
+					new Notice('当前书籍尚未加载完成');
 				}
 				return false;
 			}
 			await annotationService.deleteConcealedTextByCfi(book.id, info.cfiRange);
 			if (!quiet) {
-				new Notice(t('epub.reader.hideTextRestored'));
+				new Notice('已恢复隐藏文本');
 			}
 			highlightToolbarInfo = null;
 			void reloadHighlights();
@@ -3417,7 +3408,7 @@
 	readerService.removeHighlight(info.cfiRange);
 	highlightToolbarInfo = null;
 	if (!quiet) {
-		new Notice(t('epub.reader.highlightDeleted'));
+		new Notice('高亮已删除');
 	}
 	void reloadHighlights();
 	return true;
@@ -3459,7 +3450,7 @@
 
                 readerService.temporarilyRevealConcealedText?.(info.cfiRange, 3000);
                 highlightToolbarInfo = null;
-                new Notice(t('epub.reader.transientRevealSuccess'));
+                new Notice('已暂时显示隐藏内容 3 秒');
         }
 
 	async function handleHighlightChangeColor(info: HighlightClickInfo, newColor: string) {
@@ -3518,7 +3509,7 @@
 					filePath,
 					cfiRange: typeof infoOrCfi === 'string' ? infoOrCfi : infoOrCfi.cfiRange,
 				});
-				new Notice(t('epub.reader.readingContextUnavailable'));
+				new Notice('当前阅读上下文尚未准备完成，请稍后再试');
 				return;
 			}
 
@@ -3538,7 +3529,7 @@
 					filePath,
 					cfiRange,
 				});
-				new Notice(t('epub.reader.referenceStatsMissing'));
+				new Notice('未找到引用统计数据');
 				return;
 			}
 			if (!info) {
@@ -3546,7 +3537,7 @@
 					filePath,
 					cfiRange,
 				});
-				new Notice(t('epub.reader.referenceRectUnavailable'));
+				new Notice('已找到引用数据，但暂时无法定位浮窗位置');
 				return;
 			}
 			closeCommentEditor();
@@ -3556,7 +3547,7 @@
 			referencePopoverStats = stats;
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to open reference detail popover:', error);
-			new Notice(t('epub.reader.referencePopoverOpenFailed'));
+			new Notice('打开引用浮窗失败，请稍后重试');
 		}
 	}
 
@@ -3589,7 +3580,7 @@
 				sourceRef: '',
 				presentation: 'highlight',
 			});
-			new Notice(t('epub.reader.commentSaved'));
+			new Notice('想法已保存');
 			closeCommentEditor();
 			void reloadHighlights();
 		} finally {
@@ -3598,7 +3589,7 @@
 	}
 
 	async function navigateExternalSource(intent: NavigationIntent): Promise<boolean> {
-		if (!ensureBookSourceLocationAccess(app, t('epub.reader.sourceLocationFeatureNotice'))) {
+		if (!ensureBookSourceLocationAccess(app, '双向链接定位是高级功能，请激活许可证后使用')) {
 			return false;
 		}
 		const result = await getNavigationHub(app).navigate({
@@ -3606,11 +3597,11 @@
 			policy: { reuseLeaf: true, focus: true, ...intent.policy },
 		});
 		if (!result.success) {
-			new Notice(t('epub.reader.relatedNoteMissing'));
+			new Notice('未找到关联笔记');
 			return false;
 		}
 		if (intent.kind === 'json') {
-			new Notice(t('epub.reader.openedSourceFileSearchHighlight'));
+			new Notice('已打开摘录来源文件，请在文件中搜索该高亮');
 		}
 		return true;
 	}
@@ -4126,7 +4117,7 @@
 				<EpubLoadingState
 					message={bookLoadSlowWarning
 						? buildBookLoadSlowWarningMessage(filePath)
-						: t('epub.reader.loading')}
+						: '正在加载书籍…'}
 				/>
 				{#if bookLoadSlowWarning}
 					<button
@@ -4136,7 +4127,7 @@
 							void cancelSlowBookLoad();
 						}}
 					>
-						{t('epub.reader.cancelLoading')}
+						{'关闭'}
 					</button>
 				{/if}
 			</div>
@@ -4164,7 +4155,7 @@
 				<div class="epub-reader-highlight-loading-overlay">
 					<EpubLoadingState
 						variant="compact"
-						message={t('epub.reader.highlightLoadingHint')}
+						message={'正文高亮摘录正在加载中，请稍候…'}
 					/>
 				</div>
 			{/if}
@@ -4273,12 +4264,12 @@
 							<button
 								type="button"
 								class="clickable-icon epub-nav-btn"
-								title={t('epub.reader.prevChapter')}
-								aria-label={t('epub.reader.prevChapter')}
+								title={'上一章节'}
+								aria-label={'上一章节'}
 								onclick={() => void handlePrevChapter()}
 							>
 								<span class="epub-nav-btn-icon" use:icon={'arrow-left'}></span>
-								<span class="epub-nav-btn-label">{t('epub.reader.prevChapter')}</span>
+								<span class="epub-nav-btn-label">{'上一章节'}</span>
 							</button>
 						{/if}
 					</div>
@@ -4287,12 +4278,12 @@
 							<button
 								type="button"
 								class="clickable-icon epub-nav-btn"
-								title={t('epub.reader.nextChapter')}
-								aria-label={t('epub.reader.nextChapter')}
+								title={'下一章节'}
+								aria-label={'下一章节'}
 								onclick={() => void handleNextChapter()}
 							>
 								<span class="epub-nav-btn-icon" use:icon={'arrow-right'}></span>
-								<span class="epub-nav-btn-label">{t('epub.reader.nextChapter')}</span>
+								<span class="epub-nav-btn-label">{'下一章节'}</span>
 							</button>
 						{/if}
 					</div>
@@ -4399,7 +4390,7 @@
 				<div class="epub-settings-float epub-glass-panel">
 					<div class="epub-settings-row epub-settings-row--stack">
 						<div class="epub-settings-row__heading">
-							<span class="label">{t('epub.reader.typography.lineHeight')}</span>
+							<span class="label">{'行高'}</span>
 							<span class="epub-settings-value">{settings.lineHeight.toFixed(2)}</span>
 						</div>
 						<input
@@ -4409,14 +4400,14 @@
 							max="2.4"
 							step="0.01"
 							value={settings.lineHeight}
-							aria-label={t('epub.reader.typography.lineHeightAria')}
+							aria-label={'调节行高'}
 							oninput={(event) => previewReaderLineHeight((event.currentTarget as HTMLInputElement).value)}
 							onchange={persistCurrentReaderSettings}
 						/>
 					</div>
 					<div class="epub-settings-row epub-settings-row--stack">
 						<div class="epub-settings-row__heading">
-							<span class="label">{t('epub.reader.typography.letterSpacing')}</span>
+							<span class="label">{'字距'}</span>
 							<span class="epub-settings-value">{formatLetterSpacingValue(settings.letterSpacing)}</span>
 						</div>
 						<input
@@ -4426,14 +4417,14 @@
 							max="0.24"
 							step="0.01"
 							value={settings.letterSpacing}
-							aria-label={t('epub.reader.typography.letterSpacingAria')}
+							aria-label={'调节字距'}
 							oninput={(event) => previewReaderLetterSpacing((event.currentTarget as HTMLInputElement).value)}
 							onchange={persistCurrentReaderSettings}
 						/>
 					</div>
 					<div class="epub-settings-row epub-settings-row--stack">
 						<div class="epub-settings-row__heading">
-							<span class="label">{t('epub.reader.typography.pageMargin')}</span>
+							<span class="label">{'页边距'}</span>
 							<span class="epub-settings-value">{Math.round(settings.pageMargin)}</span>
 						</div>
 						<input
@@ -4443,13 +4434,13 @@
 							max="96"
 							step="1"
 							value={settings.pageMargin}
-							aria-label={t('epub.reader.typography.pageMarginAria')}
+							aria-label={'调节页边距'}
 							oninput={(event) => previewReaderPageMargin((event.currentTarget as HTMLInputElement).value)}
 							onchange={persistCurrentReaderSettings}
 						/>
 					</div>
 					<div class="epub-settings-row">
-						<span class="label">{t('epub.reader.typography.widthMode')}</span>
+						<span class="label">{'宽度模式'}</span>
 						<div class="epub-settings-mode-group">
 							<button
 								type="button"
@@ -4457,31 +4448,31 @@
 							class:active={settings.widthMode === 'standard'}
 							disabled={settings.layoutMode === 'double'}
 							onclick={() => setReaderWidthMode('standard')}
-						>{t('epub.reader.typography.widthStandard')}</button>
+						>{'标准'}</button>
 						<button
 							type="button"
 							class="clickable-icon epub-settings-mode-btn"
 							class:active={settings.widthMode === 'full'}
 							disabled={settings.layoutMode === 'double'}
 							onclick={() => setReaderWidthMode('full')}
-						>{t('epub.reader.typography.widthWide')}</button>
+						>{'宽版'}</button>
 						<button
 							type="button"
 							class="clickable-icon epub-settings-mode-btn"
 							class:active={settings.widthMode === 'fit'}
 							onclick={() => setReaderWidthMode('fit')}
-						>{t('epub.reader.typography.widthFull')}</button>
+						>{'全宽'}</button>
 						<button
 							type="button"
 							class="clickable-icon epub-settings-mode-btn"
 							class:active={settings.widthMode === 'edge'}
 							disabled={settings.layoutMode === 'double'}
 							onclick={() => setReaderWidthMode('edge')}
-						>{t('epub.reader.typography.widthEdge')}</button>
+						>{'贴边'}</button>
 						</div>
 					</div>
 					<div class="epub-settings-row">
-						<span class="label">{t('epub.reader.typography.scrolledSideNav')}</span>
+						<span class="label">{'翻页侧栏'}</span>
 						<label class="epub-export-notes-popover__toggle-switch">
 							<input
 								type="checkbox"
@@ -4492,7 +4483,7 @@
 						</label>
 					</div>
 					<div class="epub-settings-row">
-						<span class="label">{t('epub.reader.typography.footnoteAction')}</span>
+						<span class="label">{'点击脚注序号'}</span>
 						<div class="epub-settings-mode-group">
 							{#if hasFootnotePreviewCapability()}
 								<button
@@ -4500,18 +4491,18 @@
 									class="clickable-icon epub-settings-mode-btn"
 									class:active={settings.footnoteClickAction === 'preview'}
 									onclick={() => setFootnoteClickAction('preview')}
-								>{t('epub.reader.typography.footnotePreview')}</button>
+								>{'显示浮窗'}</button>
 							{/if}
 							<button
 								type="button"
 								class="clickable-icon epub-settings-mode-btn"
 								class:active={settings.footnoteClickAction === 'navigate'}
 								onclick={() => setFootnoteClickAction('navigate')}
-							>{t('epub.reader.typography.footnoteNavigate')}</button>
+							>{'跳转原文'}</button>
 						</div>
 					</div>
 					<div class="epub-settings-actions">
-						<button type="button" class="epub-settings-reset" onclick={resetReaderTypographySettings}>{t('epub.reader.typography.reset')}</button>
+						<button type="button" class="epub-settings-reset" onclick={resetReaderTypographySettings}>{'恢复默认'}</button>
 					</div>
 				</div>
 			{/if}

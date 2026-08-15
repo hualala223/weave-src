@@ -8,23 +8,15 @@ import {
 import { normalizeEpubBookmarkFolderPath } from "../../services/epub";
 import { normalizeHighlightStoragePath, normalizeWeaveParentFolder } from "../../config/paths";
 import { syncLargeNavButtonStyle } from "../../services/epub/epub-large-nav-style";
-import {
-	normalizeInterfaceLanguagePreference,
-	setInterfaceLanguagePreference,
-	type InterfaceLanguagePreference,
-} from "../../utils/i18n";
 import { showNotification } from "../../utils/notifications";
 import type StandaloneEpubPlugin from "../../main";
-import type { EpubSettingsTranslateFn } from "./epub-settings-types";
 
 export interface EpubBasicSettingsActionDeps {
 	plugin: StandaloneEpubPlugin;
-	getTranslate: () => EpubSettingsTranslateFn;
 	getWeaveParentFolderValue: () => string;
 	setWeaveParentFolderInput: (value: string) => void;
 	getBookmarkFolderValue: () => string;
 	getHighlightStoragePathValue: () => string;
-	getInterfaceLanguageValue: () => InterfaceLanguagePreference;
 	getContinuousReadingPositionAutoSaveEnabled: () => boolean;
 	getContinuousReadingPositionAutoSavePages: () => number;
 	getSourceNavigationOpenInNewTab: () => boolean;
@@ -40,8 +32,6 @@ export interface EpubBasicSettingsActionDeps {
 
 export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps) {
 	const { plugin } = deps;
-	const t = (key: string, params?: Record<string, string | number>) =>
-		deps.getTranslate()(key, params);
 
 	return {
 		async updateWeaveParentFolder(folderPath: string): Promise<void> {
@@ -53,7 +43,7 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 
 			plugin.settings.weaveParentFolder = normalizedFolderPath;
 			await deps.save();
-			showNotification(t("epub.settings.notifications.weaveParentFolderUpdated"), "success");
+			showNotification('Weave 数据根目录已更新', "success");
 		},
 
 		async updateBookmarkFolder(folderPath: string): Promise<void> {
@@ -69,7 +59,7 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 
 			plugin.settings.bookmarkFolder = normalizedFolderPath;
 			await deps.save();
-			showNotification(t("epub.settings.notifications.bookmarkFolderUpdated"), "success");
+			showNotification('书签目录已更新', "success");
 		},
 
 		async updateHighlightStoragePath(filePath: string): Promise<void> {
@@ -81,19 +71,7 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 
 			plugin.settings.highlightStoragePath = normalizedPath;
 			await deps.save();
-			showNotification(t("epub.settings.notifications.highlightStoragePathUpdated"), "success");
-		},
-
-		async updateInterfaceLanguage(value: InterfaceLanguagePreference): Promise<void> {
-			const normalizedValue = normalizeInterfaceLanguagePreference(value);
-			if (deps.getInterfaceLanguageValue() === normalizedValue) {
-				return;
-			}
-
-			plugin.settings.interfaceLanguage = normalizedValue;
-			setInterfaceLanguagePreference(normalizedValue);
-			await deps.save();
-			showNotification(t("epub.settings.notifications.interfaceLanguageUpdated"), "success");
+			showNotification('高亮数据文件路径已更新', "success");
 		},
 
 		async updateContinuousReadingPositionAutoSaveEnabled(enabled: boolean): Promise<void> {
@@ -120,8 +98,8 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 
 			showNotification(
 				normalizedEnabled
-					? t("epub.settings.notifications.autoSaveEnabled")
-					: t("epub.settings.notifications.autoSaveDisabled"),
+					? '已开启自动记录阅读位置'
+					: '已关闭自动记录阅读位置',
 				"success"
 			);
 		},
@@ -141,7 +119,7 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 			}
 			await deps.save();
 			showNotification(
-				t("epub.settings.notifications.autoSavePagesUpdated", { pages: normalizedPages }),
+				`已将自动记录阈值更新为 ${normalizedPages} 页`,
 				"success"
 			);
 		},
@@ -174,8 +152,8 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 			await deps.save();
 			showNotification(
 				enabled
-					? t("epub.settings.notifications.debugEnabled")
-					: t("epub.settings.notifications.debugDisabled"),
+					? '已开启调试模式'
+					: '已关闭调试模式',
 				"success"
 			);
 		},

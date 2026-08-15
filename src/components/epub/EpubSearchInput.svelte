@@ -5,7 +5,6 @@
   import EnhancedIcon from '../ui/EnhancedIcon.svelte';
   import FloatingMenu from '../ui/FloatingMenu.svelte';
   import { ICON_NAMES } from '../../icons/index';
-  import { tr } from '../../utils/i18n';
   import { logger } from '../../utils/logger';
   import { normalizeTagSuggestionOptions, TagInputSuggest } from '../../utils/tag-suggest';
 
@@ -66,8 +65,6 @@
     totalCount = -1,
     autoFocus = false
   }: Props = $props();
-  let t = $derived($tr);
-
   let inputRef: HTMLInputElement | null = $state(null);
   let containerRef: HTMLDivElement | null = $state(null);
   let searchHistory = $state<string[]>([]);
@@ -83,21 +80,21 @@
   });
 
   let bookshelfSearchOptions = $derived.by(() => [
-    { prefix: 'status:', label: t('epub.globalSidebar.searchUi.bookshelfStatusOption'), afterInsert: () => showBookshelfStatusSuggestions() },
-    { prefix: 'author:', label: t('epub.globalSidebar.searchUi.bookshelfAuthorOption'), afterInsert: () => showAuthorSuggestions() },
-    { prefix: 'publisher:', label: t('epub.globalSidebar.searchUi.bookshelfPublisherOption'), afterInsert: () => showPublisherSuggestions() },
-    { prefix: 'format:', label: t('epub.globalSidebar.searchUi.bookshelfFormatOption'), afterInsert: () => showFormatSuggestions() },
-    { prefix: 'created:', label: t('epub.globalSidebar.searchUi.bookshelfCreatedOption'), afterInsert: () => showDateSuggestions('created') },
+    { prefix: 'status:', label: 'status: 匹配阅读状态', afterInsert: () => showBookshelfStatusSuggestions() },
+    { prefix: 'author:', label: 'author: 搜索作者', afterInsert: () => showAuthorSuggestions() },
+    { prefix: 'publisher:', label: 'publisher: 搜索出版社', afterInsert: () => showPublisherSuggestions() },
+    { prefix: 'format:', label: 'format: 搜索书籍格式', afterInsert: () => showFormatSuggestions() },
+    { prefix: 'created:', label: 'created: 加入时间筛选', afterInsert: () => showDateSuggestions('created') },
   ]);
 
   let epubHighlightSearchOptions = $derived.by(() => [
-    { prefix: 'tag:', label: t('epub.globalSidebar.searchUi.highlightTagOption'), afterInsert: () => showTagSuggestions() },
-    { prefix: 'source:', label: t('epub.globalSidebar.searchUi.highlightSourceOption'), afterInsert: () => showSourceSuggestions() },
-    { prefix: 'comment:', label: t('epub.globalSidebar.searchUi.highlightCommentOption'), afterInsert: () => showCommentSuggestions() },
-    { prefix: 'type:', label: t('epub.globalSidebar.searchUi.highlightTypeOption'), afterInsert: () => showNoteTypeSuggestions() },
-    { prefix: 'color:', label: t('epub.globalSidebar.searchUi.highlightColorOption'), afterInsert: () => showHighlightColorSuggestions() },
-    { prefix: 'chapter:', label: t('epub.globalSidebar.searchUi.highlightChapterOption'), afterInsert: () => showChapterSuggestions() },
-    { prefix: 'created:', label: t('epub.globalSidebar.searchUi.highlightCreatedOption'), afterInsert: () => showDateSuggestions('created') },
+    { prefix: 'tag:', label: 'tag: 搜索标签', afterInsert: () => showTagSuggestions() },
+    { prefix: 'source:', label: 'source: 搜索来源文件', afterInsert: () => showSourceSuggestions() },
+    { prefix: 'comment:', label: 'comment: 筛选是否含想法', afterInsert: () => showCommentSuggestions() },
+    { prefix: 'type:', label: 'type: 搜索笔记类型', afterInsert: () => showNoteTypeSuggestions() },
+    { prefix: 'color:', label: 'color: 搜索笔记颜色', afterInsert: () => showHighlightColorSuggestions() },
+    { prefix: 'chapter:', label: 'chapter: 按章节筛选', afterInsert: () => showChapterSuggestions() },
+    { prefix: 'created:', label: 'created: 创建日期筛选', afterInsert: () => showDateSuggestions('created') },
   ]);
 
   const dataSourceOptions = $derived.by(() =>
@@ -309,7 +306,7 @@
     const menu = new Menu();
     (menu as any).app = app;
     menu.addItem((item) => {
-      item.setTitle(t('epub.globalSidebar.searchUi.statusLabel'));
+      item.setTitle('阅读状态');
       item.setDisabled(true);
     });
     const values = availableStatuses.length > 0 ? availableStatuses : ['未开始', '阅读中', '已读完'];
@@ -329,12 +326,12 @@
     const menu = new Menu();
     (menu as any).app = app;
     menu.addItem((item) => {
-      item.setTitle(t('epub.globalSidebar.searchUi.authorLabel'));
+      item.setTitle('作者');
       item.setDisabled(true);
     });
     if (availableAuthors.length === 0) {
       menu.addItem((item) => {
-        item.setTitle(t('epub.globalSidebar.searchUi.noAuthor'));
+        item.setTitle('暂无作者');
         item.setDisabled(true);
       });
     } else {
@@ -355,12 +352,12 @@
     const menu = new Menu();
     (menu as any).app = app;
     menu.addItem((item) => {
-      item.setTitle(t('epub.globalSidebar.searchUi.publisherLabel'));
+      item.setTitle('出版社');
       item.setDisabled(true);
     });
     if (availablePublishers.length === 0) {
       menu.addItem((item) => {
-        item.setTitle(t('epub.globalSidebar.searchUi.noPublisher'));
+        item.setTitle('暂无出版社');
         item.setDisabled(true);
       });
     } else {
@@ -381,12 +378,12 @@
     const menu = new Menu();
     (menu as any).app = app;
     menu.addItem((item) => {
-      item.setTitle(t('epub.globalSidebar.searchUi.formatLabel'));
+      item.setTitle('书籍格式');
       item.setDisabled(true);
     });
     if (availableFormats.length === 0) {
       menu.addItem((item) => {
-        item.setTitle(t('epub.globalSidebar.searchUi.noFormat'));
+        item.setTitle('暂无格式');
         item.setDisabled(true);
       });
     } else {
@@ -407,12 +404,12 @@
     const menu = new Menu();
     (menu as any).app = app;
     menu.addItem((item) => {
-      item.setTitle(t('epub.globalSidebar.searchUi.commentLabel'));
+      item.setTitle('想法状态');
       item.setDisabled(true);
     });
     const values = availableCommentStates.length > 0
       ? availableCommentStates
-      : [t('epub.notes.commented'), t('epub.notes.uncommented')];
+      : ['有想法', '无想法'];
     values.forEach((value) => {
       menu.addItem((item) => {
         item.setTitle(value);
@@ -429,7 +426,7 @@
     const menu = new Menu();
     (menu as any).app = app;
     menu.addItem((item) => {
-      item.setTitle(t('epub.globalSidebar.searchUi.noteTypeLabel'));
+      item.setTitle('笔记类型');
       item.setDisabled(true);
     });
     const values = availableNoteTypes.length > 0 ? availableNoteTypes : ['高亮', '下划线', '删除线', '波浪线'];
@@ -449,7 +446,7 @@
     const menu = new Menu();
     (menu as any).app = app;
     menu.addItem((item) => {
-      item.setTitle(t('epub.globalSidebar.searchUi.highlightColorLabel'));
+      item.setTitle('笔记颜色');
       item.setDisabled(true);
     });
     const values = availableHighlightColors.length > 0 ? availableHighlightColors : ['黄色', '绿色', '蓝色', '红色', '紫色'];
@@ -469,18 +466,18 @@
     const menu = new Menu();
     (menu as any).app = app;
     menu.addItem((item) => {
-      item.setTitle(t('epub.globalSidebar.searchUi.chapterLabel'));
+      item.setTitle('章节');
       item.setDisabled(true);
     });
     menu.addItem((item) => {
-      item.setTitle(t('epub.globalSidebar.searchUi.currentChapterOption'));
+      item.setTitle('当前章节');
       item.onClick(() => {
         replaceLastWord('@current');
       });
     });
     if (availableChapters.length === 0) {
       menu.addItem((item) => {
-        item.setTitle(t('epub.globalSidebar.searchUi.noChapter'));
+        item.setTitle('暂无章节信息');
         item.setDisabled(true);
       });
     } else {
@@ -908,7 +905,7 @@
         tabindex="-1"
         onclick={handleClear}
         onkeydown={(e) => { if (e.key === 'Enter') handleClear(); }}
-        aria-label={t('epub.globalSidebar.searchUi.clearSearch')}
+        aria-label={'清除搜索'}
       >
         <EnhancedIcon name={ICON_NAMES.TIMES} size={14} />
       </div>
@@ -927,7 +924,7 @@
     {#snippet children()}
       <div class="search-dropdown" style={getDropdownStyle()}>
         <div class="dropdown-section">
-          <div class="dropdown-section-header">{t('epub.globalSidebar.searchUi.optionsHeader')}</div>
+          <div class="dropdown-section-header">{'搜索选项'}</div>
           {#each dataSourceOptions as opt}
             <div
               class="dropdown-item"
@@ -949,14 +946,14 @@
           <div class="dropdown-divider"></div>
           <div class="dropdown-section">
             <div class="dropdown-section-header">
-              <span>{t('epub.globalSidebar.searchUi.historyHeader')}</span>
+              <span>{'搜索历史'}</span>
               <span
                 class="dropdown-clear-all"
                 role="button"
                 tabindex="-1"
                 onmousedown={clearAllHistory}
-                aria-label={t('epub.globalSidebar.searchUi.clearHistory')}
-                title={t('epub.globalSidebar.searchUi.clearHistory')}
+                aria-label={'清空搜索历史'}
+                title={'清空搜索历史'}
               >
                 <EnhancedIcon name={ICON_NAMES.TIMES} size={12} />
               </span>

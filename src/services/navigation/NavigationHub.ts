@@ -10,7 +10,6 @@ import { hasBookLocateTarget } from "./navigation-intent";
 import { resolveEpubVaultPath } from "../epub/epub-vault-path";
 import { getEpubStorageService } from "../epub/epub-storage-access";
 import { SourceNavigationService } from "../ui/SourceNavigationService";
-import { i18n } from "../../utils/i18n";
 import type { NavigationIntent, NavigationResult, PendingLocateState } from "./navigation-intent";
 
 export interface NavigationHubOptions {
@@ -106,7 +105,7 @@ export class NavigationHub {
 			hasBookLocateTarget(intent.locate) &&
 			!ensureBookSourceLocationAccess(
 				this.app,
-				i18n.t("epub.reader.sourceLocationFeatureNotice")
+				'双向链接定位是高级功能，请激活许可证后使用'
 			)
 		) {
 			return { success: false, error: "premium_unavailable" };
@@ -154,7 +153,7 @@ export class NavigationHub {
 		const focus = intent.policy?.focus !== false;
 		const contextPath = intent.context?.epubFilePath || intent.resourcePath;
 		const candidates = intent.locate?.candidates || [];
-		const label = i18n.t("epub.reader.locateSourcePosition");
+		const label = '定位到溯源位置';
 		const leaf = await this.sourceNavigation.openMarkdownLinkAndLocate(
 			intent.resourcePath,
 			contextPath,
@@ -189,7 +188,7 @@ export class NavigationHub {
 			candidates,
 			intent.context?.nodeId,
 			{
-				label: i18n.t("epub.reader.locateSourcePosition"),
+				label: '定位到溯源位置',
 				icon: "map-pinned",
 				openInNewTab,
 				focus,

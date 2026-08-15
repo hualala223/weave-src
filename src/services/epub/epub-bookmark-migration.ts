@@ -2,7 +2,6 @@ import type { App, TFile } from "obsidian";
 import { Notice, normalizePath } from "obsidian";
 import { getPluginPaths } from "../../config/paths";
 import { DirectoryUtils } from "../../utils/directory-utils";
-import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
 import { showObsidianConfirm } from "../../utils/obsidian-confirm";
 import { ensureEpubBookmarkCoverPath } from "./epub-bookmark-cover";
@@ -71,7 +70,7 @@ function formatBackupLabel(entry: EpubBookmarkMigrationBackupEntry): string {
 	).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(
 		date.getMinutes()
 	).padStart(2, "0")}`;
-	return `${stamp} · ${entry.fileCount} ${i18n.t("epub.migration.bookmarkDataPage.files")}`;
+	return `${stamp} · ${entry.fileCount} ${'个文件'}`;
 }
 
 function readFrontmatterString(value: unknown, fallback = ""): string {
@@ -358,7 +357,7 @@ export async function runEpubBookmarkV3Migration(app: App): Promise<{
 	const bookmarkFolder = resolveBookmarkFolder(app);
 	const pending = await collectPendingMigrationFiles(app, bookmarkFolder);
 	if (pending.length === 0) {
-		throw new Error(i18n.t("epub.migration.bookmarkDataPage.nothingToMigrate"));
+		throw new Error('没有需要升级的书籍数据页');
 	}
 
 	const backup = await createEpubBookmarkMigrationBackup(
@@ -416,14 +415,11 @@ export async function maybePromptEpubBookmarkV3Migration(app: App): Promise<void
 
 		const confirmed = await showObsidianConfirm(
 			app,
-			i18n.t("epub.migration.bookmarkDataPage.promptMessage", {
-				count: pendingCount,
-				folder: bookmarkFolder,
-			}),
+			`检测到 ${pendingCount} 个旧版书籍数据页（位于 ${bookmarkFolder}，文件名形如 data_*.md）。\n\n本次迁移仅升级「阅读进度与书签」的保存文件版式，不会修改你在 vault 其他位置的摘录、高亮与阅读笔记。\n\n确认后将先自动备份到插件目录，然后立即开始升级。`,
 			{
-				title: i18n.t("epub.migration.bookmarkDataPage.promptTitle"),
-				confirmText: i18n.t("epub.migration.bookmarkDataPage.promptConfirm"),
-				cancelText: i18n.t("epub.migration.bookmarkDataPage.promptCancel"),
+				title: '升级书籍数据页',
+				confirmText: '确认并开始迁移',
+				cancelText: '稍后',
 				confirmClass: "mod-cta",
 			}
 		);
@@ -437,15 +433,12 @@ export async function maybePromptEpubBookmarkV3Migration(app: App): Promise<void
 
 		const { migratedCount, backup } = await runEpubBookmarkV3Migration(app);
 		new Notice(
-			i18n.t("epub.migration.bookmarkDataPage.success", {
-				count: migratedCount,
-				backupId: backup.id,
-			}),
+			`已升级 ${migratedCount} 个书籍数据页。备份已保存（ID：${backup.id}）。`,
 			6000
 		);
 	} catch (error) {
 		logger.warn("[EpubBookmarkMigration] Migration prompt flow failed:", error);
-		new Notice(i18n.t("epub.migration.bookmarkDataPage.failed"));
+		new Notice('书籍数据页迁移失败。如需恢复，可使用插件目录 backups/EPUB-bookmarks 中的备份文件。');
 	}
 }
 

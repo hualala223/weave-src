@@ -1,6 +1,5 @@
 import type { App, TFile } from "obsidian";
 import { Notice } from "obsidian";
-import { i18n } from "../../utils/i18n";
 import { showObsidianConfirm } from "../../utils/obsidian-confirm";
 import { EpubLinkService } from "./EpubLinkService";
 
@@ -28,14 +27,11 @@ export async function maybeMigrateEpubLinksInMarkdownFile(
 	const fileLabel = sourceFile.basename || sourcePath;
 	const confirmed = await showObsidianConfirm(
 		app,
-		i18n.t("epub.reader.legacyLinkMigrationConfirmMessage", {
-			count: legacyLinkCount,
-			file: fileLabel,
-		}),
+		`「${fileLabel}」中有 ${legacyLinkCount} 条旧式 EPUB 溯源链接（URL 内嵌全文，编辑不便）。\n\n确认后将移除链接中的正文参数并压缩定位信息；callout 引用正文不会改动。`,
 		{
-			title: i18n.t("epub.reader.legacyLinkMigrationConfirmTitle"),
-			confirmText: i18n.t("epub.reader.legacyLinkMigrationConfirmButton"),
-			cancelText: i18n.t("epub.reader.legacyLinkMigrationCancelButton"),
+			title: '缩短 EPUB 溯源链接',
+			confirmText: '确认迁移',
+			cancelText: '暂不',
 		}
 	);
 
@@ -49,10 +45,7 @@ export async function maybeMigrateEpubLinksInMarkdownFile(
 	});
 	if (migrated) {
 		new Notice(
-			i18n.t("epub.reader.legacyLinkMigrationSuccess", {
-				count: legacyLinkCount,
-				file: fileLabel,
-			})
+			`已更新「${fileLabel}」中的 ${legacyLinkCount} 条 EPUB 溯源链接`
 		);
 	}
 }
@@ -78,7 +71,7 @@ async function applyEpubLinkContentMigration(
 		return true;
 	} catch {
 		if (!options.silent) {
-			new Notice(i18n.t("epub.reader.legacyLinkMigrationFailed"));
+			new Notice('EPUB 溯源链接迁移失败');
 		}
 		return false;
 	}

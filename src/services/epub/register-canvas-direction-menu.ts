@@ -1,5 +1,4 @@
 import { Menu, type App, type Plugin } from "obsidian";
-import { i18n } from "../../utils/i18n";
 import type { CanvasLayoutDirection } from "./canvas-types";
 import {
 	readCanvasExcerptLayoutDirectionFromCache,
@@ -24,12 +23,12 @@ function resolveMenuSubmenu(item: unknown): Menu {
 const DIRECTION_OPTIONS: Array<{
 	dir: CanvasLayoutDirection;
 	icon: string;
-	labelKey: string;
+	label: string;
 }> = [
-	{ dir: "down", icon: "arrow-down", labelKey: "views.epubView.direction.down" },
-	{ dir: "right", icon: "arrow-right", labelKey: "views.epubView.direction.right" },
-	{ dir: "up", icon: "arrow-up", labelKey: "views.epubView.direction.up" },
-	{ dir: "left", icon: "arrow-left", labelKey: "views.epubView.direction.left" },
+	{ dir: "down", icon: "arrow-down", label: "向下" },
+	{ dir: "right", icon: "arrow-right", label: "向右" },
+	{ dir: "up", icon: "arrow-up", label: "向上" },
+	{ dir: "left", icon: "arrow-left", label: "向左" },
 ];
 
 function appendCanvasDirectionItems(
@@ -42,12 +41,12 @@ function appendCanvasDirectionItems(
 	const currentIcon =
 		DIRECTION_OPTIONS.find((option) => option.dir === currentDirection)?.icon ?? "arrow-down";
 	menu.addItem((item) => {
-		item.setTitle(i18n.t("epub.reader.canvasExcerptDirectionMenu")).setIcon(currentIcon);
+		item.setTitle("阅读器摘录方向").setIcon(currentIcon);
 		const subMenu = resolveMenuSubmenu(item);
-		for (const { dir, icon, labelKey } of DIRECTION_OPTIONS) {
+		for (const { dir, icon, label } of DIRECTION_OPTIONS) {
 			subMenu.addItem((subItem) => {
 				subItem
-					.setTitle(i18n.t(labelKey))
+					.setTitle(label)
 					.setIcon(icon)
 					.setChecked(currentDirection === dir)
 					.onClick(() => {

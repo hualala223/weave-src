@@ -1,5 +1,4 @@
 import { TAbstractFile, TFile, normalizePath } from "obsidian";
-import { i18n } from "../../utils/i18n";
 import {
 	SUPPORTED_BOOK_EXTENSIONS,
 	type SupportedBookExtension,
@@ -65,7 +64,7 @@ export function getBookFormatDisplayLabel(extensionOrPath: string): string {
 		case "txt":
 			return "TXT";
 		default:
-			return normalized ? normalized.toUpperCase() : i18n.t("epub.common.unknownFormat");
+			return normalized ? normalized.toUpperCase() : '未知格式';
 	}
 }
 

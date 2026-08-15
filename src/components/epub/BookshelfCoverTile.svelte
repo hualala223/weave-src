@@ -52,14 +52,14 @@
 	role="button"
 	tabindex="0"
 	aria-label={showProgress
-		? `${file.displayTitle}, ${t('epub.bookshelf.progress', { progress: clampedProgress })}`
+		? `${file.displayTitle}, ${`阅读进度 ${clampedProgress}%`}`
 		: file.displayTitle}
 	title={showProgress
 		? `${file.displayTitle} · ${clampedProgress}%`
 		: file.displayTitle}
 >
 	{#if isContinueReading}
-		<span class="cover-tile-continue-badge">{t('epub.bookshelf.continueReadingBadge')}</span>
+		<span class="cover-tile-continue-badge">{'继续阅读'}</span>
 	{/if}
 	<div class="cover-tile-media">
 		{#if coverUrl}

@@ -6,7 +6,6 @@ import {
 	getCanvasNodeRuntimeData,
 	isCanvasLeafView,
 } from "../../types/obsidian-extensions";
-import { i18n } from "../../utils/i18n";
 import {
 	MARKDOWN_SOURCE_LOCATE_OVERLAY_TIMING,
 } from "./source-locate-overlay-timing";
@@ -199,7 +198,7 @@ export class SourceNavigationService {
 					return;
 				}
 
-				new Notice(i18n.t("epub.reader.sourceOpenedWithoutLocate"));
+				new Notice('已打开源文档，但未精确定位到溯源内容');
 			} catch {
 				/* ignore */
 			}

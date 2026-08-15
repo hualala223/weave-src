@@ -1,6 +1,5 @@
 import { type EventRef, ItemView, WorkspaceLeaf } from "obsidian";
 import { EPUB_RUNTIME } from "../services/epub";
-import { i18n, syncI18nLanguage } from "../utils/i18n";
 import { logger } from "../utils/logger";
 import { getViewSurfaceTokens } from "../utils/view-location-utils";
 import type { EpubViewHost } from "./epub-view-host";
@@ -22,7 +21,7 @@ export class EpubSidebarView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return i18n.t("views.epubSidebar.title");
+		return '织文阅者';
 	}
 
 	getIcon(): string {
@@ -30,7 +29,6 @@ export class EpubSidebarView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
-		syncI18nLanguage();
 		this.contentEl.empty();
 		this.contentEl.addClass("weave-epub-sidebar-view", "weave-epub-global-sidebar-view");
 		this.applySurfaceContext();
@@ -57,7 +55,7 @@ export class EpubSidebarView extends ItemView {
 			this.contentEl.empty();
 			this.contentEl.createDiv({
 				cls: "epub-error",
-				text: i18n.t("views.epubSidebar.loadFailed"),
+				text: '侧边栏加载失败',
 			});
 		}
 	}

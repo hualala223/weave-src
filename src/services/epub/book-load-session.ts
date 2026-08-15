@@ -1,6 +1,4 @@
 import { getBookFormatDisplayLabel } from "./book-format";
-import { i18n } from "../../utils/i18n";
-
 /** Expected upper bound for normal CBZ / archive open on typical hardware. */
 export const BOOK_LOAD_SLOW_WARNING_MS = 15_000;
 /** Absolute safety cap for typical books; real loads should finish well before this. */
@@ -47,14 +45,14 @@ export function buildBookLoadTimeoutMessage(
 	const format = getBookFormatDisplayLabel(filePath);
 	const seconds = String(Math.round(hardTimeoutMs / 1000));
 	return context === "reader"
-		? i18n.t("epub.reader.loadTimeout", { format, seconds })
-		: i18n.t("epub.errors.loadTimeout", { format, seconds });
+		? `${format} 加载超时（已超过 ${seconds} 秒），请刷新书架后重试`
+		: `${format} 加载超时（已超过 ${seconds} 秒），请刷新书架后重试`;
 }
 
 export function buildBookLoadSlowWarningMessage(filePath: string): string {
 	const format = getBookFormatDisplayLabel(filePath);
 	const seconds = String(Math.round(BOOK_LOAD_SLOW_WARNING_MS / 1000));
-	return i18n.t("epub.reader.loadSlowWarning", { format, seconds });
+	return `${format} 解压加载已超过 ${seconds} 秒，仍在继续…如不愿等待可关闭`;
 }
 
 export interface RunBookLoadSessionOptions<T> {

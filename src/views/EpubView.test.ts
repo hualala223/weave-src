@@ -57,12 +57,6 @@ vi.mock('../utils/epub-leaf-utils', () => ({
 	resolveRecentEpubPath: vi.fn(),
 }));
 
-vi.mock('../utils/i18n', () => ({
-	i18n: {
-		t: (key: string) => key,
-	},
-}));
-
 vi.mock('../utils/logger', () => ({
 	logger: {
 		debug: vi.fn(),

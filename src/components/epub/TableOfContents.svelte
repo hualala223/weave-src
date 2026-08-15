@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { Menu, Platform, setIcon } from 'obsidian';
-	import { tr } from '../../utils/i18n';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import { showWeaveMenuAtMouseEvent } from '../../utils/weave-owned-menu';
 	import type { TocItem } from '../../services/epub';
@@ -47,8 +46,6 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 		onSetChapterMark,
 		onSaveTocChapterMarkSettings,
 	}: Props = $props();
-	let t = $derived($tr);
-
 	let defaultMarkLabels = $derived(buildTocChapterMarkDefaultLabels(t));
 
 	let markDefinitionMap = $derived.by(() => {
@@ -117,7 +114,7 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 
 		if (onSetChapterMark) {
 			menu.addItem((menuItem) => {
-				menuItem.setTitle(t('epub.toc.markChapter'));
+				menuItem.setTitle('标记章节');
 				menuItem.setIcon('tag');
 				const markSubmenu = menuItem.setSubmenu();
 
@@ -132,7 +129,7 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 				}
 
 				markSubmenu.addItem((subItem) => {
-					subItem.setTitle(t('epub.toc.clearChapterMark'));
+					subItem.setTitle('清除标记');
 					subItem.setIcon('x');
 					subItem.setDisabled(!explicitMark);
 					subItem.onClick(() => {
@@ -143,7 +140,7 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 				markSubmenu.addSeparator();
 				if (onSaveTocChapterMarkSettings) {
 					markSubmenu.addItem((subItem) => {
-						subItem.setTitle(t('epub.toc.markSettingsAction'));
+						subItem.setTitle('圆点语义设置');
 						subItem.setIcon('settings-2');
 						subItem.onClick((evt) => {
 							openMarkSettingsPopover(evt);
@@ -185,10 +182,10 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 
 	function resolveItemAriaLabel(item: FlatTocItem, isActive: boolean, isLastRead: boolean): string | undefined {
 		if (isActive) {
-			return t('epub.toc.currentLocationItemAria', { title: item.label });
+			return `当前阅读：${item.label}`;
 		}
 		if (isLastRead) {
-			return t('epub.toc.lastReadItemAria', { title: item.label });
+			return `上次阅读：${item.label}`;
 		}
 		return undefined;
 	}
@@ -236,16 +233,16 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 
 <div class="epub-toc-panel">
 	{#if loading}
-		<EpubLoadingState message={t('epub.toc.loading')} surface />
+		<EpubLoadingState message={'正在加载目录…'} surface />
 	{:else if loadFailed}
-		<div class="epub-placeholder">{t('epub.toc.loadFailed')}</div>
+		<div class="epub-placeholder">{'目录加载失败，请稍后重试'}</div>
 	{:else if flatItems.length === 0}
-		<div class="epub-placeholder">{t('epub.toc.empty')}</div>
+		<div class="epub-placeholder">{'此书暂无目录'}</div>
 	{:else}
 		<div
 			class="epub-toc-list"
 			bind:this={tocListEl}
-			aria-label={t('epub.toc.ariaLabel')}
+			aria-label={'目录'}
 		>
 			{#each flatItems as item, itemIndex (item.id)}
 				{@const isActive = isActiveItem(item)}
@@ -283,8 +280,8 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 						{#if isActive}
 							<span
 								class="toc-current-location-marker"
-								title={t('epub.toc.currentLocationTitle')}
-								aria-label={t('epub.toc.currentLocationTitle')}
+								title={'当前阅读位置'}
+								aria-label={'当前阅读位置'}
 							>
 								<span class="toc-current-location-icon" aria-hidden="true" use:currentLocationIcon></span>
 							</span>
@@ -292,11 +289,11 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 						{#if isLastRead}
 							<span
 								class="toc-last-read-marker"
-								title={t('epub.toc.lastReadBadgeTitle')}
-								aria-label={t('epub.toc.lastReadBadge')}
+								title={'上次阅读位置'}
+								aria-label={'上次阅读'}
 							>
 								<span class="toc-last-read-icon" aria-hidden="true" use:lastReadIcon></span>
-								<span class="toc-last-read-badge">{t('epub.toc.lastReadBadge')}</span>
+								<span class="toc-last-read-badge">{'上次阅读'}</span>
 							</span>
 						{/if}
 						{#if item.pageNumber}

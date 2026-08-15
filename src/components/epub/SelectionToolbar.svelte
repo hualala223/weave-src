@@ -2,7 +2,6 @@
 	import { setIcon, Platform, Menu } from 'obsidian';
 	import type { App } from 'obsidian';
 	import { onMount, tick, untrack } from 'svelte';
-	import { tr } from '../../utils/i18n';
 	import { logger } from '../../utils/logger';
 	import type {
 		EpubBook,
@@ -54,8 +53,6 @@
 		externalSelection = null,
 		onInsertToNote
 	}: Props = $props();
-	let t = $derived($tr);
-
 	let toolbarEl: HTMLDivElement | undefined = $state(undefined);
 	let isVisible = $state(false);
 	let posTop = $state(0);
