@@ -12,7 +12,6 @@
                 resolveEpubHost,
                 warmEpubAnnotationIndexForPaths,
         } from '../../services/epub';
-        import { PremiumFeatureGuard } from '../../services/premium/PremiumFeatureGuard';
         import { getBookFormatDisplayLabel, isSupportedBookFile, stripSupportedBookExtension } from '../../services/epub/book-format';
         import { FoliateVaultPublicationParser } from '../../services/epub/FoliateVaultPublicationParser';
         import type { BookMetadata, EpubBook } from '../../services/epub';
@@ -163,9 +162,7 @@
         let bookshelfSearchReady = false;
         let bookshelfSearchPersistTimer: ReturnType<typeof window.setTimeout> | null = null;
         let bookshelfDisplayMode = $state<BookshelfDisplayMode>('adaptive');
-        let bookshelfPremiumUiRevision = $state(0);
         let canShowBookshelfProgress = $derived.by(() => {
-                bookshelfPremiumUiRevision;
                 return canUseEpubReadingProgress(app);
         });
         let detectedSurfaceContext = $state<'main' | 'sidebar'>('main');
@@ -2202,13 +2199,6 @@
                 window.addEventListener(BOOKSHELF_DATA_CHANGED_EVENT, handleBookshelfSettingsChanged);
                 window.addEventListener(BOOKSHELF_REFRESH_REQUEST_EVENT, handleBookshelfRefreshRequest);
                 window.addEventListener(BOOKSHELF_DISPLAY_SETTINGS_CHANGED_EVENT, handleBookshelfDisplaySettingsChanged);
-                const premiumGuard = PremiumFeatureGuard.getInstance();
-                const handleBookshelfPremiumUiChanged = () => {
-                        bookshelfPremiumUiRevision += 1;
-                };
-                const unsubscribePremiumActive = premiumGuard.isPremiumActive.subscribe(handleBookshelfPremiumUiChanged);
-                const unsubscribePremiumPreview = premiumGuard.premiumFeaturesPreviewEnabled.subscribe(handleBookshelfPremiumUiChanged);
-                window.addEventListener(EPUB_RUNTIME.events.premiumUiStateChanged, handleBookshelfPremiumUiChanged);
                 const renameRef = app.vault.on('rename', (file, oldPath) => {
                         handleVaultRename(file, oldPath);
                 });
@@ -2226,9 +2216,6 @@
                                 });
                 });
                 return () => {
-                        unsubscribePremiumActive();
-                        unsubscribePremiumPreview();
-                        window.removeEventListener(EPUB_RUNTIME.events.premiumUiStateChanged, handleBookshelfPremiumUiChanged);
                         app.vault.offref(renameRef);
                         app.vault.offref(deleteRef);
                         surfaceContextObserver?.disconnect();

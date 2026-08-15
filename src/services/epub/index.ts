@@ -125,6 +125,7 @@ export {
 	ensureEpubFileAccess,
 	ensureEpubPremiumFeature,
 	requestEpubPremiumFeaturePreview,
+	PREMIUM_FEATURES,
 } from "./epub-premium";
 export {
 	loadPublicationTocItems,

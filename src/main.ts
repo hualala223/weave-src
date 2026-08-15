@@ -31,7 +31,6 @@ import {
 	normalizeHighlightStoragePath,
 	normalizeWeaveParentFolder,
 } from "./config/paths";
-import { PremiumFeatureGuard } from "./services/premium/PremiumFeatureGuard";
 import { configureNavigationHub } from "./services/navigation/navigation-hub-access";
 import { getBookSessionManager } from "./services/epub/session/book-session-manager-access";
 import { syncLargeNavButtonStyle } from "./services/epub/epub-large-nav-style";
@@ -53,13 +52,6 @@ import {
 } from "./services/epub/epub-plugin-support";
 import { getVisibleSplitActionsFromHost } from "./services/ai/ai-action-config";
 import { aiConfigStore } from "./stores/ai-config.store";
-import type {
-	EffectiveLicenseState,
-	LicenseInfo,
-	LicenseStore,
-	LicensedProduct,
-} from "./types/license";
-import { DEFAULT_LICENSE_INFO, DEFAULT_LICENSE_STORE } from "./types/license";
 import {
 	getWeaveMainPlugin,
 	isWeaveMainPluginEnabled,
@@ -68,19 +60,10 @@ import {
 import { safeOpenSettings } from "./utils/obsidian-api-safe";
 import {
 	getCompatibleAISelectedTextPanelHost,
-	getInheritedLicensesFromLegacyWeave,
 } from "./utils/plugin-access";
-import {
-	getLegacyPrimaryLicense,
-	LICENSED_PRODUCTS,
-	normalizeLicenseStore,
-	resolveEffectiveLicenseState,
-} from "./utils/license-state";
 import { registerCanvasExcerptAnchorCacheWarmup } from "./services/epub/canvas-excerpt-anchor";
 import { registerCanvasDirectionMenu } from "./services/epub/register-canvas-direction-menu";
 import { registerCanvasExcerptAnchorMenu } from "./services/epub/register-canvas-excerpt-anchor-menu";
-import { registerLicenseSyncBridge } from "./utils/license-sync-bridge";
-import { licenseManager } from "./utils/licenseManager";
 import { logger } from "./utils/logger";
 import {
 	initI18n,
@@ -99,13 +82,9 @@ import {
 } from "./services/epub/bookshelf-display-mode";
 
 interface StandaloneEpubPluginSettings {
-	license: LicenseInfo;
-	licenseState: LicenseStore;
 	aiConfig?: AIConfig;
-	allowInheritedLicenses: boolean;
 	enableDebugMode: boolean;
 	enableLargeNavButtons: boolean;
-	showPremiumFeaturesPreview: boolean;
 	bookshelfAutoViewByLocationEnabled: boolean;
 	bookshelfDisplayMode: BookshelfDisplayMode;
 	bookmarkFolder: string;
@@ -121,12 +100,8 @@ interface StandaloneEpubPluginSettings {
 }
 
 const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
-	license: DEFAULT_LICENSE_INFO,
-	licenseState: DEFAULT_LICENSE_STORE,
-	allowInheritedLicenses: true,
 	enableDebugMode: false,
 	enableLargeNavButtons: false,
-	showPremiumFeaturesPreview: false,
 	bookshelfAutoViewByLocationEnabled: false,
 	bookshelfDisplayMode: DEFAULT_BOOKSHELF_DISPLAY_MODE,
 	bookmarkFolder: DEFAULT_EPUB_BOOKMARK_FOLDER,
@@ -155,38 +130,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 	private epubOfficialApiService: EpubExcerptOfficialApiService | null = null;
 	settings: StandaloneEpubPluginSettings = DEFAULT_STANDALONE_EPUB_SETTINGS;
 
-	getLicensedProductId(): LicensedProduct {
-		return LICENSED_PRODUCTS.EPUB;
-	}
-
-	getLocalLicenses(): LicenseInfo[] {
-		return this.settings.licenseState?.localLicenses ?? [];
-	}
-
-	getInheritedLicenses(): LicenseInfo[] {
-		if (this.settings.allowInheritedLicenses === false) {
-			return [];
-		}
-
-		return getInheritedLicensesFromLegacyWeave(this.app);
-	}
-
-	getEffectiveLicenseState(): EffectiveLicenseState {
-		return resolveEffectiveLicenseState({
-			product: this.getLicensedProductId(),
-			localLicenses: this.getLocalLicenses(),
-			inheritedLicenses: this.getInheritedLicenses(),
-		});
-	}
-
-	hasEpubPremiumAccess(): boolean {
-		return this.getEffectiveLicenseState().isPremiumActive;
-	}
-
-	openEpubPremiumSettings(): void {
-		safeOpenSettings(this.app, this.manifest.id);
-	}
-
 	/** Weave 宿主可通过 `app.plugins.getPlugin("weave-epub-reader")` 调用 */
 	openDataManagementModal(): void {
 		new EpubDataManagementModalObsidian(this.app, {
@@ -194,43 +137,9 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		}).open();
 	}
 
-	async refreshPremiumState(): Promise<void> {
-		await PremiumFeatureGuard.getInstance().updateLicenseState({
-			product: this.getLicensedProductId(),
-			localLicenses: this.getLocalLicenses(),
-			inheritedLicenses: this.getInheritedLicenses(),
-		});
-	}
-
-	private syncLicenseSettings(): boolean {
-		const previousSnapshot = JSON.stringify({
-			license: this.settings.license,
-			licenseState: this.settings.licenseState,
-		});
-		const normalizedStore = normalizeLicenseStore(
-			this.settings.license,
-			this.settings.licenseState
-		);
-		this.settings.licenseState = normalizedStore;
-		this.settings.license = getLegacyPrimaryLicense(normalizedStore.localLicenses);
-		return (
-			JSON.stringify({
-				license: this.settings.license,
-				licenseState: this.settings.licenseState,
-			}) !== previousSnapshot
-		);
-	}
-
 	private syncDebugSettings(): void {
 		this.settings.enableDebugMode = this.settings.enableDebugMode === true;
 		logger.setDebugMode(this.settings.enableDebugMode);
-	}
-
-	private syncPremiumPreviewSettings(): void {
-		this.settings.showPremiumFeaturesPreview = this.settings.showPremiumFeaturesPreview === true;
-		PremiumFeatureGuard.getInstance().setPremiumFeaturesPreview(
-			this.settings.showPremiumFeaturesPreview
-		);
 	}
 
 	private syncBookshelfDisplaySettings(): void {
@@ -366,9 +275,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 					? localUiMemory.lastSelectedIRDeckId
 					: localUiMemory.lastSelectedIRDeckId || this.settings.lastSelectedIRDeckId || ""
 			).trim();
-		const licenseSettingsChanged = this.syncLicenseSettings();
 		this.syncDebugSettings();
-		this.syncPremiumPreviewSettings();
 		this.syncBookshelfDisplaySettings();
 		this.syncReadingPositionAutoSaveSettings();
 		this.settings.sourceNavigationOpenInNewTab = this.settings.sourceNavigationOpenInNewTab !== false;
@@ -376,16 +283,13 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			this.settings.interfaceLanguage
 		);
 		setInterfaceLanguagePreference(this.settings.interfaceLanguage);
-		if (licenseSettingsChanged || this.hasLegacyRememberedUiKeys(loadedData)) {
-			if (this.hasLegacyRememberedUiKeys(loadedData)) {
-				await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
-			}
+		if (this.hasLegacyRememberedUiKeys(loadedData)) {
+			await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
 			await this.persistSettingsData();
 		}
 	}
 
 	async saveSettings(): Promise<void> {
-		this.syncLicenseSettings();
 		this.settings.interfaceLanguage = normalizeInterfaceLanguagePreference(
 			this.settings.interfaceLanguage
 		);
@@ -393,7 +297,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		syncI18nLanguage();
 
 		this.syncDebugSettings();
-		this.syncPremiumPreviewSettings();
 		this.syncBookshelfDisplaySettings();
 		this.syncReadingPositionAutoSaveSettings();
 		this.settings.bookmarkFolder =
@@ -406,7 +309,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.settings.lastSelectedIRDeckId = String(this.settings.lastSelectedIRDeckId || "").trim();
 		await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
 		await this.persistSettingsData();
-		await this.refreshPremiumState();
 	}
 
 	private normalizeRememberedFolder(folderPath?: string | null): string {
@@ -594,7 +496,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		syncLargeNavButtonStyle(this.settings.enableLargeNavButtons === true);
 		await vaultStorage.initialize(this.app);
 		initI18n(this.settings.interfaceLanguage);
-		licenseManager.initializeCloud(this.app);
 		registerEpubHost(this.app, this);
 		configureNavigationHub(this.app, {
 			getSourceNavigationOpenInNewTab: () => this.settings.sourceNavigationOpenInNewTab !== false,
@@ -607,12 +508,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		aiConfigStore.initialize(this);
 		const { EpubSettingsTab } = await import("./components/settings/EpubSettingsTab");
 		this.addSettingTab(new EpubSettingsTab(this.app, this));
-		await PremiumFeatureGuard.getInstance().initializeForProduct({
-			product: this.getLicensedProductId(),
-			localLicenses: this.getLocalLicenses(),
-			inheritedLicenses: this.getInheritedLicenses(),
-		});
-		registerLicenseSyncBridge(this, this);
 		registerCanvasExcerptAnchorMenu(this);
 		registerCanvasDirectionMenu(this);
 		registerCanvasExcerptAnchorCacheWarmup(this);

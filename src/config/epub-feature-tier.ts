@@ -3,7 +3,7 @@
  * - core：未激活也可用，且关闭「高级预览」时仍显示相关设置
  * - premium：需许可证；未开预览时不展示入口（EPUB、TXT 阅读本身免费，见 book-format.isFreeBookFormat）
  *
- * 使用字符串常量，避免与 PremiumFeatureGuard 循环依赖。
+ * 使用字符串常量作为单一真相源。
  */
 export const EPUB_FEATURE_IDS = {
 	EXCERPT_NOTES: "epub-excerpt-notes",

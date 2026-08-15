@@ -2,7 +2,6 @@
         import type { App, WorkspaceLeaf, TAbstractFile, EventRef } from 'obsidian';
         import { setIcon, MarkdownView, Notice, Menu, TFile, Platform, normalizePath } from 'obsidian';
 	import { onMount, untrack } from 'svelte';
-	import { get } from 'svelte/store';
 	import EpubReaderView from './EpubReaderView.svelte';
 	import BookshelfView from './BookshelfView.svelte';
 	import BottomNav from './BottomNav.svelte';
@@ -16,8 +15,7 @@
 	import EpubCommentEditorPopover from './EpubCommentEditorPopover.svelte';
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
 	import ReferenceDetailModal from './ReferenceDetailModal.svelte';
-	import EpubPremiumFeaturePopover from './EpubPremiumFeaturePopover.svelte';
-	import { canUseEpubCanvasExcerpts, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, createTapBurstTracker, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, ensureEpubPremiumFeature, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubAnnotationIndexService, getEpubBacklinkHighlightService, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, resolveEpubWeaveOfficialAPI, TAP_FLIP_GRACE_MS, TAP_TRIPLE_WINDOW_MS, warmEpubAnnotationIndexForPaths } from '../../services/epub';
+	import { canUseEpubCanvasExcerpts, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, createTapBurstTracker, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubAnnotationIndexService, getEpubBacklinkHighlightService, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, resolveEpubWeaveOfficialAPI, TAP_FLIP_GRACE_MS, TAP_TRIPLE_WINDOW_MS, warmEpubAnnotationIndexForPaths } from '../../services/epub';
 	import { EpubBookmarkService } from '../../services/epub/EpubBookmarkService';
 	import { EpubReferenceStatsService } from '../../services/epub/EpubReferenceStatsService';
 	import {
@@ -36,7 +34,6 @@
 	} from '../../services/epub/canvas-excerpt-anchor';
 	import type { EpubVisibleFrameLike, ScreenshotRect } from '../../services/epub/EpubScreenshotService';
 	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubHostCapabilities, EpubLayoutMode, EpubParagraphModeReadingPosition, EpubParagraphModeTransitionStyle, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubWeaveExcerptRemovalMode, EpubWeaveOfficialAPI, EpubWeaveRemoveExcerptResult, FlashStyle, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderParagraph, ReaderTapEvent, ReadingPosition, TocItem } from '../../services/epub';
-	import { PremiumFeatureGuard, PREMIUM_FEATURES } from '../../services/premium/PremiumFeatureGuard';
 	import { getBookFormatDisplayLabel, isSupportedBookFile } from '../../services/epub/book-format';
 	import type { EpubTocChapterMark, EpubTocChapterMarkMap } from '../../services/epub/epub-toc-chapter-mark';
 	import type { EpubTocChapterMarkSettings } from '../../services/epub/epub-toc-chapter-mark-settings';
@@ -107,7 +104,6 @@
 		onChapterTitleChange?: (title: string) => void;
 		onReadingReferencePointChange?: (point: EpubReadingReferencePoint | null) => void;
 		onReadingPositionAutoSaveChange?: () => void;
-		onPremiumUiStateChange?: () => void;
 		onReaderSettingsLoaded?: (settings: EpubReaderSettings) => void;
 		onBackFromBookshelf?: () => void | Promise<void>;
 		onCancelBookLoad?: () => void | Promise<void>;
@@ -131,8 +127,6 @@
 			canUseStyledExcerpts?: () => boolean;
 			canUseCanvasExcerpts?: () => boolean;
 			canUseFootnotePreview?: () => boolean;
-			isPremiumFeaturePreviewEnabled?: () => boolean;
-			showPremiumFeaturePreview?: (featureId: string) => void;
 			saveReadingReferencePoint?: () => Promise<void>;
 			openReadingPositionMenu?: (event: MouseEvent | KeyboardEvent) => void;
 			getReadingPositionAutoSaveEnabled?: () => boolean;
@@ -162,7 +156,6 @@
 		onChapterTitleChange,
 		onReadingReferencePointChange,
 		onReadingPositionAutoSaveChange,
-		onPremiumUiStateChange,
 		onReaderSettingsLoaded, 
 		onBackFromBookshelf,
 		onCancelBookLoad,
@@ -247,9 +240,6 @@
 	let sessionReadingStartPercent = $state<number | null>(null);
 	let bookCompletionPromptOpen = false;
 	let bookCompletionPromptDismissedBookId = '';
-	let premiumFeaturePreviewEnabled = $state(false);
-	let isPremiumLicenseActive = $state(false);
-	let premiumFeaturePreviewFeatureId = $state<string | null>(null);
 	let paragraphModeSelection = $state<{
 		text: string;
 		cfiRange: string;
@@ -420,68 +410,18 @@
 	}
 
 
-	function isPremiumFeaturePreviewEnabled(): boolean {
-		return premiumFeaturePreviewEnabled;
-	}
 
-	function getPremiumFeatureEntryTitle(baseTitle: string, featureId: string): string {
-		return PremiumFeatureGuard.getInstance().getFeatureEntryTitle(baseTitle, featureId, {
-			page: 'epub-reader',
-		});
-	}
 
 	function getReadingPositionLabel(percent: number): string {
 		return t('epub.reader.readingPosition', { percent: Math.round(percent) });
 	}
 
-	function closePremiumFeaturePreview(): void {
-		premiumFeaturePreviewFeatureId = null;
-	}
 
-	function notifyPremiumUiStateChanged(): void {
-		if (isPremiumLicenseActive) {
-			closePremiumFeaturePreview();
-		}
-		void refreshReadingReferencePointState(book?.id);
-		syncAsActiveEpubDocumentIfActive();
-		onReadingPositionAutoSaveChange?.();
-		onPremiumUiStateChange?.();
-	}
 
-	function handlePremiumFeaturePreviewRequest(event: Event): void {
-		const featureId = String((event as CustomEvent<{ featureId?: string }>).detail?.featureId || '').trim();
-		if (!featureId) {
-			return;
-		}
-		openPremiumFeaturePreview(featureId);
-	}
 
-	function openPremiumFeaturePreview(featureId: string): void {
-		const normalizedFeatureId = String(featureId || '').trim();
-		if (!normalizedFeatureId) {
-			return;
-		}
-		clearParagraphModeSelection();
-		highlightToolbarInfo = null;
-		closeCommentEditor();
-		footnotePreviewInfo = null;
-		typographyPopoverOpen = false;
-		premiumFeaturePreviewFeatureId = normalizedFeatureId;
-	}
 
 	function requestParagraphModeFeatureAccess(): boolean {
-		if (hasParagraphModeCapability()) {
-			return true;
-		}
-		if (isPremiumFeaturePreviewEnabled()) {
-			openPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE);
-			return false;
-		}
-		return ensureEpubPremiumFeature(
-			app,
-			PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE,
-			t('epub.reader.paragraphModeFeatureNotice')
-		);
+		return hasParagraphModeCapability();
 	}
 
 	function normalizeFootnoteClickActionForAccess(
@@ -2313,9 +2253,6 @@
 	}
 
 	async function saveReadingReferencePoint() {
-		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_READING_REFERENCE, t('epub.reader.readingReferenceFeatureNotice'))) {
-			return;
-		}
 		if (!book) {
 			new Notice(t('epub.reader.bookNotLoaded'));
 			return;
@@ -2366,9 +2303,6 @@
 	}
 
 	async function goToReadingReferencePoint() {
-		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_READING_REFERENCE, t('epub.reader.readingReferenceFeatureNotice'))) {
-			return;
-		}
 		if (!readingReferencePoint?.cfi) {
 			new Notice(t('epub.reader.referenceMissing'));
 			return;
@@ -2389,9 +2323,6 @@
 	}
 
 	async function clearReadingReferencePoint() {
-		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_READING_REFERENCE, t('epub.reader.readingReferenceFeatureNotice'))) {
-			return;
-		}
 		if (!book) {
 			new Notice(t('epub.reader.bookNotLoaded'));
 			return;
@@ -2449,22 +2380,9 @@
 					void saveReadingReferencePoint();
 				});
 			});
-		} else if (isPremiumFeaturePreviewEnabled()) {
-			menu.addItem((item) => {
-				item.setTitle(
-					getPremiumFeatureEntryTitle(
-						t('epub.reader.referenceRecordMenu'),
-						PREMIUM_FEATURES.EPUB_READING_REFERENCE
-					)
-				);
-				item.setIcon('flag');
-				item.onClick(() => {
-					openPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_READING_REFERENCE);
-				});
-			});
 		}
 
-		if (canUseReference || isPremiumFeaturePreviewEnabled()) {
+		if (canUseReference) {
 			menu.addSeparator();
 		}
 
@@ -3020,9 +2938,6 @@
 		color?: string,
 		style?: EpubHighlightStyle
 	) {
-		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_CANVAS_EXCERPTS, t('epub.reader.canvasExcerptFeatureNotice'))) {
-			return;
-		}
 		const chapterIndex = readerService.getCurrentChapterIndex();
 		const chapterTitle = resolveExcerptChapterTitle();
 
@@ -3064,9 +2979,6 @@
 	}
 
 	async function bindCanvas(canvasPath: string) {
-		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_CANVAS_EXCERPTS, t('epub.reader.canvasExcerptFeatureNotice'))) {
-			return;
-		}
 		if (!book) return;
 		canvasService.setCanvasPath(canvasPath);
 		await storageService.setCanvasBinding(book.id, canvasPath);
@@ -3856,9 +3768,6 @@
 
 	async function handleReferenceBadgeClick(infoOrCfi: HighlightClickInfo | string) {
 		if (!hasExcerptNotesCapability()) {
-			if (isPremiumFeaturePreviewEnabled()) {
-				openPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-			}
 			return;
 		}
 		try {
@@ -4186,28 +4095,6 @@
 
 	onMount(() => {
 		document.addEventListener('fullscreenchange', handleFullscreenChange);
-		const premiumGuard = PremiumFeatureGuard.getInstance();
-		isPremiumLicenseActive = get(premiumGuard.isPremiumActive);
-		premiumFeaturePreviewEnabled = get(premiumGuard.premiumFeaturesPreviewEnabled);
-		const unsubscribePremiumActive = premiumGuard.isPremiumActive.subscribe((value) => {
-			isPremiumLicenseActive = value;
-			notifyPremiumUiStateChanged();
-		});
-		const unsubscribePremiumPreview = premiumGuard.premiumFeaturesPreviewEnabled.subscribe((value) => {
-			premiumFeaturePreviewEnabled = value;
-			if (!value) {
-				closePremiumFeaturePreview();
-			}
-			notifyPremiumUiStateChanged();
-		});
-		const handlePremiumUiStateChanged = () => {
-			notifyPremiumUiStateChanged();
-		};
-		window.addEventListener(EPUB_RUNTIME.events.premiumUiStateChanged, handlePremiumUiStateChanged);
-		window.addEventListener(
-			EPUB_RUNTIME.events.premiumFeaturePreviewRequest,
-			handlePremiumFeaturePreviewRequest
-		);
 		const handleBookDisplayTitleChanged = (event: Event) => {
 			const detail = (event as CustomEvent<{ filePath?: string; title?: string }>).detail;
 			const changedPath = normalizePath(String(detail?.filePath || "").trim());
@@ -4357,8 +4244,6 @@
 			canUseStyledExcerpts: hasStyledExcerptCapability,
 			canUseCanvasExcerpts: hasCanvasExcerptCapability,
 			canUseFootnotePreview: hasFootnotePreviewCapability,
-			isPremiumFeaturePreviewEnabled,
-			showPremiumFeaturePreview: openPremiumFeaturePreview,
 			saveReadingReferencePoint: hasReadingReferenceCapability() ? saveReadingReferencePoint : undefined,
 			openReadingPositionMenu: openReadingReferencePointMenu,
 			getReadingPositionAutoSaveEnabled: hasReadingProgressCapability()
@@ -4380,13 +4265,7 @@
 			app.workspace.offref(canvasDirectionRef);
 		document.removeEventListener('fullscreenchange', handleFullscreenChange);
 		setParagraphModeImmersiveClass(false);
-			unsubscribePremiumActive();
-			unsubscribePremiumPreview();
-			window.removeEventListener(EPUB_RUNTIME.events.premiumUiStateChanged, handlePremiumUiStateChanged);
-			window.removeEventListener(
-				EPUB_RUNTIME.events.premiumFeaturePreviewRequest,
-				handlePremiumFeaturePreviewRequest
-			);
+
 			window.removeEventListener(
 				EPUB_RUNTIME.events.bookDisplayTitleChanged,
 				handleBookDisplayTitleChanged
@@ -4789,12 +4668,6 @@
 				onInsertToNote={handleInsertToNote}
 			/>
 
-			<EpubPremiumFeaturePopover
-				open={premiumFeaturePreviewFeatureId !== null}
-				featureId={premiumFeaturePreviewFeatureId}
-				onClose={closePremiumFeaturePreview}
-				onOpenSettings={() => resolveEpubHost(app)?.openEpubPremiumSettings?.()}
-			/>
 
 			<EpubTutorial
 				visible={tutorialVisible}

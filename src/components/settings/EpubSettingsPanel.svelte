@@ -4,8 +4,6 @@
   import type StandaloneEpubPlugin from "../../main";
   import type { EpubSettingsTabId } from "./epub-settings-types";
   import EpubSettingsBasicTab from "./EpubSettingsBasicTab.svelte";
-  import EpubSettingsAboutTab from "./EpubSettingsAboutTab.svelte";
-  import EpubLicenseSettingsPanel from "./EpubLicenseSettingsPanel.svelte";
   import "../../styles/epub/epub-settings-panel.css";
 
   interface Props {

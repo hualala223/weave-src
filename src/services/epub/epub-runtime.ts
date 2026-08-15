@@ -19,8 +19,6 @@ export interface EpubRuntimeConfig {
 		excerptSettingsChanged: string;
 		highlightSyncRequested: string;
 		navigate: string;
-		premiumFeaturePreviewRequest: string;
-		premiumUiStateChanged: string;
 	};
 	globals: {
 		pendingNavigationKey: string;
@@ -75,12 +73,6 @@ export const EPUB_RUNTIME: EpubRuntimeConfig = {
 		excerptSettingsChanged: excerptSettingsChangedEvent,
 		highlightSyncRequested: highlightSyncRequestedEvent,
 		navigate: isStandalone ? "WeaveEpubStandalone:epub-navigate" : "Weave:epub-navigate",
-		premiumFeaturePreviewRequest: isStandalone
-			? "WeaveEpubStandalone:epub-premium-feature-preview-request"
-			: "Weave:epub-premium-feature-preview-request",
-		premiumUiStateChanged: isStandalone
-			? "WeaveEpubStandalone:epub-premium-ui-state-changed"
-			: "Weave:epub-premium-ui-state-changed",
 	},
 	globals: {
 		pendingNavigationKey: isStandalone

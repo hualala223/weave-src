@@ -25,7 +25,6 @@ export interface EpubBasicSettingsActionDeps {
 	getBookmarkFolderValue: () => string;
 	getHighlightStoragePathValue: () => string;
 	getInterfaceLanguageValue: () => InterfaceLanguagePreference;
-	getPremiumPreviewEnabled: () => boolean;
 	getContinuousReadingPositionAutoSaveEnabled: () => boolean;
 	getContinuousReadingPositionAutoSavePages: () => number;
 	getSourceNavigationOpenInNewTab: () => boolean;
@@ -95,21 +94,6 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 			setInterfaceLanguagePreference(normalizedValue);
 			await deps.save();
 			showNotification(t("epub.settings.notifications.interfaceLanguageUpdated"), "success");
-		},
-
-		async updatePremiumPreview(enabled: boolean): Promise<void> {
-			if (deps.getPremiumPreviewEnabled() === enabled) {
-				return;
-			}
-
-			plugin.settings.showPremiumFeaturesPreview = enabled;
-			await deps.save();
-			showNotification(
-				enabled
-					? t("epub.settings.notifications.premiumPreviewEnabled")
-					: t("epub.settings.notifications.premiumPreviewDisabled"),
-				"success"
-			);
 		},
 
 		async updateContinuousReadingPositionAutoSaveEnabled(enabled: boolean): Promise<void> {

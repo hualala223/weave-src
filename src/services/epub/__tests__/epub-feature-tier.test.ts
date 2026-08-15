@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
 	EPUB_CORE_FEATURE_ID_SET,
 	EPUB_FEATURE_IDS,
@@ -6,7 +6,6 @@ import {
 	isEpubCoreFeature,
 	isEpubPremiumFeature,
 } from "../../../config/epub-feature-tier";
-import { PremiumFeatureGuard, PREMIUM_FEATURES } from "../../premium/PremiumFeatureGuard";
 
 describe("epub-feature-tier", () => {
 	it("treats excerpt notes and reading progress as core", () => {
@@ -21,28 +20,5 @@ describe("epub-feature-tier", () => {
 		expect(isEpubPremiumFeature(EPUB_FEATURE_IDS.PARAGRAPH_MODE)).toBe(true);
 		expect(EPUB_CORE_FEATURE_ID_SET.size).toBeGreaterThan(0);
 		expect(EPUB_PREMIUM_FEATURE_ID_SET.size).toBeGreaterThan(0);
-	});
-});
-
-describe("PremiumFeatureGuard epub tier", () => {
-	beforeEach(() => {
-		PremiumFeatureGuard.getInstance().isPremiumActive.set(false);
-		PremiumFeatureGuard.getInstance().premiumFeaturesPreviewEnabled.set(false);
-	});
-
-	it("allows reading progress without a license", () => {
-		const guard = PremiumFeatureGuard.getInstance();
-		expect(guard.canUseFeature(EPUB_FEATURE_IDS.READING_PROGRESS)).toBe(true);
-		expect(guard.isPremiumFeature(EPUB_FEATURE_IDS.READING_PROGRESS)).toBe(false);
-	});
-
-	it("blocks reading reference until licensed or previewed in UI", () => {
-		const guard = PremiumFeatureGuard.getInstance();
-		expect(guard.canUseFeature(PREMIUM_FEATURES.EPUB_READING_REFERENCE)).toBe(false);
-		expect(guard.shouldShowFeatureEntry(PREMIUM_FEATURES.EPUB_READING_REFERENCE)).toBe(false);
-
-		guard.premiumFeaturesPreviewEnabled.set(true);
-		expect(guard.shouldShowFeatureEntry(PREMIUM_FEATURES.EPUB_READING_REFERENCE)).toBe(true);
-		expect(guard.canUseFeature(PREMIUM_FEATURES.EPUB_READING_REFERENCE)).toBe(false);
 	});
 });

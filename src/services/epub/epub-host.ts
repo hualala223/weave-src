@@ -1,5 +1,4 @@
 import type { App } from "obsidian";
-import type { LicenseInfo } from "../../types/license";
 import { CURRENT_PLUGIN_ID } from "../../config/plugin-runtime";
 import { getLegacyWeavePlugin } from "../../utils/plugin-access";
 import { getEpubRuntime } from "./epub-runtime";
@@ -83,9 +82,6 @@ export interface EpubHostCapabilities {
 		chapterIndex?: number
 	) => string;
 	openEpubReader?: (filePath: string) => Promise<void>;
-	hasEpubPremiumAccess?: () => boolean;
-	openEpubPremiumSettings?: () => void;
-	getEpubInheritedLicenses?: () => LicenseInfo[];
 	openCreateCardModal?: (input: EpubHostCreateCardInput) => Promise<void>;
 	openIRReadingPointFromExternalSelection?: (input: EpubHostReadingPointInput) => Promise<void>;
 	getAvailableEpubIncrementalReadingTopics?: () => Promise<EpubHostIncrementalReadingTopicOption[]>;
@@ -147,9 +143,6 @@ export interface EpubWeaveOfficialAPI {
 
 const EPUB_HOST_CAPABILITY_KEYS: Array<keyof EpubHostCapabilities> = [
 	"openEpubReader",
-	"hasEpubPremiumAccess",
-	"openEpubPremiumSettings",
-	"getEpubInheritedLicenses",
 	"openCreateCardModal",
 	"openIRReadingPointFromExternalSelection",
 	"getAvailableEpubIncrementalReadingTopics",

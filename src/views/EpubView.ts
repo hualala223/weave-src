@@ -20,7 +20,6 @@ import type {
 	EpubReaderSettings,
 	EpubReadingReferencePoint,
 } from "../services/epub";
-import { canOpenEpubFile } from "../services/epub/epub-premium";
 import { stripSupportedBookExtension } from "../services/epub/book-format";
 import { EPUB_RUNTIME } from "../services/epub";
 import type { EpubCanvasService } from "../services/epub/EpubCanvasService";
@@ -44,13 +43,11 @@ import {
 import { getWeaveMainPlugin } from "../utils/weave-reader-access";
 import type { EpubViewHost } from "./epub-view-host";
 import { VIEW_TYPE_EPUB_SIDEBAR } from "./EpubSidebarView";
-import { PremiumFeatureGuard, PREMIUM_FEATURES } from "../services/premium/PremiumFeatureGuard";
 
 export const VIEW_TYPE_EPUB = EPUB_RUNTIME.viewTypes.reader;
 
 export class EpubView extends ItemView {
 	private component: unknown = null;
-	private lockedFormatPreviewComponent: unknown = null;
 	private plugin: EpubViewHost;
 	private filePath = "";
 	private bookTitle = "";
@@ -68,7 +65,6 @@ export class EpubView extends ItemView {
 	private lastActiveMarkdownLeaf: WorkspaceLeaf | null = null;
 	private leafChangeHandler: unknown = null;
 	private layoutChangeHandler: unknown = null;
-	private premiumUiUnsubscribers: Array<() => void> = [];
 	private linkedCanvasPath: string | null = null;
 	private mounting = false;
 	private pendingRemount = false;
@@ -126,8 +122,6 @@ export class EpubView extends ItemView {
 		canUseStyledExcerpts?: () => boolean;
 		canUseCanvasExcerpts?: () => boolean;
 		canUseFootnotePreview?: () => boolean;
-		isPremiumFeaturePreviewEnabled?: () => boolean;
-		showPremiumFeaturePreview?: (featureId: string) => void;
 		saveReadingReferencePoint?: () => Promise<void>;
 		openReadingPositionMenu?: (event: MouseEvent | KeyboardEvent) => void;
 		getReadingPositionAutoSaveEnabled?: () => boolean;
@@ -232,102 +226,8 @@ export class EpubView extends ItemView {
 		return Boolean(this.actionHandlers.canUseFootnotePreview?.());
 	}
 
-	private isPremiumFeaturePreviewEnabled(): boolean {
-		return Boolean(this.actionHandlers.isPremiumFeaturePreviewEnabled?.());
-	}
-
-	private getFeatureActionLabel(baseTitle: string, featureId: string): string {
-		return PremiumFeatureGuard.getInstance().getFeatureEntryTitle(baseTitle, featureId, {
-			page: "epub-reader",
-		});
-	}
-
-	private showPremiumFeaturePreview(featureId: string): void {
-		this.actionHandlers.showPremiumFeaturePreview?.(featureId);
-	}
-
-	private shouldShowToolbarFeature(featureId: string): boolean {
-		return PremiumFeatureGuard.getInstance().shouldShowFeatureEntry(
-			featureId,
-			{ showPremiumPreview: this.isPremiumFeaturePreviewEnabled() },
-			{ page: "epub-reader" }
-		);
-	}
-
-	private subscribePremiumUiState(): void {
-		this.premiumUiUnsubscribers.forEach((unsubscribe) => unsubscribe());
-		const handlePremiumUiChanged = () => {
-			this.refreshAllActionButtons();
-			if (!this.filePath) {
-				return;
-			}
-			const canOpen = canOpenEpubFile(this.app, this.filePath);
-			if (canOpen && this.lockedFormatPreviewComponent) {
-				void this.mountComponent();
-				return;
-			}
-			if (!canOpen && !this.lockedFormatPreviewComponent) {
-				void this.mountLockedFormatPremiumPreview();
-			}
-		};
-		this.premiumUiUnsubscribers = [
-			PremiumFeatureGuard.getInstance().isPremiumActive.subscribe(handlePremiumUiChanged),
-			PremiumFeatureGuard.getInstance().premiumFeaturesPreviewEnabled.subscribe(handlePremiumUiChanged),
-		];
-		if (typeof window !== "undefined") {
-			window.addEventListener(EPUB_RUNTIME.events.premiumUiStateChanged, handlePremiumUiChanged);
-			this.premiumUiUnsubscribers.push(() => {
-				window.removeEventListener(EPUB_RUNTIME.events.premiumUiStateChanged, handlePremiumUiChanged);
-			});
-		}
-	}
-
-	private async teardownLockedFormatPremiumPreview(): Promise<void> {
-		if (!this.lockedFormatPreviewComponent) {
-			return;
-		}
-		const { unmount } = await import("svelte");
-		try {
-			void unmount(this.lockedFormatPreviewComponent);
-		} catch {
-			/* ignore */
-		}
-		this.lockedFormatPreviewComponent = null;
-	}
-
-	private async mountLockedFormatPremiumPreview(): Promise<void> {
-		await this.teardownLockedFormatPremiumPreview();
-		if (this.component) {
-			const { unmount } = await import("svelte");
-			try {
-				void unmount(this.component);
-			} catch {
-				/* ignore */
-			}
-			this.component = null;
-		}
-		this.readerHostEl?.empty();
-		if (!this.readerHostEl) {
-			return;
-		}
-
-		const { mount } = await import("svelte");
-		const { default: EpubPremiumFeaturePopover } = await import(
-			"../components/epub/EpubPremiumFeaturePopover.svelte"
-		);
-		this.lockedFormatPreviewComponent = mount(EpubPremiumFeaturePopover, {
-			target: this.readerHostEl,
-			props: {
-				open: true,
-				featureId: PREMIUM_FEATURES.EPUB_NON_EPUB_FORMATS,
-				onClose: () => {
-					void this.teardownLockedFormatPremiumPreview();
-				},
-				onOpenSettings: () => {
-					this.plugin.openEpubPremiumSettings?.();
-				},
-			},
-		});
+	private shouldShowToolbarFeature(): boolean {
+		return true;
 	}
 
 	private areHeaderActionsMounted(): boolean {
@@ -364,10 +264,6 @@ export class EpubView extends ItemView {
 
 		const registerExcerptHeaderActions = () => {
 			this.autoInsertBtn = this.addAction("zap", this.t("views.epubView.label.autoModeToolbar"), () => {
-				if (!this.canUseExcerptNotes()) {
-					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-					return;
-				}
 				this.autoInsertEnabled = !this.autoInsertEnabled;
 				this.updateAutoInsertBtn();
 				this.actionHandlers.setAutoInsert?.(this.autoInsertEnabled);
@@ -376,10 +272,6 @@ export class EpubView extends ItemView {
 				"camera",
 				this.t("views.epubView.label.screenshotToolToolbar"),
 				() => {
-					if (!this.canUseExcerptNotes()) {
-						this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-						return;
-					}
 					this.screenshotModeActive = !this.screenshotModeActive;
 					this.updateScreenshotBtn();
 					this.actionHandlers.setScreenshotMode?.(this.screenshotModeActive);
@@ -389,10 +281,6 @@ export class EpubView extends ItemView {
 				"image",
 				this.t("views.epubView.label.screenshotSaveAsImageToolbar"),
 				() => {
-					if (!this.canUseExcerptNotes()) {
-						this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-						return;
-					}
 					this.screenshotSaveAsImage = !this.screenshotSaveAsImage;
 					this.updateSaveAsImageBtn();
 					this.actionHandlers.setScreenshotSaveMode?.(this.screenshotSaveAsImage);
@@ -601,14 +489,7 @@ export class EpubView extends ItemView {
 
 			if (this.actionHandlers.toggleParagraphMode) {
 				subMenu.addItem((item) => {
-					item.setTitle(
-						this.canUseParagraphMode()
-							? this.t("views.epubView.menu.paragraphMode")
-							: this.getFeatureActionLabel(
-									this.t("views.epubView.menu.paragraphMode"),
-									PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE
-							  )
-					);
+					item.setTitle(this.t("views.epubView.menu.paragraphMode"));
 					item.setIcon("pilcrow");
 					item.setChecked(this.canUseParagraphMode() && this.paragraphModeEnabled);
 					item.onClick(() => {
@@ -641,19 +522,6 @@ export class EpubView extends ItemView {
 								footnoteClickAction: "navigate",
 							});
 						});
-					});
-				});
-			} else if (this.isPremiumFeaturePreviewEnabled()) {
-				subMenu.addItem((item) => {
-					item.setTitle(
-						this.getFeatureActionLabel(
-							this.t("views.epubView.menu.footnoteClickAction"),
-							PREMIUM_FEATURES.EPUB_FOOTNOTE_PREVIEW
-						)
-					);
-					item.setIcon("mouse-pointer");
-					item.onClick(() => {
-						this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_FOOTNOTE_PREVIEW);
 					});
 				});
 			}
@@ -747,20 +615,11 @@ export class EpubView extends ItemView {
 	private populateExcerptToolToggleItems(excerptToolsMenu: Menu): void {
 		excerptToolsMenu.addItem((subItem) => {
 			subItem.setTitle(
-				this.canUseExcerptNotes()
-					? this.t("views.epubView.menu.autoInsertMode")
-					: this.getFeatureActionLabel(
-							this.t("views.epubView.menu.autoInsertMode"),
-							PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
-					  )
+				this.t("views.epubView.menu.autoInsertMode")
 			);
 			subItem.setIcon("zap");
 			subItem.setChecked(this.canUseExcerptNotes() ? this.autoInsertEnabled : false);
 			subItem.onClick(() => {
-				if (!this.canUseExcerptNotes()) {
-					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-					return;
-				}
 				this.autoInsertEnabled = !this.autoInsertEnabled;
 				this.updateAutoInsertBtn();
 				this.actionHandlers.setAutoInsert?.(this.autoInsertEnabled);
@@ -769,20 +628,11 @@ export class EpubView extends ItemView {
 
 		excerptToolsMenu.addItem((subItem) => {
 			subItem.setTitle(
-				this.canUseExcerptNotes()
-					? this.t("views.epubView.menu.screenshotTool")
-					: this.getFeatureActionLabel(
-							this.t("views.epubView.menu.screenshotTool"),
-							PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
-					  )
+				this.t("views.epubView.menu.screenshotTool")
 			);
 			subItem.setIcon("camera");
 			subItem.setChecked(this.canUseExcerptNotes() ? this.screenshotModeActive : false);
 			subItem.onClick(() => {
-				if (!this.canUseExcerptNotes()) {
-					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-					return;
-				}
 				this.screenshotModeActive = !this.screenshotModeActive;
 				this.updateScreenshotBtn();
 				this.actionHandlers.setScreenshotMode?.(this.screenshotModeActive);
@@ -791,20 +641,11 @@ export class EpubView extends ItemView {
 
 		excerptToolsMenu.addItem((subItem) => {
 			subItem.setTitle(
-				this.canUseExcerptNotes()
-					? this.t("views.epubView.menu.screenshotSaveAsImage")
-					: this.getFeatureActionLabel(
-							this.t("views.epubView.menu.screenshotSaveAsImage"),
-							PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
-					  )
+				this.t("views.epubView.menu.screenshotSaveAsImage")
 			);
 			subItem.setIcon(this.screenshotSaveAsImage ? "image" : "code");
 			subItem.setChecked(this.canUseExcerptNotes() ? this.screenshotSaveAsImage : false);
 			subItem.onClick(() => {
-				if (!this.canUseExcerptNotes()) {
-					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-					return;
-				}
 				this.screenshotSaveAsImage = !this.screenshotSaveAsImage;
 				this.updateSaveAsImageBtn();
 				this.actionHandlers.setScreenshotSaveMode?.(this.screenshotSaveAsImage);
@@ -849,19 +690,6 @@ export class EpubView extends ItemView {
 					});
 				}
 			});
-		} else if (this.isPremiumFeaturePreviewEnabled()) {
-			subMenu.addItem((item) => {
-				item.setTitle(
-					this.getFeatureActionLabel(
-						this.t("views.epubView.menu.excerptTimestamp"),
-						PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
-					)
-				);
-				item.setIcon("clock");
-				item.onClick(() => {
-					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-				});
-			});
 		}
 
 		if (this.canUseStyledExcerpts()) {
@@ -893,25 +721,12 @@ export class EpubView extends ItemView {
 						});
 					});
 				});
-			} else if (this.isPremiumFeaturePreviewEnabled()) {
-				subMenu.addItem((item) => {
-					item.setTitle(
-						this.getFeatureActionLabel(
-							this.t("views.epubView.menu.concealedText"),
-							PREMIUM_FEATURES.EPUB_STYLED_EXCERPTS
-						)
-					);
-					item.setIcon("eye");
-					item.onClick(() => {
-						this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_STYLED_EXCERPTS);
-					});
-				});
-			}
+		}
 
 	}
 
 	private appendExcerptToolsPaneMenu(menu: Menu, excerptSettings: EpubExcerptSettings): void {
-		if (!this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES)) {
+		if (!this.shouldShowToolbarFeature()) {
 			return;
 		}
 
@@ -926,7 +741,7 @@ export class EpubView extends ItemView {
 	}
 
 	private appendCanvasPaneMenu(menu: Menu): void {
-		if (!this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_CANVAS_EXCERPTS)) {
+		if (!this.shouldShowToolbarFeature()) {
 			return;
 		}
 
@@ -949,21 +764,7 @@ export class EpubView extends ItemView {
 			return;
 		}
 
-		if (this.isPremiumFeaturePreviewEnabled()) {
-			menu.addItem((item) => {
-				item.setTitle(
-					this.getFeatureActionLabel(
-						this.t("views.epubView.label.canvasOff"),
-						PREMIUM_FEATURES.EPUB_CANVAS_EXCERPTS
-					)
-				);
-				item.setIcon("layout-dashboard");
-				item.onClick(() => {
-					this.dismissPaneMenu(menu);
-					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_CANVAS_EXCERPTS);
-				});
-			});
-		}
+
 	}
 
 	private appendHelpPaneMenu(menu: Menu): void {
@@ -1046,7 +847,6 @@ export class EpubView extends ItemView {
 		this.refreshViewTitle();
 		this.registerReaderKeyboardShortcuts();
 		this.registerReaderHeaderActions();
-		this.subscribePremiumUiState();
 
 		if (!Platform.isMobile) {
 			this.moveSidebarBtnToNav();
@@ -1161,10 +961,6 @@ export class EpubView extends ItemView {
 			"image",
 			this.t("views.epubView.label.saveAsImageOn"),
 			() => {
-				if (!this.canUseExcerptNotes()) {
-					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-					return;
-				}
 				this.screenshotSaveAsImage = !this.screenshotSaveAsImage;
 				this.updateSaveAsImageBtn();
 				this.actionHandlers.setScreenshotSaveMode?.(this.screenshotSaveAsImage);
@@ -1174,10 +970,6 @@ export class EpubView extends ItemView {
 			"camera",
 			this.t("views.epubView.label.screenshotToolOff"),
 			() => {
-				if (!this.canUseExcerptNotes()) {
-					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-					return;
-				}
 				this.screenshotModeActive = !this.screenshotModeActive;
 				this.updateScreenshotBtn();
 				this.actionHandlers.setScreenshotMode?.(this.screenshotModeActive);
@@ -1187,10 +979,6 @@ export class EpubView extends ItemView {
 			"zap",
 			this.t("views.epubView.label.autoModeOff"),
 			() => {
-				if (!this.canUseExcerptNotes()) {
-					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-					return;
-				}
 				this.autoInsertEnabled = !this.autoInsertEnabled;
 				this.updateAutoInsertBtn();
 				this.actionHandlers.setAutoInsert?.(this.autoInsertEnabled);
@@ -1423,11 +1211,7 @@ export class EpubView extends ItemView {
 		this.pendingRemount = false;
 		try {
 			this.ensureViewShell();
-			if (this.filePath && !canOpenEpubFile(this.app, this.filePath)) {
-				await this.mountLockedFormatPremiumPreview();
-				return;
-			}
-			await this.teardownLockedFormatPremiumPreview();
+
 			await this.closeSelectedTextAIPanel();
 			if (this.component) {
 				const { unmount } = await import("svelte");
@@ -1549,9 +1333,7 @@ export class EpubView extends ItemView {
 			onReadingPositionAutoSaveChange: () => {
 				this.updateReadingReferencePointBtn();
 			},
-			onPremiumUiStateChange: () => {
-				this.refreshAllActionButtons();
-			},
+
 			pendingLocate: initialPendingLocate,
 			pendingCfi: initialPendingCfi,
 			pendingText: initialPendingText,
@@ -1602,8 +1384,7 @@ export class EpubView extends ItemView {
 
 	async onClose(): Promise<void> {
 		this.toolbarHandlersReady = false;
-		this.premiumUiUnsubscribers.forEach((unsubscribe) => unsubscribe());
-		this.premiumUiUnsubscribers = [];
+
 		if (this.leafChangeHandler) {
 			this.app.workspace.off("active-leaf-change", this.leafChangeHandler);
 			this.leafChangeHandler = null;
@@ -1621,7 +1402,6 @@ export class EpubView extends ItemView {
 			}
 			this.component = null;
 		}
-		await this.teardownLockedFormatPremiumPreview();
 		await this.closeSelectedTextAIPanel();
 		this.readerHostEl = null;
 		this.inlineToolbarEl = null;
@@ -1815,14 +1595,6 @@ export class EpubView extends ItemView {
 	}
 
 	private toggleParagraphMode(): void {
-		if (!this.canUseParagraphMode()) {
-			if (this.isPremiumFeaturePreviewEnabled()) {
-				this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE);
-			} else {
-				this.actionHandlers.toggleParagraphMode?.();
-			}
-			return;
-		}
 		this.paragraphModeEnabled = !this.paragraphModeEnabled;
 		this.updateParagraphModeBtn();
 		this.actionHandlers.toggleParagraphMode?.();
@@ -1873,13 +1645,11 @@ export class EpubView extends ItemView {
 
 	private updateParagraphModeBtn(): void {
 		const canUseParagraphMode = this.canUseParagraphMode();
-		const visible = this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE);
+		const visible = this.shouldShowToolbarFeature();
 		const baseLabel = this.paragraphModeEnabled
 			? this.t("views.epubView.label.paragraphModeOn")
 			: this.t("views.epubView.label.paragraphModeOff");
-		const label = canUseParagraphMode
-			? baseLabel
-			: this.getFeatureActionLabel(baseLabel, PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE);
+		const label = baseLabel;
 		this.applyActionButtonState(this.paragraphModeBtn, {
 			icon: "pilcrow",
 			label,
@@ -1898,21 +1668,12 @@ export class EpubView extends ItemView {
 		const icon = this.screenshotSaveAsImage ? "image" : "code";
 		const label = Platform.isMobile
 			? this.t("views.epubView.label.screenshotSaveAsImageToolbar")
-			: this.canUseExcerptNotes()
-				? this.t(
-						this.screenshotSaveAsImage
-							? "views.epubView.label.saveAsImageOn"
-							: "views.epubView.label.saveAsImageOff"
-				  )
-				: this.getFeatureActionLabel(
-						this.t(
-							this.screenshotSaveAsImage
-								? "views.epubView.label.saveAsImageOn"
-								: "views.epubView.label.saveAsImageOff"
-						),
-						PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
-				  );
-		const visible = this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+			: this.t(
+					this.screenshotSaveAsImage
+						? "views.epubView.label.saveAsImageOn"
+						: "views.epubView.label.saveAsImageOff"
+			  );
+		const visible = this.shouldShowToolbarFeature();
 		this.applyActionButtonState(this.saveAsImageBtn, {
 			icon,
 			label,
@@ -1930,21 +1691,12 @@ export class EpubView extends ItemView {
 	private updateScreenshotBtn(): void {
 		const label = Platform.isMobile
 			? this.t("views.epubView.label.screenshotToolToolbar")
-			: this.canUseExcerptNotes()
-				? this.t(
-						this.screenshotModeActive
-							? "views.epubView.label.screenshotToolOn"
-							: "views.epubView.label.screenshotToolOff"
-				  )
-				: this.getFeatureActionLabel(
-						this.t(
-							this.screenshotModeActive
-								? "views.epubView.label.screenshotToolOn"
-								: "views.epubView.label.screenshotToolOff"
-						),
-						PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
-				  );
-		const visible = this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+			: this.t(
+					this.screenshotModeActive
+						? "views.epubView.label.screenshotToolOn"
+						: "views.epubView.label.screenshotToolOff"
+			  );
+		const visible = this.shouldShowToolbarFeature();
 		this.applyActionButtonState(this.screenshotBtn, {
 			label,
 			active: this.canUseExcerptNotes() ? this.screenshotModeActive : false,
@@ -1960,21 +1712,12 @@ export class EpubView extends ItemView {
 	private updateAutoInsertBtn(): void {
 		const label = Platform.isMobile
 			? this.t("views.epubView.label.autoModeToolbar")
-			: this.canUseExcerptNotes()
-				? this.t(
-						this.autoInsertEnabled
-							? "views.epubView.label.autoModeOn"
-							: "views.epubView.label.autoModeOff"
-				  )
-				: this.getFeatureActionLabel(
-						this.t(
-							this.autoInsertEnabled
-								? "views.epubView.label.autoModeOn"
-								: "views.epubView.label.autoModeOff"
-						),
-						PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
-				  );
-		const visible = this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+			: this.t(
+					this.autoInsertEnabled
+						? "views.epubView.label.autoModeOn"
+						: "views.epubView.label.autoModeOff"
+			  );
+		const visible = this.shouldShowToolbarFeature();
 		this.applyActionButtonState(this.autoInsertBtn, {
 			label,
 			active: this.canUseExcerptNotes() ? this.autoInsertEnabled : false,
@@ -2033,7 +1776,7 @@ export class EpubView extends ItemView {
 		const visible =
 			this.canUseReadingProgress()
 			|| this.canUseReadingReference()
-			|| this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_READING_REFERENCE);
+			|| this.shouldShowToolbarFeature();
 		const active = this.canUseReadingReference() ? this.hasReadingReferencePoint : false;
 		this.applyActionButtonState(this.readingReferenceBtn, {
 			icon: "flag",
@@ -2059,7 +1802,7 @@ export class EpubView extends ItemView {
 		const label = this.canvasModeActive
 			? this.t("views.epubView.label.canvasOn")
 			: this.t("views.epubView.label.canvasOff");
-		const visible = this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_CANVAS_EXCERPTS);
+		const visible = this.shouldShowToolbarFeature();
 		this.applyActionButtonState(this.canvasBtn, {
 			icon: "layout-dashboard",
 			label,

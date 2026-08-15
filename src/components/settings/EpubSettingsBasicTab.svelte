@@ -22,7 +22,6 @@
   let stateVersion = $state(0);
   let excerptSettingsVersion = $state(0);
   let interfaceSettingsHost = $state<HTMLDivElement | null>(null);
-  let premiumPreviewSettingsHost = $state<HTMLDivElement | null>(null);
   let readingSettingsHost = $state<HTMLDivElement | null>(null);
   let diagnosticsSettingsHost = $state<HTMLDivElement | null>(null);
 
@@ -81,11 +80,6 @@
     );
   });
 
-  let premiumPreviewEnabled = $derived.by(() => {
-    stateVersion;
-    return plugin.settings?.showPremiumFeaturesPreview === true;
-  });
-
   let interfaceLanguageValue = $derived.by(() => {
     stateVersion;
     return normalizeInterfaceLanguagePreference(plugin.settings?.interfaceLanguage);
@@ -98,7 +92,6 @@
     getBookmarkFolderValue: () => bookmarkFolderValue,
     getHighlightStoragePathValue: () => highlightStoragePathValue,
     getInterfaceLanguageValue: () => interfaceLanguageValue,
-    getPremiumPreviewEnabled: () => premiumPreviewEnabled,
     getContinuousReadingPositionAutoSaveEnabled: () => continuousReadingPositionAutoSaveEnabled,
     getContinuousReadingPositionAutoSavePages: () => continuousReadingPositionAutoSavePages,
     getSourceNavigationOpenInNewTab: () => sourceNavigationOpenInNewTab,
@@ -166,7 +159,6 @@
   $effect(() => {
     if (
       !interfaceSettingsHost
-      || !premiumPreviewSettingsHost
       || !readingSettingsHost
       || !diagnosticsSettingsHost
     ) {
@@ -184,13 +176,11 @@
         t,
         hosts: {
           interface: interfaceSettingsHost,
-          premiumPreview: premiumPreviewSettingsHost,
           reading: readingSettingsHost,
           diagnostics: diagnosticsSettingsHost,
         },
         snapshot: {
           interfaceLanguageValue,
-          premiumPreviewEnabled,
           weaveParentFolderValue,
           weaveParentFolderInput,
           bookmarkFolderValue,
@@ -225,7 +215,6 @@
           updateBookmarkFolder: actions.updateBookmarkFolder,
           updateHighlightStoragePath: actions.updateHighlightStoragePath,
           updateInterfaceLanguage: actions.updateInterfaceLanguage,
-          updatePremiumPreview: actions.updatePremiumPreview,
           updateContinuousReadingPositionAutoSaveEnabled:
             actions.updateContinuousReadingPositionAutoSaveEnabled,
           updateContinuousReadingPositionAutoSavePages:
@@ -247,13 +236,6 @@
       <h3 class="epub-settings-group-title with-accent-bar accent-cyan">{t("epub.settings.groups.interface")}</h3>
     </div>
     <div bind:this={interfaceSettingsHost} class="epub-native-settings-host"></div>
-  </div>
-
-  <div class="epub-settings-group epub-settings-group--panel">
-    <div class="epub-settings-group-header">
-      <h3 class="epub-settings-group-title with-accent-bar accent-purple">{t("epub.settings.groups.premiumPreview")}</h3>
-    </div>
-    <div bind:this={premiumPreviewSettingsHost} class="epub-native-settings-host"></div>
   </div>
 
   <div class="epub-settings-group epub-settings-group--panel">

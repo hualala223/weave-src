@@ -13,14 +13,12 @@ export type EpubSettingsTranslateFn = (
 
 export interface EpubBasicSettingsHosts {
 	interface: HTMLElement;
-	premiumPreview: HTMLElement;
 	reading: HTMLElement;
 	diagnostics: HTMLElement;
 }
 
 export interface EpubBasicSettingsSnapshot {
 	interfaceLanguageValue: InterfaceLanguagePreference;
-	premiumPreviewEnabled: boolean;
 	weaveParentFolderValue: string;
 	weaveParentFolderInput: string;
 	bookmarkFolderValue: string;
@@ -46,7 +44,6 @@ export interface EpubBasicSettingsCallbacks {
 	updateBookmarkFolder: (folderPath: string) => Promise<void>;
 	updateHighlightStoragePath: (filePath: string) => Promise<void>;
 	updateInterfaceLanguage: (value: InterfaceLanguagePreference) => Promise<void>;
-	updatePremiumPreview: (enabled: boolean) => Promise<void>;
 	updateContinuousReadingPositionAutoSaveEnabled: (enabled: boolean) => Promise<void>;
 	updateContinuousReadingPositionAutoSavePages: (value: string) => Promise<void>;
 	updateSourceNavigationOpenInNewTab: (enabled: boolean) => Promise<void>;

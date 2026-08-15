@@ -13,8 +13,6 @@ import {
 	isAcceptableCuratedTranslation,
 	listCuratedOverlayCandidateKeys,
 } from "../i18n/locale-policy";
-import { PREMIUM_FEATURES } from "../../services/premium/PremiumFeatureGuard";
-import { getEpubPremiumFeaturePreviewContent } from "../../services/epub/epub-premium";
 import enTemplate from "../i18n/flat-locales/en-US.template.json";
 import jaOverlay from "../i18n/overlays/ja-JP.json";
 import koOverlay from "../i18n/overlays/ko-KR.json";
@@ -23,8 +21,6 @@ import ruOverlay from "../i18n/overlays/ru-RU.json";
 const zhSnapshot = JSON.parse(
 	readFileSync(resolve("scripts/curated-overlay-data/zh-CN.snapshot.json"), "utf8")
 ) as Record<string, string>;
-
-const premiumKeys = Object.keys(enTemplate).filter((key) => key.startsWith("epub.premium."));
 
 const bookshelfModalKeys = Object.keys(enTemplate).filter(
 	(key) =>
@@ -68,45 +64,6 @@ describe("i18n locales", () => {
 				expect(russian).not.toBe(chinese);
 			}
 		}
-	});
-
-	it("ships full premium overlays for ja-JP, ko-KR, and ru-RU", () => {
-		for (const key of premiumKeys) {
-			const english = (enTemplate as Record<string, string>)[key];
-			const japanese = (jaOverlay as Record<string, string>)[key];
-			const korean = (koOverlay as Record<string, string>)[key];
-			const russian = (ruOverlay as Record<string, string>)[key];
-			const chinese = zhSnapshot[key];
-
-			expect(japanese, key).toBeTruthy();
-			expect(korean, key).toBeTruthy();
-			expect(russian, key).toBeTruthy();
-			expect(isAcceptableCuratedTranslation("ja-JP", japanese, english, chinese)).toBe(true);
-			expect(isAcceptableCuratedTranslation("ko-KR", korean, english, chinese)).toBe(true);
-			expect(isAcceptableCuratedTranslation("ru-RU", russian, english, chinese)).toBe(true);
-		}
-	});
-
-	it("uses localized premium preview copy for ko-KR and ja-JP", () => {
-		initI18n();
-		const readingReferenceTitleKey = "epub.premium.premiumFeatures.readingReference.title";
-		const englishTitle = (enTemplate as Record<string, string>)[readingReferenceTitleKey];
-
-		currentLanguage.set("ko-KR");
-		const korean = getEpubPremiumFeaturePreviewContent(
-			PREMIUM_FEATURES.EPUB_READING_REFERENCE
-		);
-		expect(korean.title).toBe((koOverlay as Record<string, string>)[readingReferenceTitleKey]);
-		expect(korean.title).not.toBe(englishTitle);
-		expect(korean.title).not.toBe("参考阅读点与顶部贴纸");
-
-		currentLanguage.set("ja-JP");
-		const japanese = getEpubPremiumFeaturePreviewContent(
-			PREMIUM_FEATURES.EPUB_READING_REFERENCE
-		);
-		expect(japanese.title).toBe((jaOverlay as Record<string, string>)[readingReferenceTitleKey]);
-		expect(japanese.title).not.toBe(englishTitle);
-		expect(japanese.title).not.toBe("参考阅读点与顶部贴纸");
 	});
 
 	it("keeps curated overlays within policy prefixes", () => {

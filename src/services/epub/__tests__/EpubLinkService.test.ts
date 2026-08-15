@@ -45,7 +45,6 @@ vi.mock('../epub-premium', () => ({
 import { TFile } from 'obsidian';
 import { EpubLinkService } from '../EpubLinkService';
 import { EPUB_RUNTIME } from '../epub-runtime';
-import { PREMIUM_FEATURES } from '../../premium/PremiumFeatureGuard';
 
 const encodeCompactField = (value: string): string => Buffer.from(value, 'utf8').toString('base64url');
 

@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PREMIUM_FEATURES } from '../services/premium/PremiumFeatureGuard';
 
 const { mountSpy, unmountSpy } = vi.hoisted(() => ({
 	mountSpy: vi.fn(() => ({})),
@@ -212,7 +211,6 @@ describe('EpubView', () => {
 
 		(view as any).actionHandlers = {
 			canUseParagraphMode: () => true,
-			isPremiumFeaturePreviewEnabled: () => true,
 		};
 		(view as any).paragraphModeEnabled = true;
 		(view as any).updateParagraphModeBtn();
@@ -267,22 +265,4 @@ describe('EpubView', () => {
 		expect((view as any).scope.getHandlerCount()).toBe(2);
 	});
 
-	it('opens the paragraph mode premium preview instead of toggling when the capability is unavailable', () => {
-		const view = new EpubView({} as any, { app: {} } as any);
-		const toggleParagraphMode = vi.fn();
-		const showPremiumFeaturePreview = vi.fn();
-
-		(view as any).actionHandlers = {
-			canUseParagraphMode: () => false,
-			isPremiumFeaturePreviewEnabled: () => true,
-			toggleParagraphMode,
-			showPremiumFeaturePreview,
-		};
-
-		(view as any).toggleParagraphMode();
-
-		expect(showPremiumFeaturePreview).toHaveBeenCalledWith(PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE);
-		expect(toggleParagraphMode).not.toHaveBeenCalled();
-		expect((view as any).paragraphModeEnabled).toBe(false);
-	});
 });
