@@ -100,7 +100,6 @@ import {
 	type EpubTocChapterMarkSettings,
 } from "./epub-toc-chapter-mark-settings";
 
-
 export interface EpubBookshelfSettings {
 	lastScanAt?: number;
 }
@@ -364,20 +363,8 @@ export class EpubStorageService {
 		);
 	}
 
-	private getBookStatePath(bookId: string): string {
-		return normalizePath(`${this.getLocalReaderStateRoot()}/${bookId}/state.json`);
-	}
-
 	private getLegacyBookStatePath(bookId: string): string {
 		return `${this.basePath}/${bookId}/state.json`;
-	}
-
-	private getLastOpenBookmarkPath(bookId: string): string {
-		return normalizePath(`${this.getLocalReaderStateRoot()}/${bookId}/last-open-bookmark.json`);
-	}
-
-	private getLegacyLastOpenBookmarkPath(bookId: string): string {
-		return `${this.basePath}/${bookId}/last-open-bookmark.json`;
 	}
 
 	private getConcealedTextsPath(bookId: string): string {
@@ -1085,10 +1072,6 @@ export class EpubStorageService {
 				localData.books[book.id] = {
 					...localData.books[book.id],
 					descriptor: this.toStoredBookDescriptor(book),
-					state: {
-						currentPosition: book.currentPosition,
-						readingStats: book.readingStats,
-					},
 				};
 			}
 
@@ -1490,40 +1473,6 @@ export class EpubStorageService {
 		}
 	}
 
-	private async readLegacyBookState(
-		bookId: string
-	): Promise<Pick<EpubBook, "currentPosition" | "readingStats"> | null> {
-		for (const statePath of [
-			this.getBookStatePath(bookId),
-			...this.getLegacyEpubBasePaths().map((basePath) => `${basePath}/${bookId}/state.json`),
-		]) {
-			const parsed = await this.readJsonObjectFromPath(statePath);
-			const normalized = this.normalizeBookState(parsed);
-			if (normalized) {
-				return normalized;
-			}
-		}
-
-		return null;
-	}
-
-	private async readLegacyLastOpenBookmark(bookId: string): Promise<EpubLastOpenBookmark | null> {
-		for (const bookmarkPath of [
-			this.getLastOpenBookmarkPath(bookId),
-			...this.getLegacyEpubBasePaths().map(
-				(basePath) => `${basePath}/${bookId}/last-open-bookmark.json`
-			),
-		]) {
-			const parsed = await this.readJsonObjectFromPath(bookmarkPath);
-			if (parsed == null) {
-				continue;
-			}
-			return this.normalizeLastOpenBookmark(parsed);
-		}
-
-		return null;
-	}
-
 	private async readLegacyConcealedTexts(bookId: string): Promise<ConcealedText[] | null> {
 		for (const concealedTextsPath of [
 			this.getConcealedTextsPath(bookId),
@@ -1904,48 +1853,15 @@ export class EpubStorageService {
 	): Promise<Pick<EpubBook, "currentPosition" | "readingStats"> | null> {
 		bookId = await this.resolveCanonicalBookId(bookId);
 		const book = await this.getBook(bookId);
-		if (book) {
-			try {
-				const fromBookmark = await this.getBookmarkService().readReadingState(book);
-				if (fromBookmark) {
-					return fromBookmark;
-				}
-			} catch (error) {
-				logger.warn("[EpubStorageService] Failed to read reading state from bookmark file:", error);
-			}
+		if (!book) {
+			return null;
 		}
-
-		const fromUnified = await this.readUnifiedBookState(bookId);
-		const fromLegacy = fromUnified ?? (await this.readLegacyBookState(bookId));
-		if (fromLegacy && book) {
-			try {
-				await this.getBookmarkService().writeReadingState(book, fromLegacy);
-			} catch (error) {
-				logger.warn(
-					"[EpubStorageService] Failed to migrate reading state into bookmark file:",
-					error
-				);
-			}
+		try {
+			return await this.getBookmarkService().readReadingState(book);
+		} catch (error) {
+			logger.warn("[EpubStorageService] Failed to read reading state from bookmark file:", error);
+			return null;
 		}
-		return fromLegacy;
-	}
-
-	private async readUnifiedBookState(
-		bookId: string
-	): Promise<Pick<EpubBook, "currentPosition" | "readingStats"> | null> {
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		const bookRecord = unifiedData.books?.[bookId];
-		if (bookRecord && Object.prototype.hasOwnProperty.call(bookRecord, "state")) {
-			const state = bookRecord.state;
-			if (!state) {
-				return null;
-			}
-			return {
-				currentPosition: state.currentPosition ?? { chapterIndex: 0, cfi: "", percent: 0 },
-				readingStats: state.readingStats ?? { totalReadTime: 0, lastReadTime: 0, createdTime: 0 },
-			};
-		}
-		return null;
 	}
 
 	private async writeBookState(
@@ -1965,120 +1881,18 @@ export class EpubStorageService {
 			if (book) {
 				try {
 					await this.getBookmarkService().writeReadingState(book, payload);
-					await this.clearUnifiedBookState(bookId);
-					await this.clearUnifiedLastOpenBookmark(bookId);
 					return;
 				} catch (error) {
 					logger.warn(
-						"[EpubStorageService] Failed to write reading state to bookmark file, falling back to local JSON:",
+						"[EpubStorageService] Failed to write reading state to bookmark file:",
 						error
 					);
 				}
 			}
-
-			await this.writeUnifiedBookState(bookId, payload);
 		};
 		const next = previous.then(persist, persist);
 		this._bookStateWriteLocks.set(bookId, next);
 		await next;
-	}
-
-	private async writeUnifiedBookState(
-		bookId: string,
-		data: Pick<EpubBook, "currentPosition" | "readingStats">
-	): Promise<void> {
-		await this.updateUnifiedLocalReaderData((localData) => {
-			localData.books = localData.books || {};
-			const current = localData.books[bookId] || {};
-			localData.books[bookId] = {
-				...current,
-				state: {
-					currentPosition: data.currentPosition,
-					readingStats: data.readingStats,
-				},
-			};
-		});
-	}
-
-	private async clearUnifiedBookState(bookId: string): Promise<void> {
-		await this.updateUnifiedLocalReaderData((localData) => {
-			const current = localData.books?.[bookId];
-			if (!current) {
-				return;
-			}
-			const nextRecord = { ...current };
-			nextRecord.state = undefined;
-			if (this.hasRetainedLocalBookData(nextRecord)) {
-				localData.books = localData.books || {};
-				localData.books[bookId] = nextRecord;
-				return;
-			}
-			if (localData.books) {
-				delete localData.books[bookId];
-			}
-		});
-	}
-
-	private async readUnifiedLastOpenBookmark(bookId: string): Promise<EpubLastOpenBookmark | null> {
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		const bookRecord = unifiedData.books?.[bookId];
-		if (
-			(await this.hasUnifiedLocalDataFile()) &&
-			bookRecord &&
-			Object.prototype.hasOwnProperty.call(bookRecord, "lastOpenBookmark")
-		) {
-			return bookRecord.lastOpenBookmark ?? null;
-		}
-		return null;
-	}
-
-	private async clearUnifiedLastOpenBookmark(bookId: string): Promise<void> {
-		await this.updateUnifiedLocalReaderData((localData) => {
-			const current = localData.books?.[bookId];
-			if (!current || !Object.prototype.hasOwnProperty.call(current, "lastOpenBookmark")) {
-				return;
-			}
-			const nextRecord = { ...current };
-			delete nextRecord.lastOpenBookmark;
-			if (this.hasRetainedLocalBookData(nextRecord)) {
-				localData.books = localData.books || {};
-				localData.books[bookId] = nextRecord;
-				return;
-			}
-			if (localData.books) {
-				delete localData.books[bookId];
-			}
-		});
-	}
-
-	private async migrateLastOpenBookmarkToBookmarkFile(
-		book: EpubBook,
-		bookmark: EpubLastOpenBookmark
-	): Promise<void> {
-		const normalized = this.normalizeLastOpenBookmark(bookmark);
-		if (!normalized?.cfi) {
-			return;
-		}
-
-		const existing = await this.getBookmarkService().readReadingState(book);
-		if (existing?.currentPosition?.cfi) {
-			await this.clearUnifiedLastOpenBookmark(book.id);
-			return;
-		}
-
-		const payload = this.readingStateFromLastOpenBookmark(normalized, book.readingStats);
-		try {
-			await this.getBookmarkService().writeReadingState(book, payload);
-			book.currentPosition = payload.currentPosition;
-			book.readingStats = payload.readingStats;
-			await this.clearUnifiedBookState(book.id);
-			await this.clearUnifiedLastOpenBookmark(book.id);
-		} catch (error) {
-			logger.warn(
-				"[EpubStorageService] Failed to migrate last-open bookmark into bookmark file:",
-				error
-			);
-		}
 	}
 
 	async hydrateBookState(bookId: string): Promise<void> {
@@ -3931,33 +3745,16 @@ export class EpubStorageService {
 		const book = await this.getBook(bookId);
 
 		if (book?.currentPosition?.cfi) {
-			const fromBookmarkFile = this.lastOpenBookmarkFromReadingState(
+			return this.lastOpenBookmarkFromReadingState(
 				{
 					currentPosition: book.currentPosition,
 					readingStats: book.readingStats,
 				},
 				book.metadata?.title
 			);
-			if (fromBookmarkFile) {
-				await this.clearUnifiedLastOpenBookmark(bookId);
-				return fromBookmarkFile;
-			}
 		}
 
-		const fromUnified = await this.readUnifiedLastOpenBookmark(bookId);
-		if (fromUnified?.cfi) {
-			if (book) {
-				await this.migrateLastOpenBookmarkToBookmarkFile(book, fromUnified);
-			}
-			return fromUnified;
-		}
-
-		const fromLegacy = await this.readLegacyLastOpenBookmark(bookId);
-		if (fromLegacy?.cfi && book) {
-			await this.migrateLastOpenBookmarkToBookmarkFile(book, fromLegacy);
-			return fromLegacy;
-		}
-		return fromLegacy;
+		return null;
 	}
 
 	async saveLastOpenBookmark(bookId: string, bookmark: EpubLastOpenBookmark): Promise<void> {
@@ -4180,37 +3977,6 @@ export class EpubStorageService {
 				readingReferencePoint: null,
 			};
 		});
-	}
-
-	async deleteLastOpenBookmark(bookId: string): Promise<void> {
-		bookId = await this.resolveCanonicalBookId(bookId);
-		const adapter = this.app.vault.adapter as { remove?: (path: string) => Promise<void> };
-		await this.updateUnifiedLocalReaderData((localData) => {
-			localData.books = localData.books || {};
-			const current = localData.books[bookId];
-			if (!current) {
-				return;
-			}
-			localData.books[bookId] = {
-				...current,
-				lastOpenBookmark: null,
-			};
-		});
-		for (const bookmarkPath of [
-			this.getLastOpenBookmarkPath(bookId),
-			...this.getLegacyEpubBasePaths().map(
-				(basePath) => `${basePath}/${bookId}/last-open-bookmark.json`
-			),
-		]) {
-			if (!(await this.app.vault.adapter.exists(bookmarkPath))) {
-				continue;
-			}
-			if (typeof adapter.remove === "function") {
-				await adapter.remove(bookmarkPath);
-				continue;
-			}
-			await this.app.vault.adapter.write(bookmarkPath, "null");
-		}
 	}
 
 	async removeLegacyHighlights(bookId: string): Promise<void> {
@@ -4649,14 +4415,6 @@ export class EpubStorageService {
 				bookChanged = true;
 			}
 
-			if (!current.state) {
-				current.state = {
-					currentPosition: book.currentPosition,
-					readingStats: book.readingStats,
-				};
-				bookChanged = true;
-			}
-
 			if (bookChanged) {
 				unifiedData.books[bookId] = current;
 				markChanged();
@@ -4764,32 +4522,6 @@ export class EpubStorageService {
 			unifiedData.books = unifiedData.books || {};
 			const current = unifiedData.books[bookId] || {};
 			let bookChanged = false;
-
-			const legacyState = await this.readLegacyBookState(bookId);
-			const legacyBook = legacyBooks[bookId];
-			const bookStateFromBooksFile = legacyBook
-				? {
-						currentPosition: legacyBook.currentPosition,
-						readingStats: legacyBook.readingStats,
-				  }
-				: null;
-			const canOverrideExistingState =
-				!Object.prototype.hasOwnProperty.call(current, "state") ||
-				(Boolean(legacyState) &&
-					Boolean(bookStateFromBooksFile) &&
-					JSON.stringify(current.state || null) === JSON.stringify(bookStateFromBooksFile));
-			if (legacyState && canOverrideExistingState) {
-				current.state = legacyState;
-				bookChanged = true;
-			}
-
-			if (!Object.prototype.hasOwnProperty.call(current, "lastOpenBookmark")) {
-				const legacyLastOpen = await this.readLegacyLastOpenBookmark(bookId);
-				if (legacyLastOpen) {
-					current.lastOpenBookmark = legacyLastOpen;
-					bookChanged = true;
-				}
-			}
 
 			const legacyConcealedTexts = await this.readLegacyConcealedTexts(bookId);
 			if (legacyConcealedTexts && legacyConcealedTexts.length > 0) {

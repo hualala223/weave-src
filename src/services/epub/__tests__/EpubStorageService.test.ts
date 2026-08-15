@@ -207,7 +207,7 @@ function createMemoryApp(
     },
     plugins: {
       getPlugin: vi.fn(() => ({
-        settings: { weaveParentFolder: '' },
+        settings: { weaveParentFolder: '', dataPath: DATA_PATH },
       })),
     },
   };
@@ -423,21 +423,22 @@ describe('EpubStorageService', () => {
     expect(settings.topStickerLayout).toBe('inline');
   });
 
-  it('migrates legacy epub-reading data into incremental-reading on first access', async () => {
+  it('migrates legacy epub-reading data into incremental-reading and hydrates progress from the bookmarked reading state', async () => {
     const { app, files } = createMemoryApp({
       'weave/epub-reading/books.json': JSON.stringify({
         'book-1': createBook(),
       }),
-      'weave/epub-reading/book-1/state.json': JSON.stringify({
-        currentPosition: {
-          chapterIndex: 1,
-          cfi: '/6/6',
-          percent: 42,
-        },
-        readingStats: {
-          totalReadTime: 10,
-          lastReadTime: 999,
-          createdTime: 50,
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        bookmarks: {
+          'Books/demo.epub': {
+            format: 'weave-epub-bookmarks/v3',
+            stableKey: 'seed-stable-key',
+            bookPath: 'Books/demo.epub',
+            readingState: {
+              currentPosition: { chapterIndex: 1, cfi: '/6/6', percent: 42 },
+              readingStats: { totalReadTime: 10, lastReadTime: 999, createdTime: 50 },
+            },
+          },
         },
       }),
     });
@@ -557,21 +558,22 @@ describe('EpubStorageService', () => {
     expect(cleared?.currentPosition.percent).toBe(96);
   });
 
-  it('hydrates persisted per-book state on reload', async () => {
+  it('hydrates persisted per-book state on reload from the bookmarked reading state', async () => {
     const { app } = createMemoryApp({
       [`${SYNC_EPUB_ROOT}/books.json`]: JSON.stringify({
         'book-1': createBook(),
       }),
-      [`${LOCAL_EPUB_STATE_ROOT}/book-1/state.json`]: JSON.stringify({
-        currentPosition: {
-          chapterIndex: 1,
-          cfi: '/6/6',
-          percent: 42,
-        },
-        readingStats: {
-          totalReadTime: 10,
-          lastReadTime: 999,
-          createdTime: 50,
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        bookmarks: {
+          'Books/demo.epub': {
+            format: 'weave-epub-bookmarks/v3',
+            stableKey: 'seed-stable-key',
+            bookPath: 'Books/demo.epub',
+            readingState: {
+              currentPosition: { chapterIndex: 1, cfi: '/6/6', percent: 42 },
+              readingStats: { totalReadTime: 10, lastReadTime: 999, createdTime: 50 },
+            },
+          },
         },
       }),
     });
@@ -622,25 +624,36 @@ describe('EpubStorageService', () => {
     expect(restored?.savedAt).toBe(1710000000000);
   });
 
-  it('loads the manual last-open bookmark from the legacy sync path when local state is absent', async () => {
-    const { app } = createMemoryApp({
-      [`${SYNC_EPUB_ROOT}/book-1/last-open-bookmark.json`]: JSON.stringify({
-        chapterIndex: 1,
-        cfi: 'epubcfi(/6/8!/4/2/4)',
-        percent: 33.3,
-        title: 'legacy',
-        preview: 'legacy',
-        savedAt: 1710000000001,
-      }),
-    });
+  it('derives the manual last-open bookmark from the bookmarked reading state', async () => {
+    const { app } = createMemoryApp(
+      {
+        [`${SYNC_EPUB_ROOT}/books.json`]: JSON.stringify({
+          'book-1': createBook(),
+        }),
+        [WEAVE_DATA_FILE]: JSON.stringify({
+          bookmarks: {
+            'Books/demo.epub': {
+              format: 'weave-epub-bookmarks/v3',
+              stableKey: 'seed-stable-key',
+              bookPath: 'Books/demo.epub',
+              readingState: {
+                currentPosition: { chapterIndex: 1, cfi: 'epubcfi(/6/8!/4/2/4)', percent: 33.3 },
+                readingStats: { totalReadTime: 0, lastReadTime: 1710000000001, createdTime: 100 },
+              },
+            },
+          },
+        }),
+      },
+      ['Books/demo.epub']
+    );
     const service = new EpubStorageService(app);
 
     await expect(service.loadLastOpenBookmark('book-1')).resolves.toEqual({
       chapterIndex: 1,
       cfi: 'epubcfi(/6/8!/4/2/4)',
       percent: 33.3,
-      title: 'legacy',
-      preview: 'legacy',
+      title: 'Demo',
+      preview: 'Demo',
       savedAt: 1710000000001,
     });
   });
@@ -845,13 +858,6 @@ describe('EpubStorageService', () => {
             metadata: {
               title: 'Demo',
               author: 'Author',
-            },
-          },
-          state: {
-            currentPosition: {
-              chapterIndex: 2,
-              cfi: '/6/8',
-              percent: 66,
             },
           },
           concealedTexts: [
@@ -1985,8 +1991,22 @@ describe('EpubStorageService', () => {
     const bookmarkService = (service as unknown as { getBookmarkService: () => unknown }).getBookmarkService() as {
       findBookmarkSnapshotByBookPath: (path: string) => Promise<Record<string, unknown> | null>;
       readBookmarkSnapshotForBook: () => Promise<null>;
+      readReadingState: () => Promise<unknown>;
     };
     vi.spyOn(bookmarkService, 'readBookmarkSnapshotForBook').mockResolvedValue(null);
+    const readingState = {
+      currentPosition: {
+        chapterIndex: 2,
+        cfi: '/6/4',
+        percent: 33,
+      },
+      readingStats: {
+        totalReadTime: 0,
+        lastReadTime: 1000,
+        createdTime: 500,
+      },
+    };
+    vi.spyOn(bookmarkService, 'readReadingState').mockResolvedValue(readingState);
     vi.spyOn(bookmarkService, 'findBookmarkSnapshotByBookPath').mockImplementation(async (path) => {
       if (path !== bookPath) {
         return null;
@@ -1998,18 +2018,7 @@ describe('EpubStorageService', () => {
         bookPath,
         bookTitle: 'Shelf Book',
         bookAuthor: 'Author',
-        readingState: {
-          currentPosition: {
-            chapterIndex: 2,
-            cfi: '/6/4',
-            percent: 33,
-          },
-          readingStats: {
-            totalReadTime: 0,
-            lastReadTime: 1000,
-            createdTime: 500,
-          },
-        },
+        readingState,
       };
     });
     const writeBookStateSpy = vi.spyOn(
