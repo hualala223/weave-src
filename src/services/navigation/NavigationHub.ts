@@ -9,7 +9,6 @@ import { ensureBookSourceLocationAccess, ensureEpubFileAccess } from "../epub/ep
 import { hasBookLocateTarget } from "./navigation-intent";
 import { resolveEpubVaultPath } from "../epub/epub-vault-path";
 import { getEpubStorageService } from "../epub/epub-storage-access";
-import { resolveEpubHost } from "../epub/epub-host";
 import { SourceNavigationService } from "../ui/SourceNavigationService";
 import { i18n } from "../../utils/i18n";
 import type { NavigationIntent, NavigationResult, PendingLocateState } from "./navigation-intent";
@@ -78,9 +77,6 @@ export class NavigationHub {
 					break;
 				case "canvas":
 					result = await this.navigateCanvas(intent);
-					break;
-				case "card":
-					result = await this.navigateCard(intent);
 					break;
 				default:
 					result = { success: false, error: `Unknown navigation kind: ${String((intent as { kind?: string }).kind ?? "unknown")}` };
@@ -201,14 +197,5 @@ export class NavigationHub {
 			}
 		);
 		return { success: Boolean(leaf), leaf };
-	}
-
-	private async navigateCard(intent: NavigationIntent): Promise<NavigationResult> {
-		const host = resolveEpubHost(this.app);
-		if (!host?.openCardBacklinkFromEpub) {
-			return { success: false, error: "card_host_unavailable" };
-		}
-		await host.openCardBacklinkFromEpub(intent.resourcePath);
-		return { success: true };
 	}
 }

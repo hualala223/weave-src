@@ -4,77 +4,29 @@ import { HighlightIndex } from "../highlight/HighlightIndex";
 import type { BacklinkHighlight } from "../EpubBacklinkHighlightService";
 
 describe("ExcerptPipeline", () => {
-	it("applies optimistic card sync without requesting reload when only the epub path is known", async () => {
+	it("builds the highlight index from collected highlights", () => {
 		const index = new HighlightIndex();
-		const pipeline = new ExcerptPipeline(index, { cardSyncDedupeMs: 600 });
-		const requestReload = vi.fn();
-		const applyReaderHighlights = vi.fn(() => true);
+		const pipeline = new ExcerptPipeline(index);
+		const highlights: BacklinkHighlight[] = [
+			{
+				cfiRange: "epubcfi(/6/2)",
+				color: "yellow",
+				text: "Hello",
+				sourceFile: "Books/demo.epub",
+			},
+		];
 
-		await pipeline.handleCardSaved({
-			card: { uuid: "card-1", sourceFile: "Books/demo.epub", content: "[!EPUB]" },
-			extractFromCard: async () => [
-				{
-					cfiRange: "epubcfi(/6/2)",
-					color: "yellow",
-					text: "Hello",
-					sourceFile: "Books/demo.epub",
-				} satisfies BacklinkHighlight,
-			],
-			mergeFromSourcePath: async () => false,
-			applyReaderHighlights,
-			requestReload,
-			rememberSourcePath: vi.fn(),
-		});
+		pipeline.syncCollectedHighlights(highlights);
 
-		expect(applyReaderHighlights).toHaveBeenCalledTimes(1);
-		expect(requestReload).not.toHaveBeenCalled();
 		expect(index.getSnapshot()).toHaveLength(1);
 	});
 
-	it("schedules incremental reload after optimistic wdeck sync", async () => {
-		const pipeline = new ExcerptPipeline(new HighlightIndex(), { cardSyncDedupeMs: 600 });
-		const requestReload = vi.fn();
-
-		await pipeline.handleCardSaved({
-			card: {
-				uuid: "card-wdeck",
-				sourceFile: "Books/demo.epub",
-				content: "[!EPUB]",
-				customFields: {
-					wdeck: { sourcePath: "weave/memory/deck-files/demo_01.wdeck" },
-				},
-			},
-			extractFromCard: async () => [
-				{
-					cfiRange: "readium:alpha",
-					color: "yellow",
-					text: "Quote",
-					sourceFile: "weave/memory/deck-files/demo_01.wdeck",
-					sourceRef: "card:card-wdeck",
-				} satisfies BacklinkHighlight,
-			],
-			mergeFromSourcePath: async () => false,
-			applyReaderHighlights: () => true,
-			requestReload,
-			rememberSourcePath: vi.fn(),
-		});
-
-		expect(requestReload).toHaveBeenCalledWith({ incremental: true, delayMs: 450 });
-	});
-
-	it("falls back to incremental reload when optimistic sync is empty", async () => {
+	it("delegates reload requests to the scheduler", () => {
 		const pipeline = new ExcerptPipeline(new HighlightIndex());
-		const requestReload = vi.fn();
+		const schedule = vi.fn();
 
-		await pipeline.handleCardSaved({
-			card: { uuid: "card-2", sourceFile: "memory/cards/demo.json", content: "[!EPUB]" },
-			extractFromCard: async () => [],
-			mergeFromSourcePath: async () => false,
-			applyReaderHighlights: () => false,
-			requestReload,
-			rememberSourcePath: vi.fn(),
-		});
+		pipeline.requestReload({ incremental: true, delayMs: 300 }, schedule);
 
-		expect(requestReload).toHaveBeenCalledWith({ incremental: true, delayMs: 300 });
+		expect(schedule).toHaveBeenCalledWith({ incremental: true, delayMs: 300 });
 	});
 });

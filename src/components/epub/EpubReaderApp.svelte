@@ -82,8 +82,6 @@
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import { shouldDismissToolbarOnPointerDown } from './toolbar-positioning';
 	import { buildEpubMarkdownLocateCandidates } from '../../services/ui/source-locate-candidates';
-	import type { EpubSavedCardSnapshot } from '../../services/epub/epub-card-highlight-sync';
-	import type { EpubHostCreateCardInput } from '../../services/epub';
 	import { generateBlockID } from '../../services/identifier/WeaveIDGenerator';
 	import {
 		normalizeContinuousReadingPositionAutoSaveEnabled,
@@ -1622,16 +1620,7 @@
 		dispatchEpubBookshelfRefreshRequest(undefined, { showNotice: true });
 	}
 
-	function getCreateCardPlugin(): {
-		openCreateCardModal?: (input: EpubHostCreateCardInput) => Promise<void>;
-	} | null {
-		const host = getEpubActionHost();
-		if (!host?.openCreateCardModal) {
-			new Notice(t('epub.reader.createCardUnavailable'));
-			return null;
-		}
-		return host;
-	}
+
 	function syncBookSessionForPath(nextFilePath: string): BookSession {
 		const manager = getBookSessionManager(app);
 		if (!manager.pathsShareSession(filePath, nextFilePath)) {
@@ -1748,40 +1737,6 @@
 		return false;
 	}
 
-	async function handleSavedCardHighlightSync(_card: EpubSavedCardSnapshot) {
-		// 已断开：卡片保存不再回灌阅读器高亮（高亮只由 local-storage.json 驱动）。
-	}
-
-	async function extractContentToCard(
-		content: string,
-		successMessage: string,
-		errorLogLabel: string,
-		failureMessage: string,
-		onSuccess?: () => void
-	) {
-		try {
-			const plugin = getCreateCardPlugin();
-			if (!plugin?.openCreateCardModal) return;
-
-			const handleCardSaved = (card: EpubSavedCardSnapshot) => {
-				void handleSavedCardHighlightSync(card);
-			};
-			const modalInput: EpubHostCreateCardInput & {
-				onSuccess?: (card: EpubSavedCardSnapshot) => void | Promise<void>;
-			} = {
-				initialContent: `${content}\n---div---\n\n`,
-				onCardSaved: handleCardSaved,
-				onSuccess: handleCardSaved,
-			};
-
-			await plugin.openCreateCardModal(modalInput);
-			onSuccess?.();
-			new Notice(successMessage);
-		} catch (error) {
-			logger.error(`[EpubReaderApp] ${errorLogLabel}:`, error);
-			new Notice(failureMessage);
-		}
-	}
 
 
 	function hasCreateReadingPointCapability(): boolean {
@@ -3043,20 +2998,6 @@
 		} catch (_e) {}
 	}
 
-	async function handleExtractToCard(
-		text: string,
-		cfiRange: string,
-		color?: string,
-		style?: EpubHighlightStyle
-	) {
-		persistInlineHighlight(cfiRange, text, color, style);
-		await extractContentToCard(
-			buildNoteContent(text, cfiRange, color, style),
-			t('epub.reader.createCardSuccess'),
-			'Failed to extract selection to card',
-			t('epub.reader.createCardFailed')
-		);
-	}
 
 	async function handleCreateReadingPoint(text: string, cfiRange: string) {
 		try {
@@ -3671,10 +3612,6 @@
 		return 'fallback';
 	}
 
-	function extractCardIdFromSourceRef(_sourceRef?: string): string | undefined {
-		// 已断开。
-		return undefined;
-	}
 
 	async function promptHighlightDeleteChoice(
 		result: EpubWeaveRemoveExcerptResult
@@ -3838,29 +3775,16 @@
 			policy: { reuseLeaf: true, focus: true, ...intent.policy },
 		});
 		if (!result.success) {
-			if (intent.kind === 'card') {
-				new Notice(t('epub.reader.cardLocateUnavailable'));
-			} else if (intent.kind === 'json') {
-				new Notice(t('epub.reader.relatedNoteMissing'));
-			} else {
-				new Notice(t('epub.reader.relatedNoteMissing'));
-			}
+			new Notice(t('epub.reader.relatedNoteMissing'));
 			return false;
 		}
-		if (intent.kind === 'card') {
-			new Notice(t('epub.reader.cardLocated'));
-		} else if (intent.kind === 'json') {
+		if (intent.kind === 'json') {
 			new Notice(t('epub.reader.openedSourceFileSearchHighlight'));
 		}
 		return true;
 	}
 
 	async function navigateToReferenceSource(source: ReferenceSourceInfo) {
-		if (source.sourceRef?.startsWith('card:')) {
-			await navigateExternalSource({ kind: 'card', resourcePath: source.sourceRef.slice(5) });
-			return;
-		}
-
 		if (source.type === 'canvas') {
 			await navigateExternalSource({
 				kind: 'canvas',
@@ -3900,14 +3824,6 @@
 		});
 	}
 
-	async function openCardBacklink(cardUuid: string) {
-		try {
-			await navigateExternalSource({ kind: 'card', resourcePath: cardUuid });
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to open card backlink:', error);
-			new Notice(t('epub.reader.cardLocateFailed'));
-		}
-	}
 
 	async function handleHighlightCopyText(info: HighlightClickInfo) {
 		const link = linkService.buildEpubLink(

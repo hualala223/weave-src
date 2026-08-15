@@ -23,16 +23,6 @@ import {
 	resolveComparableBookVaultPath,
 } from "./epub-vault-path";
 import { getEpubRuntime } from "./epub-runtime";
-import {
-	clearDeckAndAnalyticsCaches,
-	invalidateCardMetadataCache,
-	notifyWeaveDataSyncChange,
-	rebuildWdeckCacheIfNeeded,
-	removeCardIndexes,
-	resolveWeaveCacheHost,
-	triggerCardMutationEvents,
-	type WeaveCardMutationPayload,
-} from "./weave-cache-bridge";
 import type { HighlightSourceLocator } from "./reader-engine-types";
 import type { EpubHighlightStyle } from "./types";
 
@@ -2793,99 +2783,19 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 	}
 
 	private async notifyStructuredCardDataMutation(
-		sourcePath: string,
-		action: "update" | "delete",
-		cardUuids?: Iterable<string>
+		_sourcePath: string,
+		_action: "update" | "delete",
+		_cardUuids?: Iterable<string>
 	): Promise<void> {
-		const normalizedSourcePath = normalizePath(String(sourcePath || "").trim());
-		const normalizedCardUuids = Array.from(
-			new Set(
-				Array.from(cardUuids || [])
-					.map((uuid) => String(uuid || "").trim())
-					.filter(Boolean)
-			)
-		);
-		const cacheHost = resolveWeaveCacheHost(this.app);
-
-		try {
-			await rebuildWdeckCacheIfNeeded(cacheHost.wdeckService, normalizedSourcePath);
-			invalidateCardMetadataCache(cacheHost.cardMetadataCache, normalizedCardUuids);
-
-			if (action === "delete") {
-				removeCardIndexes(cacheHost.cardIndexService, normalizedCardUuids);
-			}
-
-			clearDeckAndAnalyticsCaches(cacheHost);
-			triggerCardMutationEvents(
-				cacheHost.workspace,
-				action,
-				normalizedCardUuids,
-				normalizedSourcePath
-			);
-
-			const payload: WeaveCardMutationPayload = {
-				type: "cards",
-				action,
-				ids: normalizedCardUuids,
-				source: "epub-backlink-highlight",
-				sourcePath: normalizedSourcePath,
-			};
-			await notifyWeaveDataSyncChange(cacheHost.dataSyncService, payload);
-		} catch (error) {
-			logger.warn("[EpubBacklinkHighlightService] Failed to notify card-data mutation:", {
-				sourcePath: normalizedSourcePath,
-				action,
-				cardUuids: normalizedCardUuids,
-				error,
-			});
-		}
+		/* 记忆卡片桥接已移除：不再通知 Weave 卡片缓存 */
 	}
 
 	private async notifyLinkedSourceMutation(
-		sourcePath: string,
-		action: "update" | "delete",
-		sourceRef?: string
+		_sourcePath: string,
+		_action: "update" | "delete",
+		_sourceRef?: string
 	): Promise<void> {
-		const normalizedSourcePath = normalizePath(String(sourcePath || "").trim());
-		if (!normalizedSourcePath) {
-			return;
-		}
-
-		const normalizedCardUuid =
-			typeof sourceRef === "string" && sourceRef.startsWith("card:")
-				? sourceRef.slice(5).trim()
-				: "";
-		const ids = normalizedCardUuid ? [normalizedCardUuid] : [];
-		const cacheHost = resolveWeaveCacheHost(this.app);
-
-		try {
-			await rebuildWdeckCacheIfNeeded(cacheHost.wdeckService, normalizedSourcePath);
-			invalidateCardMetadataCache(cacheHost.cardMetadataCache, ids);
-			clearDeckAndAnalyticsCaches(cacheHost);
-			triggerCardMutationEvents(
-				cacheHost.workspace,
-				action,
-				ids,
-				normalizedSourcePath,
-				true
-			);
-
-			const payload: WeaveCardMutationPayload = {
-				type: "cards",
-				action,
-				ids,
-				source: "epub-backlink-highlight",
-				sourcePath: normalizedSourcePath,
-			};
-			await notifyWeaveDataSyncChange(cacheHost.dataSyncService, payload);
-		} catch (error) {
-			logger.warn("[EpubBacklinkHighlightService] Failed to notify linked-source mutation:", {
-				sourcePath: normalizedSourcePath,
-				action,
-				sourceRef,
-				error,
-			});
-		}
+		/* 记忆卡片桥接已移除：不再通知 Weave 卡片缓存 */
 	}
 
 	private async changeCardDataHighlightColor(

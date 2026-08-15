@@ -3,19 +3,6 @@ import { CURRENT_PLUGIN_ID } from "../../config/plugin-runtime";
 import { getLegacyWeavePlugin } from "../../utils/plugin-access";
 import { getEpubRuntime } from "./epub-runtime";
 
-export interface EpubHostSavedCardSnapshot {
-	uuid?: string;
-	content?: string;
-	sourceFile?: string;
-	sourceKind?: string;
-	sourceSubunitKey?: string;
-}
-
-export interface EpubHostCreateCardInput {
-	initialContent: string;
-	onCardSaved?: (card: EpubHostSavedCardSnapshot) => void | Promise<void>;
-}
-
 export interface EpubHostReadingPointInput {
 	filePath: string;
 	selectedText: string;
@@ -63,12 +50,10 @@ export interface EpubHostCapabilities {
 		chapterIndex?: number
 	) => string;
 	openEpubReader?: (filePath: string) => Promise<void>;
-	openCreateCardModal?: (input: EpubHostCreateCardInput) => Promise<void>;
 	openIRReadingPointFromExternalSelection?: (input: EpubHostReadingPointInput) => Promise<void>;
 	getAvailableEpubIncrementalReadingTopics?: () => Promise<EpubHostIncrementalReadingTopicOption[]>;
 	scheduleEpubChapterForIncrementalReading?: (input: EpubHostScheduleChapterInput) => Promise<void>;
 	markEpubResumePointFromReader?: (input: EpubHostResumePointInput) => Promise<void>;
-	openCardBacklinkFromEpub?: (cardUuid: string) => Promise<void>;
 }
 
 export type EpubWeaveExcerptRemovalMode = "auto" | "excerpt-only" | "delete-card";
@@ -120,12 +105,10 @@ export interface EpubWeaveOfficialAPI {
 
 const EPUB_HOST_CAPABILITY_KEYS: Array<keyof EpubHostCapabilities> = [
 	"openEpubReader",
-	"openCreateCardModal",
 	"openIRReadingPointFromExternalSelection",
 	"getAvailableEpubIncrementalReadingTopics",
 	"scheduleEpubChapterForIncrementalReading",
 	"markEpubResumePointFromReader",
-	"openCardBacklinkFromEpub",
 ];
 
 const registeredEpubHosts = new WeakMap<App, EpubHostCapabilities>();

@@ -52,7 +52,6 @@ export {
 } from "./epub-host";
 export type {
 	EpubHostCapabilities,
-	EpubHostCreateCardInput,
 	EpubHostIncrementalReadingTopicOption,
 	EpubHostReadingPointInput,
 	EpubHostResumePointInput,

@@ -1,6 +1,6 @@
 import type { FlashStyle } from "../epub/reader-engine-types";
 
-export type NavigationTargetKind = "book" | "markdown" | "canvas" | "card" | "json";
+export type NavigationTargetKind = "book" | "markdown" | "canvas" | "json";
 
 /** In-reader locate only (CFI/href); not a cross-view NavigationIntent. */
 export interface BookLocateIntent {
@@ -42,7 +42,7 @@ export interface NavigationIntentPolicy {
 
 export interface NavigationIntent {
 	kind: NavigationTargetKind;
-	/** Vault path, or card UUID when kind is `card`. */
+	/** Vault path of the target resource. */
 	resourcePath: string;
 	locate?: NavigationIntentLocate;
 	context?: NavigationIntentContext;

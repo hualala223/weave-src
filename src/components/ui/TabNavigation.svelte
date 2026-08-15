@@ -1,7 +1,13 @@
 <script lang="ts">
   import EnhancedIcon from './EnhancedIcon.svelte';
   import ObsidianIcon from './ObsidianIcon.svelte';
-  import type { TabDefinition } from '../../types/view-card-modal-types';
+
+  interface TabDefinition {
+    id: string;
+    label: string;
+    icon: string;
+    disabled?: boolean;
+  }
 
   interface Props {
     tabs: TabDefinition[];

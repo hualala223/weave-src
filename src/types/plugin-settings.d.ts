@@ -490,12 +490,6 @@ export interface WeaveSettings {
   uiConfig?: UIConfig;
   
   /**
-   * 牌组标签组配置
-   * 用于看板视图按标签组分组
-   */
-  deckTagGroups?: import('../types/deck-kanban-types').DeckTagGroup[];
-
-  /**
    * 记忆牌组组织配置
    * 用于正式牌组与涌现式牌组双区模型
    */

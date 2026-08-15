@@ -538,59 +538,6 @@ describe('EpubBacklinkHighlightService', () => {
 		expect(files.get(notePath)).toBe('Plain tail');
 	});
 
-	it('notifies workspace and data sync after deleting a markdown-backed excerpt', async () => {
-		const notePath = 'Notes/delete-notify.md';
-		const notifyChange = vi.fn(async () => undefined);
-		const clearDeckAggregationCache = vi.fn();
-		const clearAnalyticsCache = vi.fn();
-		const runtimePlugin = {
-			settings: { weaveParentFolder: '' },
-			dataSyncService: { notifyChange },
-			deckAggregationService: { clearCache: clearDeckAggregationCache },
-			analyticsService: { clearCache: clearAnalyticsCache },
-		};
-		const { app } = createMockApp(
-			{
-				[notePath]: [
-					'> [!EPUB|blue] [[Books/demo.epub#weave-cfi=readium%3Adelete-notify|Demo]]',
-					'> Quote to remove',
-					'',
-					'Plain tail',
-				].join('\n'),
-			},
-			{ runtimePlugin }
-		);
-		const service = new EpubBacklinkHighlightService(app);
-
-		const deleted = await service.deleteHighlight(
-			notePath,
-			'readium:delete-notify',
-			'Books/demo.epub'
-		);
-
-		expect(deleted).toBe(true);
-		expect(clearDeckAggregationCache).toHaveBeenCalled();
-		expect(clearAnalyticsCache).toHaveBeenCalled();
-		expect(app.workspace.trigger).toHaveBeenCalledWith(
-			'Weave:card-updated',
-			expect.objectContaining({
-				type: 'cards',
-				action: 'update',
-				ids: [],
-				sourcePath: notePath,
-			})
-		);
-		expect(app.workspace.trigger).toHaveBeenCalledWith('Weave:data-changed');
-		expect(notifyChange).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: 'cards',
-				action: 'update',
-				ids: [],
-				sourcePath: notePath,
-			})
-		);
-	});
-
 	it('resolves json card source with card reference when locating by cfi', async () => {
 		const jsonPath = 'weave/memory/cards/cards-0.json';
 		const jsonContent = JSON.stringify({
@@ -1187,82 +1134,6 @@ describe('EpubBacklinkHighlightService', () => {
 		]);
 	});
 
-	it('collects wdeck highlights when stored sid drifts but the epub path is still the same', async () => {
-		const wdeckPath = 'weave/memory/deck-files/sid-drift_01.wdeck';
-		const { app } = createMockApp({
-			[wdeckPath]: JSON.stringify({
-				fileType: 'wdeck',
-				logicalDeckId: 'deck-sid-drift',
-				logicalDeckName: 'SID 漂移牌组',
-				segmentIndex: 1,
-				cards: [
-					{
-						uuid: 'card-sid-drift',
-						modified: '2026-05-17T10:00:00.000Z',
-						content: [
-							'---',
-							'we_source: "[[Books/demo.epub#weave-cfi=readium%3Asid-drift&sid=epubsrc-stale|Demo]]"',
-							'---',
-							'Same path despite sid drift',
-						].join('\n'),
-					},
-				],
-			}),
-		});
-		const service = new EpubBacklinkHighlightService(app);
-		(service as any).storageService.ensureSourceIdentity = vi.fn(async () => ({ sourceId: 'epubsrc-current' }));
-
-		await expect(service.collectHighlights('Books/demo.epub')).resolves.toEqual([
-			expect.objectContaining({
-				cfiRange: 'readium:sid-drift',
-				text: 'Same path despite sid drift',
-				sourceFile: wdeckPath,
-				sourceRef: 'card:card-sid-drift',
-			}),
-		]);
-	});
-
-	it('recovers malformed wdeck files from safe json backup when collecting epub highlights', async () => {
-		const wdeckPath = 'weave/memory/deck-files/recoverable_01.wdeck';
-		const backupPath = '.obsidian/plugins/weave-epub-reader/backups/json-recovery/weave__memory__deck-files__recoverable_01.wdeck';
-		const { app } = createMockApp({
-			[wdeckPath]: '{"broken": ',
-			[backupPath]: JSON.stringify({
-				fileType: 'wdeck',
-				logicalDeckId: 'deck-recovered',
-				logicalDeckName: '恢复牌组',
-				segmentIndex: 1,
-				cards: [
-					{
-						uuid: 'card-recovered',
-						modified: '2026-05-17T10:20:00.000Z',
-						content: [
-							'---',
-							'we_source: "[[Books/demo.epub#weave-cfi=readium%3Arecovered-from-backup&sid=epubsrc-demo|Demo]]"',
-							'---',
-							'Recovered WDeck quote',
-						].join('\n'),
-					},
-				],
-			}),
-		});
-		const service = new EpubBacklinkHighlightService(app);
-		(service as any).storageService.ensureSourceIdentity = vi.fn(async () => ({ sourceId: 'epubsrc-demo' }));
-
-		await expect(service.collectHighlights('Books/demo.epub')).resolves.toEqual([
-			expect.objectContaining({
-				cfiRange: 'readium:recovered-from-backup',
-				text: 'Recovered WDeck quote',
-				sourceFile: wdeckPath,
-				sourceRef: 'card:card-recovered',
-			}),
-		]);
-		expect(app.vault.adapter.write).toHaveBeenCalledWith(
-			wdeckPath,
-			expect.stringContaining('Recovered WDeck quote')
-		);
-	});
-
 	it('updates markdown highlight colors through an already-open note editor', async () => {
 		const notePath = 'Notes/demo.md';
 		const noteContent = [
@@ -1547,63 +1418,6 @@ describe('EpubBacklinkHighlightService', () => {
 		expect(parsed.nodes[1].text).toContain('> Canvas comment');
 	});
 
-	it('notifies workspace and data sync after deleting a canvas-backed excerpt', async () => {
-		const canvasPath = 'Canvas/delete-notify.canvas';
-		const notifyChange = vi.fn(async () => undefined);
-		const clearDeckAggregationCache = vi.fn();
-		const clearAnalyticsCache = vi.fn();
-		const runtimePlugin = {
-			settings: { weaveParentFolder: '' },
-			dataSyncService: { notifyChange },
-			deckAggregationService: { clearCache: clearDeckAggregationCache },
-			analyticsService: { clearCache: clearAnalyticsCache },
-		};
-		const { app } = createMockApp(
-			{
-				[canvasPath]: JSON.stringify({
-					nodes: [
-						{
-							id: 'node-1',
-							type: 'text',
-							text: '> [!EPUB|blue] [[Books/demo.epub#weave-cfi=readium%3Acanvas-delete|Demo]]\n> Canvas quote\n',
-						},
-					],
-				}),
-			},
-			{ runtimePlugin }
-		);
-		const service = new EpubBacklinkHighlightService(app);
-
-		const deleted = await service.deleteHighlight(
-			canvasPath,
-			'readium:canvas-delete',
-			'Books/demo.epub',
-			'canvas:node-1'
-		);
-
-		expect(deleted).toBe(true);
-		expect(clearDeckAggregationCache).toHaveBeenCalled();
-		expect(clearAnalyticsCache).toHaveBeenCalled();
-		expect(app.workspace.trigger).toHaveBeenCalledWith(
-			'Weave:card-updated',
-			expect.objectContaining({
-				type: 'cards',
-				action: 'update',
-				ids: [],
-				sourcePath: canvasPath,
-			})
-		);
-		expect(app.workspace.trigger).toHaveBeenCalledWith('Weave:data-changed');
-		expect(notifyChange).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: 'cards',
-				action: 'update',
-				ids: [],
-				sourcePath: canvasPath,
-			})
-		);
-	});
-
 	it('updates only the targeted card shard entry highlight color when sourceRef is provided', async () => {
 		const jsonPath = 'weave/memory/cards/cards-0.json';
 		const jsonContent = JSON.stringify({
@@ -1763,80 +1577,6 @@ describe('EpubBacklinkHighlightService', () => {
 		expect(parsed.cards[0].uuid).toBe('card-a');
 	});
 
-	it('notifies host caches and card deletion events after deleting a structured card-data entry', async () => {
-		const jsonPath = 'weave/memory/cards/cards-delete-notify.json';
-		const notifyChange = vi.fn(async () => undefined);
-		const invalidate = vi.fn();
-		const removeCardIndex = vi.fn();
-		const clearDeckAggregationCache = vi.fn();
-		const clearAnalyticsCache = vi.fn();
-		const rebuildCache = vi.fn(async () => undefined);
-		const runtimePlugin = {
-			settings: { weaveParentFolder: '' },
-			cardMetadataCache: { invalidate },
-			cardIndexService: { removeCardIndex },
-			deckAggregationService: { clearCache: clearDeckAggregationCache },
-			analyticsService: { clearCache: clearAnalyticsCache },
-			wdeckService: { rebuildCache },
-			dataSyncService: { notifyChange },
-			app: {
-				workspace: {
-					trigger: vi.fn(),
-				},
-			},
-		};
-		const { app } = createMockApp(
-			{
-				[jsonPath]: JSON.stringify({
-					cards: [
-						{
-							uuid: 'card-a',
-							content: '> [!EPUB|green] [[Books/demo.epub#weave-cfi=readium%3Aalpha|Demo]]\n> Quote A\n',
-						},
-						{
-							uuid: 'card-b',
-							content: '> [!EPUB|blue] [[Books/demo.epub#weave-cfi=readium%3Abeta|Demo]]\n> Quote B\n',
-						},
-					],
-				}),
-			},
-			{ runtimePlugin }
-		);
-		const service = new EpubBacklinkHighlightService(app);
-
-		const deleted = await service.deleteHighlight(
-			jsonPath,
-			'readium:beta',
-			'Books/demo.epub',
-			'card:card-b'
-		);
-
-		expect(deleted).toBe(true);
-		expect(invalidate).toHaveBeenCalledWith('card-b');
-		expect(removeCardIndex).toHaveBeenCalledWith('card-b');
-		expect(clearDeckAggregationCache).toHaveBeenCalled();
-		expect(clearAnalyticsCache).toHaveBeenCalled();
-		expect(rebuildCache).not.toHaveBeenCalled();
-		expect(app.workspace.trigger).toHaveBeenCalledWith('Weave:card-deleted', 'card-b');
-		expect(app.workspace.trigger).toHaveBeenCalledWith(
-			'Weave:card-updated',
-			expect.objectContaining({
-				type: 'cards',
-				action: 'delete',
-				ids: ['card-b'],
-				sourcePath: jsonPath,
-			})
-		);
-		expect(notifyChange).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: 'cards',
-				action: 'delete',
-				ids: ['card-b'],
-				sourcePath: jsonPath,
-			})
-		);
-	});
-
 	it('inspects card-data deletion and preserves extra content when deleting excerpt only', async () => {
 		const wdeckPath = 'weave/memory/deck-files/delete-choice_01.wdeck';
 		const notifyChange = vi.fn(async () => undefined);
@@ -1901,25 +1641,6 @@ describe('EpubBacklinkHighlightService', () => {
 		const parsed = JSON.parse(files.get(wdeckPath) || '{}');
 		expect(parsed.cards).toHaveLength(1);
 		expect(parsed.cards[0].content).toBe('我后来补充的延伸笔记');
-		expect(invalidate).toHaveBeenCalledWith('card-extra');
-		expect(rebuildCache).toHaveBeenCalledTimes(1);
-		expect(app.workspace.trigger).toHaveBeenCalledWith(
-			'Weave:card-updated',
-			expect.objectContaining({
-				type: 'cards',
-				action: 'update',
-				ids: ['card-extra'],
-				sourcePath: wdeckPath,
-			})
-		);
-		expect(notifyChange).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: 'cards',
-				action: 'update',
-				ids: ['card-extra'],
-				sourcePath: wdeckPath,
-			})
-		);
 	});
 
 	it('official excerpt api deletes a pure wdeck excerpt through weave dataStorage.deleteCard', async () => {

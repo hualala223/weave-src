@@ -41,35 +41,6 @@ describe("epub-host resolution", () => {
 		expect(runtimeHost.openEpubReader).not.toHaveBeenCalled();
 	});
 
-	it("falls back to legacy Weave for missing capabilities when the local host is registered", async () => {
-		const legacyCreateCard = vi.fn(async () => undefined);
-		const localHost = {
-			openEpubReader: vi.fn(async () => undefined),
-		};
-		const app = {
-			plugins: {
-				getPlugin: vi.fn((pluginId: string) => {
-					if (pluginId === "weave-epub-reader") {
-						return localHost;
-					}
-					if (pluginId === "weave") {
-						return {
-							openCreateCardModal: legacyCreateCard,
-						};
-					}
-					return null;
-				}),
-			},
-		} as any;
-
-		registerEpubHost(app, localHost);
-		const resolved = resolveEpubHost(app);
-		await resolved?.openCreateCardModal?.({ initialContent: "demo" });
-		unregisterEpubHost(app);
-
-		expect(legacyCreateCard).toHaveBeenCalledWith({ initialContent: "demo" });
-	});
-
 	it("does not expose local IR capabilities when the standalone host does not implement them", () => {
 		const localHost = {
 			openEpubReader: vi.fn(async () => undefined),
