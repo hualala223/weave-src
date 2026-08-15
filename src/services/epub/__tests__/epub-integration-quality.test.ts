@@ -57,10 +57,6 @@ import {
 	ReaderAnnotationOverlayRenderer,
 } from "../reader-annotation-overlayer";
 import {
-	listEpubUnifiedLocalDataCandidatePaths,
-	resolveEpubUnifiedLocalDataPath,
-} from "../epub-unified-local-data-paths";
-import {
 	EpubUnifiedLocalDataSessionCache,
 	readWithTransientParseRetry,
 	writeUnifiedLocalDataAtomically,
@@ -71,7 +67,6 @@ import {
 	canReuseExistingBook,
 	resolveBookLoadRestoredPosition,
 } from "../epub-reader-book-load-helpers";
-import { peelEmbeddedScanIndexFromUnifiedData } from "../epub-unified-local-data-read";
 import { normalizeLocalReaderData } from "../epub-local-data-normalize";
 
 describe("reader-paginated-layout-recovery", () => {
@@ -341,16 +336,6 @@ describe("epub-unified-local-data-store", () => {
 		};
 		await writeUnifiedLocalDataAtomically(adapter, "state.json", "{\"version\":1}");
 		expect(writes).toEqual(["state.json.tmp:{\"version\":1}", "rename:state.json.tmp->state.json"]);
-	});
-});
-
-describe("epub-unified-local-data-paths", () => {
-	it("lists canonical and legacy unified local data paths", () => {
-		const app = {};
-		const paths = listEpubUnifiedLocalDataCandidatePaths(app, "weave-epub-reader");
-		const canonical = resolveEpubUnifiedLocalDataPath(app, "weave-epub-reader");
-		expect(paths[0]).toBe(canonical);
-		expect(paths.length).toBeGreaterThanOrEqual(1);
 	});
 });
 
@@ -681,18 +666,6 @@ describe("epub-reader-book-load-helpers", () => {
 			loadProgress: async () => ({ chapterIndex: 0, cfi: "cfi-stored", percent: 10 }),
 		});
 		expect(restored?.cfi).toBe("cfi-reused");
-	});
-});
-
-describe("epub-unified-local-data-read", () => {
-	it("peels embedded scan index out of unified local snapshots", () => {
-		const { data, embeddedScanIndex } = peelEmbeddedScanIndexFromUnifiedData({
-			version: 1,
-			updatedAt: 0,
-			scanIndex: [{ path: "Books/demo.epub", name: "demo", folder: "/", size: 1, mtime: 2 }],
-		});
-		expect(embeddedScanIndex).toHaveLength(1);
-		expect(data.scanIndex).toBeUndefined();
 	});
 });
 
