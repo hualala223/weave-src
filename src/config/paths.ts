@@ -544,34 +544,6 @@ export function getBackupPath(backupId?: string, app?: { vault: { configDir: str
 export const DEFAULT_HIGHLIGHT_STORAGE_PATH = `${WEAVE_DATA}/local-storage.json`;
 
 /**
- * 旧版 local-storage.json 路径（.obsidian/plugins/<id>/state/，迁移源）。
- */
-export function getLegacyLocalStoragePath(app?: { vault: { configDir: string } }): string {
-	return getPluginPaths(app).state.localStorage;
-}
-
-/**
- * 解析用户配置的高亮数据文件路径（vault 相对路径）。
- * 优先读取插件设置 highlightStoragePath，空值回退默认 weave/local-storage.json。
- */
-export function getConfiguredVaultStoragePath(app?: unknown): string {
-	const plugin = (app as AppWithPluginAccess | undefined)?.plugins?.getPlugin?.(CURRENT_PLUGIN_ID) as
-		| {
-			settings?: { highlightStoragePath?: string };
-		}
-		| null
-		| undefined;
-	const raw = String(plugin?.settings?.highlightStoragePath || "").trim();
-	if (raw) {
-		const normalized = normalizePath(raw);
-		if (normalized && normalized !== "." && normalized !== "/") {
-			return normalized;
-		}
-	}
-	return DEFAULT_HIGHLIGHT_STORAGE_PATH;
-}
-
-/**
  * 规范化用户配置的高亮数据文件路径：空值/非法值回退默认路径。
  */
 export function normalizeHighlightStoragePath(path?: string): string {

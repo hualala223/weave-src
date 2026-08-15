@@ -65,6 +65,7 @@ const TEST_GLOBS = [
 	"services/obsidian/__tests__/*.spec.ts",
 	"services/obsidian/__tests__/**/*.spec.ts",
 	"utils/__tests__/epub-author-color-sanitizer.test.ts",
+	"utils/__tests__/vault-local-storage.test.ts",
 	"utils/__tests__/locale-resolver.test.ts",
 	"utils/__tests__/source-path-matcher.epub-links.test.ts",
 	"utils/__tests__/yaml-utils.epub-source.test.ts",

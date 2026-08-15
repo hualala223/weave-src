@@ -1,29 +1,23 @@
 /**
  * Vault-scoped plugin local storage
  *
- * Plugin-owned local key/value state now converges into:
- *   .obsidian/plugins/<current-plugin-id>/state/local-storage.json
- *
- * Only non-plugin keys fall back to Obsidian's App#saveLocalStorage /
- * App#loadLocalStorage (for example Obsidian's own `language` setting).
+ * Plugin-owned local key/value state converges into the unified
+ * weave-data.json store (highlights section), accessed through
+ * getWeaveDataStore. The public API is unchanged, but persistence no
+ * longer touches weave/local-storage.json.
  */
 
 import type { App } from "obsidian";
-import { getConfiguredVaultStoragePath, getLegacyLocalStoragePath } from "../config/paths";
-import { getPluginPaths } from "../config/paths";
-import { getAppWithLegacyLocalStorage } from "../types/obsidian-extensions";
-import { DirectoryUtils } from "./directory-utils";
+import {
+	DEFAULT_DATA_PATH,
+	normalizeDataPath,
+} from "../config/paths";
+import { CURRENT_PLUGIN_ID } from "../config/plugin-runtime";
+import {
+	getWeaveDataStore,
+	type WeaveDataStore,
+} from "../services/epub/weave-data-store";
 import { logger } from "./logger";
-
-const MANAGED_PREFIXES = ["weave-", "weave_", "attachment_"] as const;
-const PERSIST_DELAY_MS = 150;
-const LEGACY_REMOVAL_SENTINEL = "__WEAVE_LOCAL_STORAGE_REMOVED__";
-
-type ConflictEntry = {
-	key: string;
-	current: string;
-	legacy: string;
-};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -33,374 +27,109 @@ class VaultLocalStorage {
 	private app: App | null = null;
 	private initializePromise: Promise<void> | null = null;
 	private entries: Record<string, string> = {};
-	private persistPromise: Promise<void> = Promise.resolve();
-	private persistTimer: ReturnType<typeof setTimeout> | null = null;
-	private dirty = false;
-	private pendingLegacyCleanup = new Set<string>();
 
 	setApp(app: App): void {
 		this.app = app;
 	}
 
-	/**
-	 * 当前生效的 local-storage.json 路径（动态解析，支持设置页修改后立即生效）。
-	 */
-	private resolveStoragePath(): string | null {
+	/** 生效的 weave-data.json 数据路径（读取插件设置 dataPath，回退默认）。 */
+	private resolveDataPath(): string {
+		const plugin = (this.app as unknown as {
+			plugins?: {
+				getPlugin?: (pluginId: string) => {
+					settings?: { dataPath?: string };
+				} | null | undefined;
+			};
+		})?.plugins?.getPlugin?.(CURRENT_PLUGIN_ID);
+		return normalizeDataPath(plugin?.settings?.dataPath) || DEFAULT_DATA_PATH;
+	}
+
+	private getStore(): WeaveDataStore | null {
 		if (!this.app) {
 			return null;
 		}
-		return getConfiguredVaultStoragePath(this.app);
+		return getWeaveDataStore(this.app, () => this.resolveDataPath());
 	}
 
 	async initialize(app: App): Promise<void> {
 		if (this.app !== app || !this.initializePromise) {
 			this.setApp(app);
-			this.initializePromise = this.loadAndMigrate();
+			this.initializePromise = this.loadEntries();
 		}
 		await this.initializePromise;
 	}
 
 	getItem(key: string): string | null {
-		if (!this.isManagedKey(key)) {
-			return this.readLegacyValue(key);
-		}
-
 		if (typeof this.entries[key] === "string") {
 			return this.entries[key];
 		}
-
-		return this.readLegacyValue(key);
+		return null;
 	}
 
 	setItem(key: string, value: string): void {
-		if (!this.isManagedKey(key)) {
-			this.writeLegacyValue(key, value);
+		this.entries[key] = value;
+		const store = this.getStore();
+		if (!store) {
 			return;
 		}
-
-		this.entries[key] = value;
-		this.writeLegacyValue(key, value);
-		this.pendingLegacyCleanup.add(key);
-		this.schedulePersist();
+		store.updateSection("highlights", { ...this.entries });
 	}
 
 	removeItem(key: string): void {
-		if (!this.isManagedKey(key)) {
-			this.clearLegacyValue(key);
+		if (!(key in this.entries)) {
 			return;
 		}
-
 		delete this.entries[key];
-		this.writeLegacyValue(key, LEGACY_REMOVAL_SENTINEL);
-		this.pendingLegacyCleanup.add(key);
-		this.schedulePersist();
+		const store = this.getStore();
+		if (!store) {
+			return;
+		}
+		store.updateSection("highlights", { ...this.entries });
 	}
 
 	/**
 	 * Get all managed keys matching a prefix.
-	 * Falls back to scanning legacy window.localStorage entries before migration.
 	 */
 	getKeysWithPrefix(prefix: string): string[] {
-		const keys = new Set<string>();
-
-		for (const key of Object.keys(this.entries)) {
-			if (key.startsWith(prefix)) {
-				keys.add(key);
-			}
-		}
-
-		for (const key of this.collectLegacyManagedEntries().keys()) {
-			if (key.startsWith(prefix)) {
-				keys.add(key);
-			}
-		}
-
-		return Array.from(keys);
+		return Object.keys(this.entries).filter((key) => key.startsWith(prefix));
 	}
 
 	async flush(): Promise<void> {
-		if (this.persistTimer !== null) {
-			window.clearTimeout(this.persistTimer);
-			this.persistTimer = null;
+		const store = this.getStore();
+		if (store) {
+			await store.flush();
 		}
-		await this.persistPendingEntries();
 	}
 
 	/**
 	 * Test helper for resetting the singleton between runs.
 	 */
 	resetForTests(): void {
-		if (this.persistTimer !== null) {
-			window.clearTimeout(this.persistTimer);
-			this.persistTimer = null;
-		}
 		this.app = null;
 		this.entries = {};
 		this.initializePromise = null;
-		this.persistPromise = Promise.resolve();
-		this.dirty = false;
-		this.pendingLegacyCleanup.clear();
 	}
 
-	private isManagedKey(key: string): boolean {
-		return MANAGED_PREFIXES.some((prefix) => key.startsWith(prefix));
-	}
-
-	private readLegacyValue(key: string): string | null {
-		const rawValue = this.readRawLegacyValue(key);
-		return rawValue === LEGACY_REMOVAL_SENTINEL ? null : rawValue;
-	}
-
-	private readRawLegacyValue(key: string): string | null {
-		if (!this.app) {
-			return null;
-		}
-		const value = getAppWithLegacyLocalStorage(this.app).loadLocalStorage(key);
-		return typeof value === "string" ? value : null;
-	}
-
-	private writeLegacyValue(key: string, value: string | undefined): void {
-		if (this.app) {
-			getAppWithLegacyLocalStorage(this.app).saveLocalStorage(key, value);
-		}
-	}
-
-	private clearLegacyValue(key: string): void {
-		this.writeLegacyValue(key, undefined);
-	}
-
-	private schedulePersist(): void {
-		this.dirty = true;
-		if (this.persistTimer !== null) {
+	private async loadEntries(): Promise<void> {
+		const store = this.getStore();
+		if (!store) {
+			this.entries = {};
 			return;
 		}
-
-		this.persistTimer = window.setTimeout(() => {
-			this.persistTimer = null;
-			void this.persistPendingEntries();
-		}, PERSIST_DELAY_MS);
-	}
-
-	private async loadAndMigrate(): Promise<void> {
-		await this.migrateFromLegacyPath();
-		this.entries = await this.readPersistedEntries();
-		const legacyEntries = this.collectLegacyManagedEntries();
-		const conflicts: ConflictEntry[] = [];
-		let mergedLegacyEntries = false;
-
-		for (const [key, legacyValue] of legacyEntries) {
-			if (legacyValue === LEGACY_REMOVAL_SENTINEL) {
-				if (key in this.entries) {
-					delete this.entries[key];
-					mergedLegacyEntries = true;
-				}
-				this.pendingLegacyCleanup.add(key);
-				continue;
-			}
-
-			const currentValue = this.entries[key];
-			if (typeof currentValue !== "string") {
-				this.entries[key] = legacyValue;
-				mergedLegacyEntries = true;
-			} else if (currentValue !== legacyValue) {
-				conflicts.push({
-					key,
-					current: currentValue,
-					legacy: legacyValue,
-				});
-			}
-			this.pendingLegacyCleanup.add(key);
-		}
-
-		if (conflicts.length > 0) {
-			await this.writeConflictSnapshot(conflicts);
-		}
-
-		if (mergedLegacyEntries) {
-			const persisted = await this.writeEntriesSnapshot({ ...this.entries });
-			if (persisted) {
-				this.clearPendingLegacyCleanup();
-			} else {
-				this.dirty = true;
-				this.schedulePersist();
-			}
-			return;
-		}
-
-		this.clearPendingLegacyCleanup();
-	}
-
-	private async persistPendingEntries(): Promise<void> {
-		if (!this.app || !this.resolveStoragePath() || !this.dirty) {
-			await this.persistPromise;
-			return;
-		}
-
-		const snapshot = { ...this.entries };
-		const cleanupKeys = new Set(this.pendingLegacyCleanup);
-		this.pendingLegacyCleanup.clear();
-		this.dirty = false;
-
-		this.persistPromise = this.persistPromise.then(async () => {
-			const persisted = await this.writeEntriesSnapshot(snapshot);
-			if (persisted) {
-				for (const key of cleanupKeys) {
-					this.clearLegacyValue(key);
-				}
-				return;
-			}
-
-			this.dirty = true;
-			for (const key of cleanupKeys) {
-				this.pendingLegacyCleanup.add(key);
-			}
-			this.schedulePersist();
-		});
-
-		await this.persistPromise;
-	}
-
-	private async readPersistedEntries(): Promise<Record<string, string>> {
-		const storagePath = this.resolveStoragePath();
-		if (!this.app || !storagePath) {
-			return {};
-		}
-
-		const adapter = this.app.vault.adapter;
 		try {
-			if (!(await adapter.exists(storagePath))) {
-				return {};
-			}
-
-			const parsed = JSON.parse(await adapter.read(storagePath)) as unknown;
-			if (!isRecord(parsed)) {
-				return {};
-			}
-
-			const normalized: Record<string, string> = {};
-			for (const [key, value] of Object.entries(parsed)) {
-				if (typeof value === "string") {
-					normalized[key] = value;
+			const section = await store.getSection<unknown>("highlights");
+			const loaded: Record<string, string> = {};
+			if (isRecord(section)) {
+				for (const [key, value] of Object.entries(section)) {
+					if (typeof value === "string") {
+						loaded[key] = value;
+					}
 				}
 			}
-			return normalized;
+			this.entries = loaded;
 		} catch (error) {
-			logger.warn(`[VaultLocalStorage] 读取失败: ${storagePath}`, error);
-			return {};
-		}
-	}
-
-	private async writeEntriesSnapshot(entries: Record<string, string>): Promise<boolean> {
-		const storagePath = this.resolveStoragePath();
-		if (!this.app || !storagePath) {
-			return false;
-		}
-
-		const adapter = this.app.vault.adapter;
-		try {
-			await DirectoryUtils.ensureDirForFile(adapter, storagePath);
-			await adapter.write(storagePath, JSON.stringify(entries, null, 2));
-			return true;
-		} catch (error) {
-			logger.warn(`[VaultLocalStorage] 写入失败: ${storagePath}`, error);
-			return false;
-		}
-	}
-
-	/**
-	 * 迁移：旧路径（.obsidian/plugins/<id>/state/local-storage.json）→ 新路径（weave/local-storage.json）。
-	 * 仅当新路径不存在且旧路径有数据时复制；旧文件保留（安全，不破坏）。
-	 */
-	private async migrateFromLegacyPath(): Promise<void> {
-		if (!this.app) {
-			return;
-		}
-		try {
-			const adapter = this.app.vault.adapter;
-			const legacyPath = getLegacyLocalStoragePath(this.app);
-			const nextPath = this.resolveStoragePath();
-			if (!nextPath || nextPath === legacyPath) {
-				return;
-			}
-			if (await adapter.exists(nextPath)) {
-				return;
-			}
-			if (!(await adapter.exists(legacyPath))) {
-				return;
-			}
-			const content = await adapter.read(legacyPath);
-			if (!content?.trim()) {
-				return;
-			}
-			await DirectoryUtils.ensureDirForFile(adapter, nextPath);
-			await adapter.write(nextPath, content);
-			logger.info(`[VaultLocalStorage] 已迁移 ${legacyPath} → ${nextPath}`);
-		} catch (error) {
-			logger.warn("[VaultLocalStorage] 迁移旧 local-storage.json 失败", error);
-		}
-	}
-
-	private collectLegacyManagedEntries(): Map<string, string> {
-		const entries = new Map<string, string>();
-		if (typeof window === "undefined") {
-			return entries;
-		}
-
-		try {
-			for (let i = 0; i < window.localStorage.length; i++) {
-				const rawKey = window.localStorage.key(i);
-				if (!rawKey) {
-					continue;
-				}
-
-				const canonicalKey = this.extractManagedKey(rawKey);
-				if (!canonicalKey) {
-					continue;
-				}
-
-				const value = this.readRawLegacyValue(canonicalKey);
-				if (typeof value === "string") {
-					entries.set(canonicalKey, value);
-				}
-			}
-		} catch {
-			// ignore legacy scan failures
-		}
-
-		return entries;
-	}
-
-	private extractManagedKey(rawKey: string): string | null {
-		for (const prefix of MANAGED_PREFIXES) {
-			const index = rawKey.indexOf(prefix);
-			if (index >= 0) {
-				return rawKey.slice(index);
-			}
-		}
-		return null;
-	}
-
-	private clearPendingLegacyCleanup(): void {
-		for (const key of this.pendingLegacyCleanup) {
-			this.clearLegacyValue(key);
-		}
-		this.pendingLegacyCleanup.clear();
-	}
-
-	private async writeConflictSnapshot(conflicts: ConflictEntry[]): Promise<void> {
-		if (!this.app) {
-			return;
-		}
-
-		try {
-			const adapter = this.app.vault.adapter;
-			const snapshotPath = `${
-				getPluginPaths(this.app).migration.root
-			}/local-storage-conflicts/${Date.now()}.json`;
-			await DirectoryUtils.ensureDirForFile(adapter, snapshotPath);
-			await adapter.write(snapshotPath, JSON.stringify(conflicts, null, 2));
-		} catch (error) {
-			logger.warn("[VaultLocalStorage] 写入 localStorage 冲突快照失败", error);
+			logger.warn("[VaultLocalStorage] 读取 highlights 分区失败", error);
+			this.entries = {};
 		}
 	}
 }

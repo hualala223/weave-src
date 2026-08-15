@@ -5,7 +5,6 @@
 
 import { domInstanceOf } from "../utils/dom-instance-of";
 import type {
-	App,
 	Editor,
 	MarkdownSubView,
 	MarkdownView,
@@ -335,16 +334,6 @@ export interface ExtendedApp {
 }
 
 /**
- * Obsidian App legacy localStorage bridge (not in public typings).
- */
-export interface AppWithLegacyLocalStorage extends App {
-	loadLocalStorage(key: string): string | null | undefined;
-	saveLocalStorage(key: string, value: string | undefined): void;
-}
-
-export function getAppWithLegacyLocalStorage(app: App): AppWithLegacyLocalStorage {
-	return app as AppWithLegacyLocalStorage;
-}
 
 /**
  * Runtime Canvas node data exposed by Obsidian's canvas view.

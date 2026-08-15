@@ -46,6 +46,7 @@ export default defineConfig({
       'src/utils/__tests__/blob-url-text.test.ts',
       'src/utils/__tests__/clipboard-copy.test.ts',
       'src/utils/__tests__/epub-author-color-sanitizer.test.ts',
+      'src/utils/__tests__/vault-local-storage.test.ts',
       'src/services/obsidian/__tests__/**/*.{test,spec}.{js,ts}'
     ],
     exclude: ['node_modules', 'dist'],
