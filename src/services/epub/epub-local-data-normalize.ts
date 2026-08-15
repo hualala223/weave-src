@@ -83,7 +83,6 @@ export function normalizePluginUiMemory(value: unknown): EpubPluginUiMemory {
 		),
 		bookshelfSearchQuery:
 			typeof record.bookshelfSearchQuery === "string" ? record.bookshelfSearchQuery : "",
-		readerTutorialDismissed: record.readerTutorialDismissed === true,
 	};
 }
 

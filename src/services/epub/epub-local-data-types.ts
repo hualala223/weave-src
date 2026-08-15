@@ -16,7 +16,6 @@ export interface EpubPluginUiMemory {
 	lastSelectedIRDeckId: string;
 	selectionQuickCreateLastFolder: string;
 	bookshelfSearchQuery: string;
-	readerTutorialDismissed: boolean;
 }
 
 export interface EpubBookshelfIndexEntry {

@@ -95,8 +95,6 @@ export class EpubView extends ItemView {
 	private readingReferenceBtn: HTMLElement | null = null;
 	private inlineReadingReferenceBtn: HTMLButtonElement | null = null;
 	private hasReadingReferencePoint = false;
-	private tutorialBtn: HTMLElement | null = null;
-	private inlineTutorialBtn: HTMLButtonElement | null = null;
 	private bookmarkBtn: HTMLElement | null = null;
 	private readingPositionAutoSaveEnabled = false;
 	private toolbarHandlersReady = false;
@@ -112,7 +110,6 @@ export class EpubView extends ItemView {
 		updateReaderSettings?: (patch: Partial<EpubReaderSettings>) => Promise<void>;
 		setScreenshotSaveMode?: (saveAsImage: boolean) => void;
 		navigateToCfi?: (cfi: string, linkTextHint?: string) => void;
-		toggleTutorial?: () => void;
 		addBookmark?: () => Promise<void>;
 		canUseReadingProgress?: () => boolean;
 		canUseReadingReference?: () => boolean;
@@ -245,7 +242,6 @@ export class EpubView extends ItemView {
 		this.paragraphModeBtn = null;
 		this.canvasDirBtn = null;
 		this.canvasBtn = null;
-		this.tutorialBtn = null;
 	}
 
 	private registerReaderHeaderActions(): void {
@@ -340,13 +336,7 @@ export class EpubView extends ItemView {
 					this.showCanvasMenu(evt);
 				}
 			);
-			this.tutorialBtn = this.addAction(
-				"circle-help",
-				this.t("views.epubView.menu.tutorial"),
-				() => {
-					this.actionHandlers.toggleTutorial?.();
-				}
-			);
+
 			this.positionFlowBtn();
 		}
 	}
@@ -393,7 +383,6 @@ export class EpubView extends ItemView {
 
 		this.appendCanvasPaneMenu(menu);
 
-		this.appendHelpPaneMenu(menu);
 	}
 
 	private addPaneMenuGroup(
@@ -766,18 +755,6 @@ export class EpubView extends ItemView {
 
 	}
 
-	private appendHelpPaneMenu(menu: Menu): void {
-		if (!this.actionHandlers.toggleTutorial) {
-			return;
-		}
-		menu.addItem((item) => {
-			item.setTitle(this.t("views.epubView.menu.tutorial"));
-			item.setIcon("circle-help");
-			item.onClick(() => {
-				this.actionHandlers.toggleTutorial?.();
-			});
-		});
-	}
 
 
 	allowNoFile(): boolean {
@@ -1018,13 +995,6 @@ export class EpubView extends ItemView {
 			this.t("views.epubView.label.readingPosition"),
 			(evt) => {
 				this.openReadingPositionMenu(evt);
-			}
-		);
-		this.inlineTutorialBtn = this.appendInlineActionButton(
-			"circle-help",
-			this.t("views.epubView.menu.tutorial"),
-			() => {
-				this.actionHandlers.toggleTutorial?.();
 			}
 		);
 
@@ -1406,7 +1376,6 @@ export class EpubView extends ItemView {
 		this.inlineCanvasDirBtn = null;
 		this.inlineCanvasBtn = null;
 		this.inlineReadingReferenceBtn = null;
-		this.inlineTutorialBtn = null;
 		this.readingReferenceBtn = null;
 		this.readingPositionAutoSaveEnabled = false;
 		this.hasReadingReferencePoint = false;

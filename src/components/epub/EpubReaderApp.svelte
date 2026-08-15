@@ -9,8 +9,6 @@
 	import SelectionToolbar from './SelectionToolbar.svelte';
 	import ParagraphReadingOverlay from './ParagraphReadingOverlay.svelte';
 	import ScreenshotOverlay from './ScreenshotOverlay.svelte';
-	import EpubTutorial from './EpubTutorial.svelte';
-	import type { TutorialTabId } from './epub-tutorial-content';
 	import EpubHighlightToolbar from './EpubHighlightToolbar.svelte';
 	import EpubCommentEditorPopover from './EpubCommentEditorPopover.svelte';
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
@@ -115,8 +113,7 @@
 			updateReaderSettings: (patch: Partial<EpubReaderSettings>) => Promise<void>;
 			setScreenshotSaveMode: (saveAsImage: boolean) => void;
 			navigateToCfi: (cfi: string, linkTextHint?: string) => void;
-			toggleTutorial: () => void;
-			addBookmark: () => Promise<void>;
+				addBookmark: () => Promise<void>;
 			canUseReadingProgress?: () => boolean;
 			canUseReadingReference?: () => boolean;
 			canUseParagraphMode?: () => boolean;
@@ -221,16 +218,7 @@
 	let autoInsert = $state(untrack(() => initialAutoInsert));
 	let screenshotMode = $state(false);
 	let screenshotSaveAsImage = $state(true);
-	let tutorialVisible = $state(false);
-	let tutorialInitialTab = $state<TutorialTabId | undefined>(undefined);
-	let readerTutorialDismissed = $state(false);
-	let tutorialDismissStateReady = untrack(() =>
-		storageService.loadPluginUiMemory().then((memory) => {
-			readerTutorialDismissed = memory.readerTutorialDismissed;
-		}).catch((error) => {
-			logger.warn('[EpubReaderApp] Failed to load tutorial dismiss state:', error);
-		})
-	);
+
 	let canvasMode = $state(false);
 	let transientStatusText = $state('');
 	let readingReferencePoint = $state<EpubReadingReferencePoint | null>(null);
@@ -1947,7 +1935,6 @@
 
 			// Unblock the reader shell as soon as the engine can render.
 			loading = false;
-			void maybeShowTutorialOnBookOpen();
 			void finalizeBookLoad(loadToken, loadedBook, targetFilePath, reusableBook);
 		} catch (error) {
 			if (isStaleBookLoad(loadToken) || error instanceof BookLoadCancelledError) {
@@ -2048,38 +2035,6 @@
 		}
 	}
 
-	function closeTutorial() {
-		tutorialVisible = false;
-		tutorialInitialTab = undefined;
-	}
-
-	function toggleTutorial() {
-		if (tutorialVisible) {
-			closeTutorial();
-			return;
-		}
-		tutorialInitialTab = undefined;
-		tutorialVisible = true;
-	}
-
-	async function dismissTutorialPermanently() {
-		readerTutorialDismissed = true;
-		try {
-			await storageService.savePluginUiMemory({ readerTutorialDismissed: true });
-		} catch (error) {
-			logger.warn('[EpubReaderApp] Failed to save tutorial dismiss state:', error);
-		}
-		closeTutorial();
-	}
-
-	async function maybeShowTutorialOnBookOpen() {
-		await tutorialDismissStateReady;
-		if (readerTutorialDismissed) {
-			return;
-		}
-		tutorialInitialTab = 'workflow';
-		tutorialVisible = true;
-	}
 
 	async function addBookmark() {
 		if (!book) {
@@ -3997,7 +3952,6 @@
 			updateReaderSettings,
 			setScreenshotSaveMode: (saveAsImage: boolean) => { screenshotSaveAsImage = saveAsImage; },
 			navigateToCfi,
-			toggleTutorial,
 			addBookmark,
 			canUseReadingProgress: hasReadingProgressCapability,
 			canUseReadingReference: hasReadingReferenceCapability,
@@ -4431,13 +4385,6 @@
 			/>
 
 
-			<EpubTutorial
-				visible={tutorialVisible}
-				initialTab={tutorialInitialTab}
-				showDismissOption={!readerTutorialDismissed}
-				onClose={closeTutorial}
-				onDismissPermanently={dismissTutorialPermanently}
-			/>
 
 			<ScreenshotOverlay
 				active={screenshotMode}
