@@ -28,7 +28,7 @@ export class EpubSettingsTab extends PluginSettingTab {
 
 	hide(): void {
 		this.unmountPanel();
-		this.containerEl.empty();
+		this.containerEl.replaceChildren();
 	}
 
 	private unmountPanel(): void {
@@ -42,7 +42,7 @@ export class EpubSettingsTab extends PluginSettingTab {
 	private async renderPanelInto(containerEl: HTMLElement): Promise<void> {
 		this.unmountPanel();
 
-		containerEl.empty();
+		containerEl.replaceChildren();
 
 		const { default: Component } = await import("./EpubSettingsPanel.svelte");
 		this.svelteRoot = mount(Component as SvelteComponent, {
