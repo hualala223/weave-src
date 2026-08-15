@@ -58,7 +58,6 @@ export interface EpubSharedState {
 	onDeleteHighlight: ((highlight: EpubDisplayHighlight) => Promise<boolean>) | null;
 	onSettingsClick: ((evt: MouseEvent) => void) | null;
 	onSwitchBook: ((filePath: string) => void) | null;
-	onCreateChapterReadingPoint: ((item: TocItem, event?: MouseEvent) => Promise<void>) | null;
 	onSetTocChapterMark: ((item: TocItem, mark: EpubTocChapterMark | null) => Promise<void>) | null;
 	onSaveTocChapterMarkSettings: ((settings: EpubTocChapterMarkSettings) => Promise<void>) | null;
 	onNavigate: ((request: EpubNavigationRequest) => void) | null;
@@ -96,7 +95,6 @@ const EMPTY_STATE: EpubSharedState = {
 	onDeleteHighlight: null,
 	onSettingsClick: null,
 	onSwitchBook: null,
-	onCreateChapterReadingPoint: null,
 	onSetTocChapterMark: null,
 	onSaveTocChapterMarkSettings: null,
 	onNavigate: null,

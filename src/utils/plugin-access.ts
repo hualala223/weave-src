@@ -18,25 +18,8 @@ type PluginSettingsOwner = {
 	settings?: CompatiblePluginSettings;
 };
 
-export type CompatibleIncrementalReadingSettings = {
-	importFolder?: string;
-	selectionQuickCreateLastFolder?: string;
-	dailyTimeBudgetMinutes?: number;
-	interleaveMode?: string;
-	enableTagGroupPrior?: boolean;
-	defaultIntervalFactor?: number;
-	maxConsecutiveSameTopic?: number;
-	maxAppearancesPerDay?: number;
-	agingStrength?: number;
-	autoPostponeStrategy?: string;
-	priorityHalfLifeDays?: number;
-	maxInterval?: number;
-	tagGroupFollowMode?: "off" | "ask" | "auto";
-};
-
 export type CompatiblePluginSettings = {
 	weaveParentFolder?: string;
-	incrementalReading?: CompatibleIncrementalReadingSettings;
 	selectionQuickCreateLastFolder?: string;
 	lastSelectedIRDeckId?: string;
 	bookmarkFolder?: string;
@@ -116,32 +99,6 @@ export function getCompatibleWeaveParentFolderFromSettingsOwner(
 		normalizeOptionalString(owner?.settings?.weaveParentFolder) ??
 		getCompatibleWeaveParentFolder(owner?.app)
 	);
-}
-
-export function getCompatibleIncrementalReadingSettings(
-	app: PluginLookupApp | undefined
-): CompatibleIncrementalReadingSettings {
-	const standaloneSettings = getStandalonePlugin(app)?.settings;
-	const legacySettings = getLegacyWeavePlugin(app)?.settings;
-	const standaloneIR = standaloneSettings?.incrementalReading ?? {};
-	const legacyIR = legacySettings?.incrementalReading ?? {};
-	const selectionQuickCreateLastFolder =
-		normalizeOptionalString(standaloneIR.selectionQuickCreateLastFolder) ??
-		normalizeOptionalString(standaloneSettings?.selectionQuickCreateLastFolder) ??
-		normalizeOptionalString(legacyIR.selectionQuickCreateLastFolder) ??
-		normalizeOptionalString(legacySettings?.selectionQuickCreateLastFolder);
-
-	return {
-		...legacyIR,
-		...standaloneIR,
-		selectionQuickCreateLastFolder,
-	};
-}
-
-export function getCompatibleSelectionQuickCreateLastFolder(
-	app: PluginLookupApp | undefined
-): string {
-	return getCompatibleIncrementalReadingSettings(app).selectionQuickCreateLastFolder ?? "";
 }
 
 export function getCompatibleDataStorage(

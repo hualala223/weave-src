@@ -12,12 +12,8 @@ import {
 import {
 	EPUB_RUNTIME,
 	EpubStorageService,
-	loadPublicationTocItems,
-	navigateToPublicationChapter,
-	buildPublicationChapterMarkdownLink,
 	normalizeEpubBookmarkFolderPath,
 	resetEpubStorageServiceCache,
-	type TocItem,
 } from "./services/epub";
 import {
 	DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_ENABLED,
@@ -154,37 +150,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			this.epubStorageService = new EpubStorageService(this.app);
 		}
 		return this.epubStorageService;
-	}
-
-	/** standalone IR 导入 EPUB/书籍时读取目录；宿主通过 `plugins.getPlugin("weave-epub-reader")` 调用 */
-	async loadPublicationTocItems(filePath: string): Promise<TocItem[]> {
-		return loadPublicationTocItems(this.app, filePath);
-	}
-
-	/** standalone IR 打开章节阅读点；优先于 IR 侧直接写 leaf state */
-	async navigateToPublicationChapter(
-		filePath: string,
-		tocHref: string,
-		options?: { sourceId?: string; sourceMarkdownPath?: string }
-	): Promise<void> {
-		return navigateToPublicationChapter(this.app, filePath, tocHref, options);
-	}
-
-	buildPublicationChapterMarkdownLink(
-		filePath: string,
-		tocHref: string,
-		chapterTitle?: string,
-		sourceId?: string,
-		chapterIndex?: number
-	): string {
-		return buildPublicationChapterMarkdownLink(
-			this.app,
-			filePath,
-			tocHref,
-			chapterTitle,
-			sourceId,
-			chapterIndex
-		);
 	}
 
 	getOfficialAPI(): EpubWeaveOfficialAPI {

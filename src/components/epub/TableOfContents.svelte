@@ -32,7 +32,6 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 		onNavigate: (href: string) => void;
 		onSetChapterMark?: (item: TocItem, mark: EpubTocChapterMark | null) => void | Promise<void>;
 		onSaveTocChapterMarkSettings?: (settings: EpubTocChapterMarkSettings) => void | Promise<void>;
-		onAddToIncrementalReading?: (item: TocItem, event?: MouseEvent) => void | Promise<void>;
 	}
 
 	let {
@@ -47,7 +46,6 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 		onNavigate,
 		onSetChapterMark,
 		onSaveTocChapterMarkSettings,
-		onAddToIncrementalReading,
 	}: Props = $props();
 	let t = $derived($tr);
 
@@ -108,7 +106,7 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 	}
 
 	function showContextMenu(event: MouseEvent, item: FlatTocItem, itemIndex: number) {
-		if (!onSetChapterMark && !onAddToIncrementalReading) {
+		if (!onSetChapterMark) {
 			return;
 		}
 
@@ -155,18 +153,6 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 			});
 		}
 
-		if (onAddToIncrementalReading) {
-			if (onSetChapterMark) {
-				menu.addSeparator();
-			}
-			menu.addItem((menuItem) => {
-				menuItem.setTitle(t('epub.toc.addToIncrementalReading'));
-				menuItem.setIcon('book-plus');
-				menuItem.onClick(() => {
-					void onAddToIncrementalReading?.(item, event);
-				});
-			});
-		}
 
 		showWeaveMenuAtMouseEvent(menu, event);
 	}

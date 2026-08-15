@@ -52,10 +52,6 @@ export {
 } from "./epub-host";
 export type {
 	EpubHostCapabilities,
-	EpubHostIncrementalReadingTopicOption,
-	EpubHostReadingPointInput,
-	EpubHostResumePointInput,
-	EpubHostScheduleChapterInput,
 	EpubWeaveExcerptRemovalMode,
 	EpubWeaveOfficialAPI,
 	EpubWeaveOfficialAPIInfo,
@@ -123,11 +119,6 @@ export {
 	requestEpubPremiumFeaturePreview,
 	PREMIUM_FEATURES,
 } from "./epub-premium";
-export {
-	loadPublicationTocItems,
-	navigateToPublicationChapter,
-	buildPublicationChapterMarkdownLink,
-} from "./epub-ir-interop";
 export * from "./types";
 export * from "./canvas-types";
 export {

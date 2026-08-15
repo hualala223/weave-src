@@ -3,35 +3,6 @@ import { CURRENT_PLUGIN_ID } from "../../config/plugin-runtime";
 import { getLegacyWeavePlugin } from "../../utils/plugin-access";
 import { getEpubRuntime } from "./epub-runtime";
 
-export interface EpubHostReadingPointInput {
-	filePath: string;
-	selectedText: string;
-	sourceLink?: string;
-	successNotice?: string;
-	initialTitle?: string;
-}
-
-export interface EpubHostScheduleChapterInput {
-	filePath: string;
-	title: string;
-	tocHref: string;
-	tocLevel: number;
-	deckId?: string;
-}
-
-export interface EpubHostIncrementalReadingTopicOption {
-	id: string;
-	name: string;
-}
-
-export interface EpubHostResumePointInput {
-	filePath: string;
-	cfi: string;
-	chapterHref?: string;
-	chapterTitle?: string;
-	deckId?: string;
-}
-
 export interface EpubHostCapabilities {
 	getEpubStorageService?: () => import("./EpubStorageService").EpubStorageService;
 	loadPublicationTocItems?: (
@@ -50,10 +21,6 @@ export interface EpubHostCapabilities {
 		chapterIndex?: number
 	) => string;
 	openEpubReader?: (filePath: string) => Promise<void>;
-	openIRReadingPointFromExternalSelection?: (input: EpubHostReadingPointInput) => Promise<void>;
-	getAvailableEpubIncrementalReadingTopics?: () => Promise<EpubHostIncrementalReadingTopicOption[]>;
-	scheduleEpubChapterForIncrementalReading?: (input: EpubHostScheduleChapterInput) => Promise<void>;
-	markEpubResumePointFromReader?: (input: EpubHostResumePointInput) => Promise<void>;
 }
 
 export type EpubWeaveExcerptRemovalMode = "auto" | "excerpt-only" | "delete-card";
@@ -105,10 +72,6 @@ export interface EpubWeaveOfficialAPI {
 
 const EPUB_HOST_CAPABILITY_KEYS: Array<keyof EpubHostCapabilities> = [
 	"openEpubReader",
-	"openIRReadingPointFromExternalSelection",
-	"getAvailableEpubIncrementalReadingTopics",
-	"scheduleEpubChapterForIncrementalReading",
-	"markEpubResumePointFromReader",
 ];
 
 const registeredEpubHosts = new WeakMap<App, EpubHostCapabilities>();

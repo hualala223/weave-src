@@ -1739,22 +1739,6 @@
 
 
 
-	function hasCreateReadingPointCapability(): boolean {
-		return Boolean(getEpubActionHost()?.openIRReadingPointFromExternalSelection);
-	}
-
-	function hasScheduleChapterForIncrementalReadingCapability(): boolean {
-		return Boolean(getEpubActionHost()?.scheduleEpubChapterForIncrementalReading);
-	}
-
-	function getIncrementalReadingHost(): EpubHostCapabilities | null {
-		const host = getEpubActionHost();
-		if (!host) {
-			return null;
-		}
-		return host;
-	}
-
 	function applyAndPersistReaderSettings(nextSettings: EpubReaderSettings) {
 		applyReaderSettingsState(nextSettings, true);
 	}
@@ -2780,36 +2764,6 @@
 		);
 	}
 
-	function buildReadingPointSourceLink(text: string, cfiRange: string): string {
-		const chapterIndex = readerService.getCurrentChapterIndex();
-		const chapterTitle = resolveExcerptChapterTitle();
-		return linkService.buildEpubLink(
-			filePath,
-			cfiRange,
-			text,
-			chapterIndex,
-			chapterTitle,
-			undefined,
-			book?.sourceId
-		);
-	}
-
-	function buildChapterReadingPointSourceLink(
-		text: string,
-		cfiRange: string,
-		chapterIndex?: number
-	): string {
-		return linkService.buildEpubLink(
-			filePath,
-			cfiRange,
-			text,
-			chapterIndex,
-			text,
-			undefined,
-			book?.sourceId
-		);
-	}
-
 	function formatTimestamp(date: Date): string {
 		return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 	}
@@ -2998,81 +2952,6 @@
 		} catch (_e) {}
 	}
 
-
-	async function handleCreateReadingPoint(text: string, cfiRange: string) {
-		try {
-			const plugin = getIncrementalReadingHost();
-			if (!plugin?.openIRReadingPointFromExternalSelection) {
-				new Notice(t('epub.reader.irUnavailable'));
-				return;
-			}
-
-			await plugin.openIRReadingPointFromExternalSelection({
-				filePath,
-				selectedText: text,
-				sourceLink: buildReadingPointSourceLink(text, cfiRange),
-				successNotice: t('epub.reader.irReadingPointCreated')
-			});
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to create reading point from selection:', error);
-			new Notice(t('epub.reader.createReadingPointFailed'));
-		}
-	}
-
-	async function handleCreateChapterReadingPoint(item: TocItem, event?: MouseEvent) {
-		try {
-			const plugin = getIncrementalReadingHost();
-			if (!plugin?.scheduleEpubChapterForIncrementalReading) {
-				new Notice(t('epub.reader.irUnavailable'));
-				return;
-			}
-
-			const topicProvider = plugin.getAvailableEpubIncrementalReadingTopics;
-			if (!topicProvider) {
-				await plugin.scheduleEpubChapterForIncrementalReading({
-					filePath,
-					title: item.label,
-					tocHref: item.href,
-					tocLevel: item.level
-				});
-				return;
-			}
-
-			const topics = (await topicProvider())
-				.filter((topic) => String(topic.id || '').trim() && String(topic.name || '').trim());
-			if (topics.length === 0) {
-				new Notice(t('epub.reader.noIncrementalTopics'));
-				return;
-			}
-
-			const menu = new Menu();
-			for (const topic of topics) {
-				menu.addItem((menuItem) => {
-					menuItem.setTitle(topic.name);
-					menuItem.onClick(() => {
-						void plugin.scheduleEpubChapterForIncrementalReading?.({
-							filePath,
-							title: item.label,
-							tocHref: item.href,
-							tocLevel: item.level,
-							deckId: topic.id,
-						});
-					});
-				});
-			}
-			if (domInstanceOf(event, MouseEvent)) {
-				menu.showAtMouseEvent(event);
-			} else {
-				menu.showAtPosition({
-					x: Math.max(24, Math.round(window.innerWidth / 2)),
-					y: Math.max(24, Math.round(window.innerHeight / 2)),
-				});
-			}
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to add chapter to incremental reading:', error);
-			new Notice(t('epub.reader.addToIncrementalReadingFailed'));
-		}
-	}
 
 	function getHighlightStyleLabel(highlight: ReaderHighlight): string | null {
 		if (highlight.presentation === 'conceal') {
@@ -3483,9 +3362,6 @@
 			onNavigate: requestBookLocate,
 			onSettingsClick: showSettingsMenu,
 			onSwitchBook,
-			onCreateChapterReadingPoint: hasScheduleChapterForIncrementalReadingCapability()
-				? handleCreateChapterReadingPoint
-				: null,
 			onSetTocChapterMark: handleSetTocChapterMark,
 			onSaveTocChapterMarkSettings: handleSaveTocChapterMarkSettings,
 		});
@@ -3959,10 +3835,7 @@
 			migratedLocationBookIds.add(targetBook.id);
 			migratingLocationBookId = null;
 
-			if (
-				summary.progressMigrated
-				|| summary.resumePointsMigrated > 0
-			) {
+			if (summary.progressMigrated) {
 				if (readerReady) {
 					annotationRevision += 1;
 					epubActiveDocumentStore.setSharedState({ annotationRevision });

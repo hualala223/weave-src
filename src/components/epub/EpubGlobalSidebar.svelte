@@ -533,21 +533,6 @@
 		}
 	}
 
-	async function handleTocCreateReadingPoint(item: TocItem, event?: MouseEvent) {
-		if (!sharedState?.onCreateChapterReadingPoint) {
-			new Notice(t('epub.globalSidebar.irUnavailable'));
-			return;
-		}
-
-		try {
-			await ensureEpubLeafActive();
-			await sharedState.onCreateChapterReadingPoint(item, event);
-		} catch (error) {
-			logger.error('[EpubGlobalSidebar] Failed to add toc item to incremental reading:', error);
-			new Notice(t('epub.globalSidebar.irAddFailed'));
-		}
-	}
-
 	async function handleTocSetChapterMark(item: TocItem, mark: EpubTocChapterMark | null) {
 		if (!sharedState?.onSetTocChapterMark) {
 			return;
@@ -966,7 +951,6 @@
 						onNavigate={handleTocNavigate}
 						onSetChapterMark={sharedState?.onSetTocChapterMark ? handleTocSetChapterMark : undefined}
 						onSaveTocChapterMarkSettings={sharedState?.onSaveTocChapterMarkSettings ? handleTocSaveChapterMarkSettings : undefined}
-						onAddToIncrementalReading={sharedState?.onCreateChapterReadingPoint ? handleTocCreateReadingPoint : undefined}
 					/>
 				{:else if activeTab === 'bookmarks'}
 					<EpubBookmarksPanel
