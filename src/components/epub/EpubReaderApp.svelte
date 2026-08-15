@@ -9,7 +9,6 @@
 	import EpubLoadingState from './EpubLoadingState.svelte';
 	import SelectionToolbar from './SelectionToolbar.svelte';
 	import ParagraphReadingOverlay from './ParagraphReadingOverlay.svelte';
-	import BookNotesExportPopover from './BookNotesExportPopover.svelte';
 	import ScreenshotOverlay from './ScreenshotOverlay.svelte';
 	import EpubTutorial from './EpubTutorial.svelte';
 	import type { TutorialTabId } from './epub-tutorial-content';
@@ -18,7 +17,7 @@
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
 	import ReferenceDetailModal from './ReferenceDetailModal.svelte';
 	import EpubPremiumFeaturePopover from './EpubPremiumFeaturePopover.svelte';
-	import { canUseEpubCanvasExcerpts, canUseEpubChapterExport, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, createTapBurstTracker, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, ensureEpubPremiumFeature, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubAnnotationIndexService, getEpubBacklinkHighlightService, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, resolveEpubWeaveOfficialAPI, TAP_FLIP_GRACE_MS, TAP_TRIPLE_WINDOW_MS, warmEpubAnnotationIndexForPaths } from '../../services/epub';
+	import { canUseEpubCanvasExcerpts, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, createTapBurstTracker, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, ensureEpubPremiumFeature, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubAnnotationIndexService, getEpubBacklinkHighlightService, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, resolveEpubWeaveOfficialAPI, TAP_FLIP_GRACE_MS, TAP_TRIPLE_WINDOW_MS, warmEpubAnnotationIndexForPaths } from '../../services/epub';
 	import { EpubBookmarkService } from '../../services/epub/EpubBookmarkService';
 	import { EpubReferenceStatsService } from '../../services/epub/EpubReferenceStatsService';
 	import {
@@ -36,15 +35,9 @@
 		type WeaveEpubCanvasLayoutDirectionPayload,
 	} from '../../services/epub/canvas-excerpt-anchor';
 	import type { EpubVisibleFrameLike, ScreenshotRect } from '../../services/epub/EpubScreenshotService';
-	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubHostCapabilities, EpubLayoutMode, EpubParagraphModeReadingPosition, EpubParagraphModeTransitionStyle, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubWeaveExcerptRemovalMode, EpubWeaveOfficialAPI, EpubWeaveRemoveExcerptResult, FlashStyle, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderParagraph, ReaderTapEvent, ReadingPosition, TocItem, EpubChapterReadingPointDraft } from '../../services/epub';
+	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubHostCapabilities, EpubLayoutMode, EpubParagraphModeReadingPosition, EpubParagraphModeTransitionStyle, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubWeaveExcerptRemovalMode, EpubWeaveOfficialAPI, EpubWeaveRemoveExcerptResult, FlashStyle, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderParagraph, ReaderTapEvent, ReadingPosition, TocItem } from '../../services/epub';
 	import { PremiumFeatureGuard, PREMIUM_FEATURES } from '../../services/premium/PremiumFeatureGuard';
 	import { getBookFormatDisplayLabel, isSupportedBookFile } from '../../services/epub/book-format';
-	import {
-		applyChapterHighlightsToMarkdownAsync,
-		highlightBelongsToChapterExport,
-		highlightTextAppearsInChapterDraft,
-	} from '../../services/epub/chapter-marked-markdown-export';
-	import type { FlatTocExportItem } from '../../services/epub/epub-toc-export-scope';
 	import type { EpubTocChapterMark, EpubTocChapterMarkMap } from '../../services/epub/epub-toc-chapter-mark';
 	import type { EpubTocChapterMarkSettings } from '../../services/epub/epub-toc-chapter-mark-settings';
 	import {
@@ -56,13 +49,6 @@
 		canReuseExistingBook,
 		resolveBookLoadRestoredPosition,
 	} from '../../services/epub/epub-reader-book-load-helpers';
-	import {
-		ensureDefaultBookNotesExportTemplates,
-		isMarkdownVaultFile,
-		buildBookNotesExportLabelsFromTranslator,
-		renderBookNotesMarkdown,
-	} from '../../services/epub/book-notes-export/book-notes-export';
-	import { resolveBookNotesExportTemplateFolder } from '../../services/epub/book-notes-export/template-folder';
 	import {
 		getBookshelfDisplayModeOptions,
 		getBookshelfDisplayModeOption,
@@ -154,10 +140,6 @@
 			bindCanvasPath: (canvasPath: string) => void;
 			unbindCanvas: () => void;
 			getCanvasService: () => EpubCanvasService;
-			exportCurrentChapterToMarkdown?: () => Promise<void>;
-			exportCurrentChapterMarkedToMarkdown?: () => Promise<void>;
-			exportCurrentChapterHighlightsToMarkdown?: () => Promise<void>;
-			exportBookHighlightsToMarkdown?: (event?: MouseEvent) => Promise<void>;
 			getExcerptSettings: () => EpubExcerptSettings;
 			updateExcerptSettings: (patch: Partial<EpubExcerptSettings>) => Promise<void>;
 			prevPage: () => void | Promise<void>;
@@ -294,9 +276,6 @@
 	let rootEl = $state<HTMLDivElement | null>(null);
 	let viewportEl = $state<HTMLDivElement | null>(null);
 	let readingViewportLockEl = $derived(resolveReadingViewportLockTarget(rootEl));
-	let exportNotesPopoverEl = $state<HTMLDivElement | null>(null);
-	let exportNotesPopoverOpen = $state(false);
-	let exportNotesSubmitting = $state(false);
 	let typographyPopoverOpen = $state(false);
 	let paragraphModeNavBottomOffset = $state(0);
 	let readerReady = $state(false);
@@ -314,7 +293,6 @@
 	const SCROLLED_NAV_SCROLLBAR_VAR = '--epub-scrolled-side-nav-scrollbar-width';
 	let excerptSettings = $state<EpubExcerptSettings>({
 		...DEFAULT_EPUB_EXCERPT_SETTINGS,
-		bookNotesExportTemplateFolder: '',
 	});
 	let excerptSettingsLoaded = $state(false);
 	let excerptSettingsReady: Promise<void> = Promise.resolve();
@@ -441,9 +419,6 @@
 		return canUseEpubFootnotePreview(app);
 	}
 
-	function hasChapterExportCapability(): boolean {
-		return canUseEpubChapterExport(app);
-	}
 
 	function isPremiumFeaturePreviewEnabled(): boolean {
 		return premiumFeaturePreviewEnabled;
@@ -490,7 +465,6 @@
 		highlightToolbarInfo = null;
 		closeCommentEditor();
 		footnotePreviewInfo = null;
-		exportNotesPopoverOpen = false;
 		typographyPopoverOpen = false;
 		premiumFeaturePreviewFeatureId = normalizedFeatureId;
 	}
@@ -1870,13 +1844,6 @@
 		}
 	}
 
-	function getMarkdownExportHost(): EpubHostCapabilities | null {
-		const host = getEpubActionHost();
-		if (!host) {
-			return null;
-		}
-		return host;
-	}
 
 	function hasCreateReadingPointCapability(): boolean {
 		return Boolean(getEpubActionHost()?.openIRReadingPointFromExternalSelection);
@@ -3281,168 +3248,6 @@
 		}
 	}
 
-	async function exportCurrentChapterToMarkdown() {
-		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_CHAPTER_EXPORT, t('epub.reader.chapterExportFeatureNotice'))) {
-			return;
-		}
-		try {
-			const plugin = getMarkdownExportHost();
-			if (!plugin?.exportEpubChapterToMarkdown) {
-				new Notice(t('epub.reader.exportMarkdownUnavailable'));
-				return;
-			}
-
-			const chapterHref = readerService.getCurrentChapterHref?.() || '';
-			const titleHint = readerService.getCurrentChapterTitle() || book?.metadata.title || t('epub.reader.epubChapterDefaultTitle');
-			if (!chapterHref) {
-				new Notice(t('epub.reader.chapterLocateFailed'));
-				return;
-			}
-
-			const draft = await readerService.getChapterReadingPointDraft?.(chapterHref, titleHint);
-			if (!draft?.text?.trim()) {
-				new Notice(t('epub.reader.chapterExtractFailed'));
-				return;
-			}
-
-			await plugin.exportEpubChapterToMarkdown({
-				filePath,
-				title: draft.title || titleHint,
-				body: draft.text,
-				markdown: draft.markdown,
-				assets: draft.assets,
-				sourceLink: buildChapterReadingPointSourceLink(
-					draft.title || titleHint,
-					draft.cfi,
-					draft.chapterIndex
-				),
-				bookTitle: book?.metadata.title,
-				author: book?.metadata.author,
-			});
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to export current chapter to markdown:', error);
-			new Notice(t('epub.reader.exportMarkdownFailed'));
-		}
-	}
-
-	async function exportChapterMarkedDraftToMarkdown(
-		draft: EpubChapterReadingPointDraft,
-		titleHint: string,
-		options?: { restrictHighlightsToDraftText?: boolean }
-	) {
-		if (!book) {
-			new Notice(t('epub.reader.bookNotReady'));
-			return;
-		}
-
-		const plugin = getMarkdownExportHost();
-		if (!plugin?.exportEpubChapterToMarkdown) {
-			new Notice(t('epub.reader.exportMarkdownUnavailable'));
-			return;
-		}
-
-		const chapterIndex = draft.chapterIndex;
-		let chapterHighlights = (await annotationService.collectAllHighlights(book.id, filePath, backlinkService))
-			.filter((highlight) =>
-				highlightBelongsToChapterExport(highlight, chapterIndex, draft.chapterHref, {
-					getSectionIndexForCfi: (cfi) => readerService.getSectionIndexForCfi?.(cfi) ?? null,
-					getSectionHrefForCfi: (cfi) => readerService.getSectionHrefForCfi?.(cfi) ?? null,
-				})
-			);
-		if (options?.restrictHighlightsToDraftText) {
-			chapterHighlights = chapterHighlights.filter((highlight) =>
-				highlightTextAppearsInChapterDraft(highlight, draft.text)
-			);
-		}
-
-		const sourceMarkdown = draft.markdown || draft.text;
-		const markedExport = await applyChapterHighlightsToMarkdownAsync(sourceMarkdown, chapterHighlights, {
-			plainText: draft.text,
-			resolveRangeText: (highlight) =>
-				readerService.resolveChapterHighlightRangeText?.(
-					highlight,
-					draft.chapterHref,
-					chapterIndex
-				) ?? Promise.resolve(null),
-		});
-
-		await plugin.exportEpubChapterToMarkdown({
-			filePath,
-			title: draft.title || titleHint,
-			body: draft.text,
-			markdown: markedExport.markdown,
-			footnotesMarkdown: markedExport.footnotesMarkdown,
-			assets: draft.assets,
-			sourceLink: buildChapterReadingPointSourceLink(
-				draft.title || titleHint,
-				draft.cfi,
-				draft.chapterIndex
-			),
-			bookTitle: book.metadata.title,
-			author: book.metadata.author,
-		});
-	}
-
-	async function exportCurrentChapterMarkedToMarkdown() {
-		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_CHAPTER_EXPORT, t('epub.reader.chapterExportFeatureNotice'))) {
-			return;
-		}
-		try {
-			const chapterHref = readerService.getCurrentChapterHref?.() || '';
-			const titleHint = readerService.getCurrentChapterTitle() || book?.metadata.title || t('epub.reader.epubChapterDefaultTitle');
-			if (!chapterHref) {
-				new Notice(t('epub.reader.chapterLocateFailed'));
-				return;
-			}
-
-			const draft = await readerService.getChapterReadingPointDraft?.(chapterHref, titleHint);
-			if (!draft?.text?.trim()) {
-				new Notice(t('epub.reader.chapterExtractFailed'));
-				return;
-			}
-
-			await exportChapterMarkedDraftToMarkdown(draft, titleHint);
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to export current chapter marked markdown:', error);
-			new Notice(t('epub.reader.exportMarkdownFailed'));
-		}
-	}
-
-	async function exportTocChapterMarkedToMarkdown(
-		item: TocItem,
-		itemIndex: number,
-		flatTocItems: FlatTocExportItem[]
-	) {
-		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_CHAPTER_EXPORT, t('epub.reader.chapterExportFeatureNotice'))) {
-			return;
-		}
-		try {
-			if (!readerService.getTocChapterReadingPointDraft) {
-				new Notice(t('epub.reader.exportMarkdownUnavailable'));
-				return;
-			}
-
-			const titleHint = String(item.label || '').trim() || t('epub.reader.epubChapterDefaultTitle');
-			const draft = await readerService.getTocChapterReadingPointDraft(
-				item.href,
-				titleHint,
-				flatTocItems,
-				itemIndex
-			);
-			if (!draft?.text?.trim()) {
-				new Notice(t('epub.reader.chapterExtractFailed'));
-				return;
-			}
-
-			await exportChapterMarkedDraftToMarkdown(draft, titleHint, {
-				restrictHighlightsToDraftText: true,
-			});
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to export toc chapter marked markdown:', error);
-			new Notice(t('epub.reader.exportMarkdownFailed'));
-		}
-	}
-
 	function getHighlightStyleLabel(highlight: ReaderHighlight): string | null {
 		if (highlight.presentation === 'conceal') {
 			return t('epub.reader.concealed');
@@ -3458,212 +3263,6 @@
 			default:
 				return null;
 		}
-	}
-
-	function isHighlightSelectedForBookNotesExport(highlight: ReaderHighlight): boolean {
-		if (highlight.presentation !== 'highlight') {
-			return false;
-		}
-		if (highlight.style === 'underline') {
-			return excerptSettings.bookNotesExportIncludeUnderline;
-		}
-		if (highlight.style === 'strikethrough') {
-			return excerptSettings.bookNotesExportIncludeStrikethrough;
-		}
-		if (highlight.style === 'wavy') {
-			return excerptSettings.bookNotesExportIncludeWavy;
-		}
-		return excerptSettings.bookNotesExportIncludeHighlight;
-	}
-
-	function ensureBookNotesExportSelection(): boolean {
-		return Boolean(
-			excerptSettings.bookNotesExportIncludeHighlight ||
-			excerptSettings.bookNotesExportIncludeUnderline ||
-			excerptSettings.bookNotesExportIncludeStrikethrough ||
-			excerptSettings.bookNotesExportIncludeWavy
-		);
-	}
-
-	async function updateBookNotesExportSetting(
-		patch: Partial<Pick<
-			EpubExcerptSettings,
-			| 'bookNotesExportIncludeHighlight'
-			| 'bookNotesExportIncludeUnderline'
-			| 'bookNotesExportIncludeStrikethrough'
-			| 'bookNotesExportIncludeWavy'
-			| 'bookNotesExportTemplatePath'
-			| 'bookNotesExportTargetMode'
-			| 'bookNotesExportAppendPath'
-		>>
-	) {
-		await applyAndPersistExcerptSettings(patch);
-	}
-
-	function canSubmitBookNotesExport(): boolean {
-		if (!ensureBookNotesExportSelection()) {
-			return false;
-		}
-		if (!String(excerptSettings.bookNotesExportTemplatePath || '').trim()) {
-			return false;
-		}
-		if (
-			excerptSettings.bookNotesExportTargetMode === 'append' &&
-			!String(excerptSettings.bookNotesExportAppendPath || '').trim()
-		) {
-			return false;
-		}
-		return true;
-	}
-
-	function buildBookNotesExportLabels() {
-		return buildBookNotesExportLabelsFromTranslator(t);
-	}
-
-	async function resolveHighlightPageNumber(highlight: ReaderHighlight): Promise<number | undefined> {
-		if (!highlight.cfiRange) {
-			return undefined;
-		}
-		try {
-			const pageNumber = await readerService.getPageNumberFromCfi(highlight.cfiRange);
-			return typeof pageNumber === 'number' && Number.isFinite(pageNumber) && pageNumber > 0
-				? pageNumber
-				: undefined;
-		} catch {
-			return undefined;
-		}
-	}
-
-	async function renderBookNotesExportMarkdown(highlights: ReaderHighlight[]): Promise<string> {
-		if (!book) {
-			throw new Error('Book not ready');
-		}
-		return await renderBookNotesMarkdown({
-			app,
-			book,
-			filePath,
-			highlights,
-			templatePath: excerptSettings.bookNotesExportTemplatePath,
-			templateFolder: excerptSettings.bookNotesExportTemplateFolder,
-			legacyTemplate: excerptSettings.bookNotesExportLegacyTemplate,
-			trimBlocks: excerptSettings.bookNotesExportTrimBlocks,
-			labels: buildBookNotesExportLabels(),
-			formatTimestamp,
-			resolvePageNumber: resolveHighlightPageNumber,
-		});
-	}
-
-	async function exportRenderedBookNotes(
-		markdown: string,
-		options: {
-			bookTitle?: string;
-			targetMode?: EpubExcerptSettings['bookNotesExportTargetMode'];
-			appendTargetPath?: string | null;
-			rememberAppendTarget?: boolean;
-		} = {}
-	): Promise<void> {
-		const plugin = getMarkdownExportHost();
-		if (!plugin?.exportEpubBookNotesToMarkdown) {
-			new Notice(t('epub.reader.exportMarkdownUnavailable'));
-			return;
-		}
-		if (!book) {
-			new Notice(t('epub.reader.bookNotReady'));
-			return;
-		}
-
-		const targetMode = options.targetMode ?? excerptSettings.bookNotesExportTargetMode;
-		const appendTargetPath =
-			options.appendTargetPath ?? excerptSettings.bookNotesExportAppendPath;
-
-		await plugin.exportEpubBookNotesToMarkdown({
-			filePath,
-			markdown,
-			bookTitle: options.bookTitle || book.metadata.title,
-			targetMode,
-			appendTargetPath,
-		});
-
-		if (options.rememberAppendTarget !== false && targetMode === 'append' && appendTargetPath) {
-			await storageService.saveBookNotesExportAppendPath(filePath, appendTargetPath);
-			await updateBookNotesExportSetting({
-				bookNotesExportAppendPath: appendTargetPath,
-			});
-		}
-	}
-
-	async function prepareExportNotesPopoverState(): Promise<void> {
-		await excerptSettingsReady;
-		const templateFolder = resolveBookNotesExportTemplateFolder(excerptSettings);
-		if (!templateFolder) {
-			return;
-		}
-		const templateResult = await ensureDefaultBookNotesExportTemplates(app, templateFolder);
-		const perBookAppendPath = await storageService.loadBookNotesExportAppendPath(filePath);
-		const patch: Partial<EpubExcerptSettings> = {};
-
-		if (
-			!String(excerptSettings.bookNotesExportTemplatePath || '').trim() &&
-			templateResult.digestBTemplatePath
-		) {
-			patch.bookNotesExportTemplatePath = templateResult.digestBTemplatePath;
-		}
-		if (perBookAppendPath && !String(excerptSettings.bookNotesExportAppendPath || '').trim()) {
-			patch.bookNotesExportAppendPath = perBookAppendPath;
-		}
-		if (Object.keys(patch).length > 0) {
-			await applyAndPersistExcerptSettings(patch);
-		}
-	}
-
-	async function updateBookNotesExportTargetMode(
-		targetMode: EpubExcerptSettings['bookNotesExportTargetMode']
-	): Promise<void> {
-		if (excerptSettings.bookNotesExportTargetMode === targetMode) {
-			return;
-		}
-		await updateBookNotesExportSetting({ bookNotesExportTargetMode: targetMode });
-	}
-
-	function closeExportNotesPopover() {
-		exportNotesPopoverOpen = false;
-		exportNotesSubmitting = false;
-	}
-
-	function openExportNotesPopover(event?: MouseEvent) {
-		event?.preventDefault();
-		exportNotesSubmitting = false;
-		// Defer until Obsidian pane menu has dismissed so outside-clicks do not hit both layers.
-		window.setTimeout(() => {
-			void prepareExportNotesPopoverState().finally(() => {
-				exportNotesPopoverOpen = true;
-			});
-		}, 0);
-	}
-
-	function handleExportNotesPointerDownOutside(event: MouseEvent) {
-		if (!exportNotesPopoverOpen || !exportNotesPopoverEl) {
-			return;
-		}
-		if (!shouldDismissToolbarOnPointerDown(exportNotesPopoverEl, event)) {
-			return;
-		}
-		closeExportNotesPopover();
-	}
-
-	function getHighlightChapterIndex(highlight: ReaderHighlight): number | undefined {
-		return typeof highlight.chapterIndex === 'number' && Number.isFinite(highlight.chapterIndex)
-			? highlight.chapterIndex
-			: undefined;
-	}
-
-	function buildReaderHighlightSelectionKey(highlight: ReaderHighlight): string {
-		return buildEpubDisplayHighlightSelectionKey({
-			cfiRange: highlight.cfiRange,
-			sourceRef: highlight.sourceRef,
-			sourceFile: highlight.sourceFile,
-			excerptId: highlight.excerptId,
-		});
 	}
 
 	function buildHighlightClickInfoFromDisplay(highlight: EpubDisplayHighlight): HighlightClickInfo {
@@ -3687,130 +3286,6 @@
 			presentation: 'highlight',
 			rect: { top: 0, left: 0, width: 0, height: 0 },
 		};
-	}
-
-	async function exportHighlightsBySelectionKeys(selectionKeys: string[]): Promise<void> {
-		try {
-			const plugin = getMarkdownExportHost();
-			if (!plugin?.exportEpubBookNotesToMarkdown) {
-				new Notice(t('epub.reader.exportMarkdownUnavailable'));
-				return;
-			}
-			if (!book) {
-				new Notice(t('epub.reader.bookNotReady'));
-				return;
-			}
-			if (!ensureBookNotesExportSelection()) {
-				new Notice(t('epub.reader.selectAtLeastOneExportType'));
-				return;
-			}
-
-			const keySet = new Set(selectionKeys);
-			const highlights = (await annotationService.collectAllHighlights(book.id, filePath, backlinkService))
-				.filter((highlight) => keySet.has(buildReaderHighlightSelectionKey(highlight)))
-				.filter(isHighlightSelectedForBookNotesExport);
-			if (highlights.length === 0) {
-				new Notice(t('epub.notes.noExportableSelection'));
-				return;
-			}
-
-			const markdown = await renderBookNotesExportMarkdown(highlights);
-			await exportRenderedBookNotes(markdown, {
-				targetMode: 'new',
-				rememberAppendTarget: false,
-			});
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to export selected highlights to markdown:', error);
-			new Notice(t('epub.reader.exportReadingNotesFailed'));
-		}
-	}
-
-	async function exportCurrentChapterHighlightsToMarkdown() {
-		try {
-			if (!book) {
-				new Notice(t('epub.reader.bookNotReady'));
-				return;
-			}
-			if (!ensureBookNotesExportSelection()) {
-				new Notice(t('epub.reader.selectAtLeastOneExportType'));
-				return;
-			}
-
-			const chapterIndex = readerService.getCurrentChapterIndex();
-			const chapterTitle = readerService.getCurrentChapterTitle() || t('epub.reader.epubChapterDefaultTitle');
-			const highlights = (await annotationService.collectAllHighlights(book.id, filePath, backlinkService))
-				.filter((highlight) => getHighlightChapterIndex(highlight) === chapterIndex)
-				.filter(isHighlightSelectedForBookNotesExport);
-			if (highlights.length === 0) {
-				new Notice(t('epub.reader.noChapterExportableNotes'));
-				return;
-			}
-
-			const markdown = await renderBookNotesExportMarkdown(highlights);
-			await exportRenderedBookNotes(markdown, {
-				bookTitle: `${book.metadata.title} - ${chapterTitle}`,
-				targetMode: 'new',
-				rememberAppendTarget: false,
-			});
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to export current chapter highlights to markdown:', error);
-			new Notice(t('epub.reader.exportReadingNotesFailed'));
-		}
-	}
-
-	async function exportBookHighlightsToMarkdown(event?: MouseEvent) {
-		try {
-			if (!book) {
-				new Notice(t('epub.reader.bookNotReady'));
-				return;
-			}
-
-			if (event) {
-				openExportNotesPopover(event);
-				return;
-			}
-
-			if (!canSubmitBookNotesExport()) {
-				if (!ensureBookNotesExportSelection()) {
-					new Notice(t('epub.reader.selectAtLeastOneExportType'));
-				} else if (!String(excerptSettings.bookNotesExportTemplatePath || '').trim()) {
-					new Notice(t('epub.reader.exportNotesPopover.templateRequired'));
-				} else {
-					new Notice(t('epub.reader.exportNotesPopover.appendTargetRequired'));
-				}
-				return;
-			}
-
-			const highlights = (await annotationService.collectAllHighlights(book.id, filePath, backlinkService))
-				.filter(isHighlightSelectedForBookNotesExport);
-			if (highlights.length === 0) {
-				new Notice(t('epub.reader.noExportableNotes'));
-				return;
-			}
-
-			const markdown = await renderBookNotesExportMarkdown(highlights);
-			await exportRenderedBookNotes(markdown);
-			closeExportNotesPopover();
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to export book highlights to markdown:', error);
-			new Notice(t('epub.reader.exportReadingNotesFailed'));
-			exportNotesSubmitting = false;
-		}
-	}
-
-	async function submitBookNotesExport() {
-		if (exportNotesSubmitting) {
-			return;
-		}
-// Always allow (gate removed)
-		exportNotesSubmitting = true;
-		try {
-			await exportBookHighlightsToMarkdown();
-		} finally {
-			if (exportNotesPopoverOpen) {
-				exportNotesSubmitting = false;
-			}
-		}
 	}
 
 	function handleAutoInsertSelection(
@@ -4150,7 +3625,6 @@
 				highlightViewSnapshotService: canUseExcerptNotes ? highlightViewSnapshotService : null,
 				onDeleteBookmark: null,
 				onDeleteHighlight: null,
-				onExportHighlights: null,
 				onSettingsClick: showSettingsMenu,
 			});
 			return;
@@ -4180,15 +3654,11 @@
 			paginationInfo,
 			onDeleteBookmark: deleteBookmarkById,
 			onDeleteHighlight: canUseExcerptNotes ? deleteDisplayHighlight : null,
-			onExportHighlights: canUseExcerptNotes ? exportHighlightsBySelectionKeys : null,
 			onNavigate: requestBookLocate,
 			onSettingsClick: showSettingsMenu,
 			onSwitchBook,
 			onCreateChapterReadingPoint: hasScheduleChapterForIncrementalReadingCapability()
 				? handleCreateChapterReadingPoint
-				: null,
-			onExportTocChapterMarked: hasChapterExportCapability()
-				? exportTocChapterMarkedToMarkdown
 				: null,
 			onSetTocChapterMark: handleSetTocChapterMark,
 			onSaveTocChapterMarkSettings: handleSaveTocChapterMarkSettings,
@@ -4900,14 +4370,6 @@
 			bindCanvasPath: (canvasPath: string) => { bindCanvas(canvasPath); },
 			unbindCanvas: () => { unbindCanvas(); },
 			getCanvasService: () => canvasService,
-			exportCurrentChapterToMarkdown: hasChapterExportCapability() ? exportCurrentChapterToMarkdown : undefined,
-			exportCurrentChapterMarkedToMarkdown: hasChapterExportCapability()
-				? exportCurrentChapterMarkedToMarkdown
-				: undefined,
-			exportCurrentChapterHighlightsToMarkdown: hasExcerptNotesCapability()
-				? exportCurrentChapterHighlightsToMarkdown
-				: undefined,
-			exportBookHighlightsToMarkdown: hasExcerptNotesCapability() ? exportBookHighlightsToMarkdown : undefined,
 			getExcerptSettings: () => excerptSettings,
 			updateExcerptSettings: applyAndPersistExcerptSettings,
 			prevPage: handlePrevPage,
@@ -4975,11 +4437,9 @@
 		const unsubscribeTheme = UnifiedThemeManager.getInstance().addListener((result) => {
 			hostTheme = result.isDark ? 'dark' : 'light';
 		});
-		window.addEventListener('mousedown', handleExportNotesPointerDownOutside);
 		window.addEventListener('mousedown', handleTypographyPointerDownOutside);
 		return () => {
 			unsubscribeTheme();
-			window.removeEventListener('mousedown', handleExportNotesPointerDownOutside);
 			window.removeEventListener('mousedown', handleTypographyPointerDownOutside);
 			cancelPendingTapTurn();
 			document.body.classList.remove('weave-epub-fullscreen');
@@ -5473,22 +4933,6 @@
 					</div>
 				</div>
 			{/if}
-
-			<BookNotesExportPopover
-				{app}
-				open={exportNotesPopoverOpen}
-				excerptSettingsReady={excerptSettingsLoaded}
-				bind:exportNotesPopoverEl
-				{excerptSettings}
-				exportNotesSubmitting={exportNotesSubmitting}
-				canSubmit={canSubmitBookNotesExport()}
-				{t}
-				{isMarkdownVaultFile}
-				onUpdateSetting={updateBookNotesExportSetting}
-				onUpdateTargetMode={updateBookNotesExportTargetMode}
-				onClose={closeExportNotesPopover}
-				onSubmit={submitBookNotesExport}
-			/>
 
 		</div>
 

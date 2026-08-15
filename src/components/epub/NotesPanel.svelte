@@ -42,7 +42,6 @@
 		currentChapterTitle?: string;
 		currentChapterIndex?: number;
 		onDeleteHighlight?: (highlight: EpubDisplayHighlight) => Promise<boolean>;
-		onExportHighlights?: (selectionKeys: string[]) => Promise<void>;
 		searchQuery?: string;
 		searchMeta?: HighlightSearchMeta;
 		onNavigate?: (
@@ -70,7 +69,6 @@
 		currentChapterTitle = '',
 		currentChapterIndex = -1,
 		onDeleteHighlight,
-		onExportHighlights,
 		searchQuery = $bindable(''),
 		searchMeta = $bindable<HighlightSearchMeta>({
 			availableTags: [],
@@ -464,15 +462,6 @@
 		(menu as Menu & { app?: App }).app = app;
 	}
 
-	async function exportSelectedHighlights() {
-		if (!onExportHighlights || selectedHighlights.length === 0) {
-			new Notice(t('epub.notes.noExportableSelection'));
-			return;
-		}
-		await onExportHighlights(selectedHighlights.map((highlight) => getHighlightSelectionKey(highlight)));
-		exitSelectionMode();
-	}
-
 	async function deleteHighlightItem(highlight: EpubDisplayHighlight, quiet = false): Promise<boolean> {
 		if (!onDeleteHighlight) {
 			if (!quiet) {
@@ -529,14 +518,6 @@
 
 		if (selectionMode) {
 			menu.addItem((item) => {
-				item.setTitle(t('epub.notes.menu.exportSelected'));
-				item.setIcon('download');
-				item.setDisabled(selectedHighlights.length === 0 || !onExportHighlights);
-				item.onClick(() => {
-					void exportSelectedHighlights();
-				});
-			});
-			menu.addItem((item) => {
 				item.setTitle(t('epub.notes.menu.deleteSelected'));
 				item.setIcon('trash');
 				item.setDisabled(selectedHighlights.length === 0 || !onDeleteHighlight || batchDeleting);
@@ -577,18 +558,6 @@
 					enterSelectionMode();
 				});
 			});
-			if (onExportHighlights) {
-				menu.addItem((item) => {
-					item.setTitle(t('epub.notes.menu.exportFiltered'));
-					item.setIcon('download');
-					item.setDisabled(filteredHighlights.length === 0);
-					item.onClick(() => {
-						void onExportHighlights(
-							filteredHighlights.map((highlight) => getHighlightSelectionKey(highlight))
-						);
-					});
-				});
-			}
 		}
 
 		menu.showAtMouseEvent(event);
@@ -931,16 +900,6 @@
 				</span>
 				<span class="epub-notes-selection-divider" aria-hidden="true"></span>
 				<div class="epub-notes-selection-actions">
-					<button
-						type="button"
-						class="clickable-icon epub-notes-selection-icon-btn"
-						title={t('epub.notes.menu.exportSelected')}
-						aria-label={t('epub.notes.menu.exportSelected')}
-						disabled={selectedHighlights.length === 0 || !onExportHighlights}
-						onclick={() => void exportSelectedHighlights()}
-					>
-						<span use:iconAction={'download'}></span>
-					</button>
 					<button
 						type="button"
 						class="clickable-icon epub-notes-selection-icon-btn epub-notes-selection-icon-btn--danger"

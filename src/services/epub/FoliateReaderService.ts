@@ -1,7 +1,6 @@
 import type { App } from "obsidian";
 import type {
 	EpubBookFootnotesDraft,
-	EpubChapterReadingPointDraft,
 	EpubReaderEngine,
 	HighlightSourceLocator,
 	HighlightClickInfo,
@@ -23,7 +22,6 @@ import type {
 	ReaderViewportGeometry,
 } from "./reader-engine-types";
 import type { EpubChapterLocationFormat } from "./epub-excerpt-settings";
-import type { FlatTocExportItem } from "./epub-toc-export-scope";
 import { buildReaderChapterStyles } from "./reader-chapter-styles";
 import { resolveReaderHighlightTint } from "./reader-highlight-tints";
 import {
@@ -1266,22 +1264,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 				)
 			);
 		}
-	}
-
-	getChapterReadingPointDraft(
-		href: string,
-		titleHint?: string
-	): Promise<EpubChapterReadingPointDraft | null> {
-		return this.parser.getSectionReadingPointDraft(href, titleHint);
-	}
-
-	getTocChapterReadingPointDraft(
-		href: string,
-		titleHint: string | undefined,
-		flatTocItems: FlatTocExportItem[],
-		itemIndex: number
-	): Promise<EpubChapterReadingPointDraft | null> {
-		return this.parser.getTocReadingPointDraft(href, titleHint, flatTocItems, itemIndex);
 	}
 
 	getBookFootnotesDraft(): Promise<EpubBookFootnotesDraft | null> {

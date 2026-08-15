@@ -32,10 +32,6 @@
   let bookmarkFolderInput = $state("");
   let highlightStoragePathInput = $state("");
   let weaveParentFolderInput = $state("");
-  let bookNotesExportTemplateFolderInput = $state("");
-  let bookNotesExportTemplateFolderValue = $state("");
-  let bookNotesExportDefaultTemplatePath = $state("");
-  let excerptFolderSettingsLoaded = $state(false);
   let continuousReadingPositionAutoSavePagesInput = $state("");
   let customTranslationProviderDrafts = $state<CustomWebTranslationProvider[]>([]);
   let autoSavePagesTextControl = $state<TextComponent | null>(null);
@@ -131,8 +127,6 @@
     getSourceNavigationOpenInNewTab: () => sourceNavigationOpenInNewTab,
     getLargeNavButtonsEnabled: () => largeNavButtonsEnabled,
     getDebugModeEnabled: () => debugModeEnabled,
-    getBookNotesExportTemplateFolderValue: () => bookNotesExportTemplateFolderValue,
-    getBookNotesExportDefaultTemplatePath: () => bookNotesExportDefaultTemplatePath,
     getCustomTranslationProviderDrafts: () => customTranslationProviderDrafts,
     getAutoSavePagesTextControl: () => autoSavePagesTextControl,
     setWeaveParentFolderInput: (value) => {
@@ -143,15 +137,6 @@
     },
     setHighlightStoragePathInput: (value) => {
       highlightStoragePathInput = value;
-    },
-    setBookNotesExportTemplateFolderInput: (value) => {
-      bookNotesExportTemplateFolderInput = value;
-    },
-    setBookNotesExportTemplateFolderValue: (value) => {
-      bookNotesExportTemplateFolderValue = value;
-    },
-    setBookNotesExportDefaultTemplatePath: (value) => {
-      bookNotesExportDefaultTemplatePath = value;
     },
     setContinuousReadingPositionAutoSavePagesInput: (value) => {
       continuousReadingPositionAutoSavePagesInput = value;
@@ -190,12 +175,8 @@
   });
 
   onMount(() => {
-    void (async () => {
-      await actions.refreshBookNotesExportTemplateFolder();
-      excerptFolderSettingsLoaded = true;
-    })();
     const handleExcerptSettingsChanged = () => {
-      void actions.refreshBookNotesExportTemplateFolder();
+      excerptSettingsVersion += 1;
     };
     if (typeof window !== "undefined") {
       window.addEventListener(
@@ -215,8 +196,7 @@
 
   $effect(() => {
     if (
-      !excerptFolderSettingsLoaded
-      || !interfaceSettingsHost
+      !interfaceSettingsHost
       || !premiumPreviewSettingsHost
       || !readingSettingsHost
       || !selectionTranslationSettingsHost
@@ -251,9 +231,6 @@
           bookmarkFolderInput,
           highlightStoragePathValue,
           highlightStoragePathInput,
-          bookNotesExportTemplateFolderValue,
-          bookNotesExportTemplateFolderInput,
-          bookNotesExportDefaultTemplatePath,
           continuousReadingPositionAutoSaveEnabled,
           continuousReadingPositionAutoSavePages,
           continuousReadingPositionAutoSavePagesInput,
@@ -274,9 +251,6 @@
           setHighlightStoragePathInput: (value) => {
             highlightStoragePathInput = value;
           },
-          setBookNotesExportTemplateFolderInput: (value) => {
-            bookNotesExportTemplateFolderInput = value;
-          },
           setContinuousReadingPositionAutoSavePagesInput: (value) => {
             continuousReadingPositionAutoSavePagesInput = value;
           },
@@ -288,9 +262,6 @@
           updateHighlightStoragePath: actions.updateHighlightStoragePath,
           updateInterfaceLanguage: actions.updateInterfaceLanguage,
           updatePremiumPreview: actions.updatePremiumPreview,
-          updateBookNotesExportTemplatePath: actions.updateBookNotesExportTemplatePath,
-          updateBookNotesExportTemplateFolder: actions.updateBookNotesExportTemplateFolder,
-          openBookNotesExportTemplateModal: actions.openBookNotesExportTemplateModal,
           updateContinuousReadingPositionAutoSaveEnabled:
             actions.updateContinuousReadingPositionAutoSaveEnabled,
           updateContinuousReadingPositionAutoSavePages:

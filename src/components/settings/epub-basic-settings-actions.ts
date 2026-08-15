@@ -15,18 +15,13 @@ import { getEpubStorageService, normalizeEpubBookmarkFolderPath } from "../../se
 import { normalizeHighlightStoragePath, normalizeWeaveParentFolder } from "../../config/paths";
 import { syncLargeNavButtonStyle } from "../../services/epub/epub-large-nav-style";
 import { notifyExcerptSettingsChanged } from "../../services/epub/excerpt-settings-events";
-import { ensureDefaultBookNotesExportTemplates } from "../../services/epub/book-notes-export/install-templates";
-import { resolveBookNotesExportTemplateFolder } from "../../services/epub/book-notes-export/template-folder";
 import {
 	normalizeInterfaceLanguagePreference,
 	setInterfaceLanguagePreference,
 	type InterfaceLanguagePreference,
 } from "../../utils/i18n";
 import { showNotification } from "../../utils/notifications";
-import { getVaultFileBasename } from "../../utils/VaultMarkdownFileSuggest";
-import { normalizeVaultFolderPath } from "../../utils/vault-folder-markdown-filter";
 import type StandaloneEpubPlugin from "../../main";
-import { BookNotesExportTemplateModalObsidian } from "./BookNotesExportTemplateModalObsidian";
 import type { EpubSettingsTranslateFn } from "./epub-settings-types";
 
 export interface EpubBasicSettingsActionDeps {
@@ -43,15 +38,10 @@ export interface EpubBasicSettingsActionDeps {
 	getSourceNavigationOpenInNewTab: () => boolean;
 	getLargeNavButtonsEnabled: () => boolean;
 	getDebugModeEnabled: () => boolean;
-	getBookNotesExportTemplateFolderValue: () => string;
-	getBookNotesExportDefaultTemplatePath: () => string;
 	getCustomTranslationProviderDrafts: () => CustomWebTranslationProvider[];
 	getAutoSavePagesTextControl: () => TextComponent | null;
 	setBookmarkFolderInput: (value: string) => void;
 	setHighlightStoragePathInput: (value: string) => void;
-	setBookNotesExportTemplateFolderInput: (value: string) => void;
-	setBookNotesExportTemplateFolderValue: (value: string) => void;
-	setBookNotesExportDefaultTemplatePath: (value: string) => void;
 	setContinuousReadingPositionAutoSavePagesInput: (value: string) => void;
 	setExcerptSettingsVersion: (updater: (value: number) => number) => void;
 	save: () => Promise<void>;
@@ -73,25 +63,7 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 		await deps.save();
 	}
 
-	async function refreshBookNotesExportTemplateFolder(options?: {
-		notify?: boolean;
-	}): Promise<void> {
-		const settings = await getEpubStorageService(plugin.app).loadExcerptSettings();
-		const folderValue = resolveBookNotesExportTemplateFolder(settings);
-		deps.setBookNotesExportTemplateFolderValue(folderValue);
-		deps.setBookNotesExportTemplateFolderInput(folderValue);
-		deps.setBookNotesExportDefaultTemplatePath(
-			String(settings.bookNotesExportTemplatePath || "").trim()
-		);
-		deps.setExcerptSettingsVersion((value) => value + 1);
-		if (options?.notify) {
-			notifyExcerptSettingsChanged(settings);
-		}
-	}
-
 	return {
-		refreshBookNotesExportTemplateFolder,
-
 		async updateWeaveParentFolder(folderPath: string): Promise<void> {
 			const normalizedFolderPath = normalizeWeaveParentFolder(folderPath);
 			if (normalizedFolderPath === deps.getWeaveParentFolderValue()) {
@@ -157,65 +129,6 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 					: t("epub.settings.notifications.premiumPreviewDisabled"),
 				"success"
 			);
-		},
-
-		async updateBookNotesExportTemplatePath(templatePath: string): Promise<void> {
-			const normalizedPath = String(templatePath || "").trim();
-			if (!normalizedPath || normalizedPath === deps.getBookNotesExportDefaultTemplatePath()) {
-				return;
-			}
-
-			const storageService = getEpubStorageService(plugin.app);
-			const currentSettings = await storageService.loadExcerptSettings();
-			await storageService.saveExcerptSettings({
-				...currentSettings,
-				bookNotesExportTemplatePath: normalizedPath,
-			});
-			deps.setBookNotesExportDefaultTemplatePath(normalizedPath);
-			deps.setExcerptSettingsVersion((value) => value + 1);
-			notifyExcerptSettingsChanged(await storageService.loadExcerptSettings());
-			showNotification(
-				t("epub.settings.notifications.templateSwitched", {
-					template: getVaultFileBasename(normalizedPath),
-				}),
-				"success"
-			);
-		},
-
-		async updateBookNotesExportTemplateFolder(folderPath: string): Promise<void> {
-			const normalizedFolderPath = normalizeVaultFolderPath(folderPath);
-			if (!normalizedFolderPath) {
-				deps.setBookNotesExportTemplateFolderInput(deps.getBookNotesExportTemplateFolderValue());
-				return;
-			}
-
-			if (normalizedFolderPath === deps.getBookNotesExportTemplateFolderValue()) {
-				deps.setBookNotesExportTemplateFolderInput(deps.getBookNotesExportTemplateFolderValue());
-				return;
-			}
-
-			const storageService = getEpubStorageService(plugin.app);
-			const currentSettings = await storageService.loadExcerptSettings();
-			await storageService.saveExcerptSettings({
-				...currentSettings,
-				bookNotesExportTemplateFolder: normalizedFolderPath,
-			});
-			await ensureDefaultBookNotesExportTemplates(plugin.app, normalizedFolderPath);
-			await refreshBookNotesExportTemplateFolder({ notify: true });
-			showNotification(
-				t("epub.settings.notifications.bookNotesExportTemplateFolderUpdated"),
-				"success"
-			);
-		},
-
-		openBookNotesExportTemplateModal(): void {
-			const modal = new BookNotesExportTemplateModalObsidian(plugin.app, {
-				plugin,
-				onClose: () => {
-					void refreshBookNotesExportTemplateFolder();
-				},
-			});
-			modal.open();
 		},
 
 		async updateContinuousReadingPositionAutoSaveEnabled(enabled: boolean): Promise<void> {

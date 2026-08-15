@@ -37,13 +37,13 @@ export type {
 	EpubBookshelfSettings,
 	EpubBookshelfIndexEntry,
 	EpubBookshelfMembershipEntry,
-	EpubExcerptSettings,
 	EpubScanIndexEntry,
 } from "./EpubStorageService";
 export {
 	DEFAULT_EPUB_BOOKSHELF_SETTINGS,
-	DEFAULT_EPUB_EXCERPT_SETTINGS,
 } from "./EpubStorageService";
+export type { EpubExcerptSettings } from "./epub-excerpt-settings";
+export { DEFAULT_EPUB_EXCERPT_SETTINGS } from "./epub-excerpt-settings";
 export {
 	registerEpubHost,
 	resolveEpubHost,
@@ -54,10 +54,7 @@ export type {
 	EpubHostAISplitConfigModalInput,
 	EpubHostCapabilities,
 	EpubHostCreateCardInput,
-	EpubHostExportBookNotesInput,
-	EpubHostExportChapterInput,
 	EpubHostIncrementalReadingTopicOption,
-	EpubHostMarkdownAsset,
 	EpubHostReadingPointInput,
 	EpubHostResumePointInput,
 	EpubHostScheduleChapterInput,
@@ -114,7 +111,6 @@ export {
 	canOpenBookWithCurrentLicense,
 	canUseEpubCanvasExcerpts,
 	canOpenEpubFile,
-	canUseEpubChapterExport,
 	canUseEpubExcerptNotes,
 	canUseEpubFootnotePreview,
 	canUseEpubParagraphMode,
@@ -131,19 +127,10 @@ export {
 	requestEpubPremiumFeaturePreview,
 } from "./epub-premium";
 export {
-	exportBookNotesToMarkdown,
-	exportBookSectionToMarkdown,
-} from "./book-markdown-export";
-export {
 	loadPublicationTocItems,
 	navigateToPublicationChapter,
 	buildPublicationChapterMarkdownLink,
 } from "./epub-ir-interop";
-export type {
-	BookMarkdownExportAsset,
-	ExportBookNotesToMarkdownInput,
-	ExportBookSectionToMarkdownInput,
-} from "./book-markdown-export";
 export * from "./types";
 export * from "./canvas-types";
 export {

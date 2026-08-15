@@ -334,3 +334,8 @@ INSTALLATION.md
 biome.json
 uno.config.ts
 eslint.config.mjs
+
+# 本地 ticket / spec 工作区（不进公开仓）
+.scratch/
+
+CONTEXT.md

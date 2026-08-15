@@ -7,9 +7,6 @@ import {
 	type EpubExcerptSettings,
 } from "./epub-excerpt-settings";
 import {
-	normalizeBookNotesExportExcerptFields,
-} from "./epub-book-notes-export-store";
-import {
 	normalizeBookshelfMembershipEntries,
 } from "./epub-bookshelf-membership-store";
 import {
@@ -82,11 +79,6 @@ export function normalizePluginUiMemory(value: unknown): EpubPluginUiMemory {
 		selectionQuickCreateLastFolder: normalizeRememberedFolderPath(
 			typeof record.selectionQuickCreateLastFolder === "string"
 				? record.selectionQuickCreateLastFolder
-				: ""
-		),
-		epubMarkdownExportLastFolder: normalizeRememberedFolderPath(
-			typeof record.epubMarkdownExportLastFolder === "string"
-				? record.epubMarkdownExportLastFolder
 				: ""
 		),
 		bookshelfSearchQuery:
@@ -377,9 +369,7 @@ export function normalizeExcerptSettings(value: unknown): EpubExcerptSettings {
 		return { ...DEFAULT_EPUB_EXCERPT_SETTINGS };
 	}
 
-	const settings = value as Partial<EpubExcerptSettings> & {
-		bookNotesExportTemplate?: "template1" | "template2";
-	};
+	const settings = value as Partial<EpubExcerptSettings>;
 	return {
 		addCreationTime:
 			typeof settings.addCreationTime === "boolean"
@@ -394,7 +384,6 @@ export function normalizeExcerptSettings(value: unknown): EpubExcerptSettings {
 			typeof settings.showStrikethroughInSidebar === "boolean"
 				? settings.showStrikethroughInSidebar
 				: DEFAULT_EPUB_EXCERPT_SETTINGS.showStrikethroughInSidebar,
-		...normalizeBookNotesExportExcerptFields(settings),
 	};
 }
 

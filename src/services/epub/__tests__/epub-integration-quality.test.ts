@@ -1,11 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-	normalizeBookNotesExportAppendMap,
-	normalizeBookNotesExportExcerptFields,
-	readBookNotesExportAppendPath,
-	writeBookNotesExportAppendPath,
-} from "../epub-book-notes-export-store";
-import {
 	dedupeBookshelfMembershipEntries,
 	normalizeBookshelfMembershipEntries,
 } from "../epub-bookshelf-membership-store";
@@ -16,9 +10,6 @@ import {
 import { buildReaderChapterStyles } from "../reader-chapter-styles";
 import { resolveReaderHighlightTint, READER_HIGHLIGHT_TINT_MAP } from "../reader-highlight-tints";
 import { EpubProgressStore, normalizePendingProgressPayload } from "../epub-progress-store";
-import { DEFAULT_EPUB_EXCERPT_SETTINGS } from "../epub-excerpt-settings";
-import { getBuiltinBookNotesExportTemplate } from "../book-notes-export/builtin-templates";
-import { renderBookNotesTemplate } from "../book-notes-export/template-renderer";
 import {
 	applyRendererLayoutAttributes,
 	computePaginatorLayoutMetrics,
@@ -82,49 +73,6 @@ import {
 } from "../epub-reader-book-load-helpers";
 import { peelEmbeddedScanIndexFromUnifiedData } from "../epub-unified-local-data-read";
 import { normalizeLocalReaderData } from "../epub-local-data-normalize";
-
-describe("epub-book-notes-export-store", () => {
-	it("round-trips per-book append targets", () => {
-		const initial = writeBookNotesExportAppendPath({}, "Books/demo.epub", "Notes/demo.md");
-		expect(readBookNotesExportAppendPath(initial, "Books/demo.epub")).toBe("Notes/demo.md");
-		const cleared = writeBookNotesExportAppendPath(initial, "Books/demo.epub", null);
-		expect(readBookNotesExportAppendPath(cleared, "Books/demo.epub")).toBeNull();
-	});
-
-	it("normalizes append map keys and drops empty values", () => {
-		expect(
-			normalizeBookNotesExportAppendMap({
-				" Books/a.epub ": " Notes/a.md ",
-				"Books/b.epub": "  ",
-			})
-		).toEqual({
-			"Books/a.epub": "Notes/a.md",
-		});
-	});
-
-	it("normalizes legacy template settings into excerpt fields", () => {
-		const normalized = normalizeBookNotesExportExcerptFields({
-			bookNotesExportTemplate: "template2",
-			bookNotesExportTargetMode: "append",
-			bookNotesExportIncludeHighlight: false,
-		});
-		expect(normalized.bookNotesExportLegacyTemplate).toBe("callout");
-		expect(normalized.bookNotesExportTargetMode).toBe("append");
-		expect(normalized.bookNotesExportIncludeHighlight).toBe(false);
-		expect(normalized.bookNotesExportTemplatePath).toBe(
-			DEFAULT_EPUB_EXCERPT_SETTINGS.bookNotesExportTemplatePath
-		);
-	});
-
-	it("clears template path when it falls outside the configured folder", () => {
-		const normalized = normalizeBookNotesExportExcerptFields({
-			bookNotesExportTemplateFolder: "Library/templates",
-			bookNotesExportTemplatePath: "Weave EPUB/Export templates/excerpt-digest-b.md",
-		});
-		expect(normalized.bookNotesExportTemplateFolder).toBe("Library/templates");
-		expect(normalized.bookNotesExportTemplatePath).toBeNull();
-	});
-});
 
 describe("reader-paginated-layout-recovery", () => {
 	it("detects foliate paginator renderers safely", () => {
@@ -653,59 +601,6 @@ describe("bookshelf-search-match", () => {
 		);
 		expect(matchesBookshelfSearchQuery(baseBook, query)).toBe(true);
 		expect(matchesBookshelfSearchQuery(baseBook, parseSearchQuery("-demo"))).toBe(false);
-	});
-});
-
-describe("book-notes export integration", () => {
-	it("renders export markdown from normalized excerpt settings", () => {
-		const excerptSettings = normalizeBookNotesExportExcerptFields({
-			bookNotesExportIncludeHighlight: true,
-			bookNotesExportLegacyTemplate: "classic",
-		});
-		const rendered = renderBookNotesTemplate({
-			templateSource: getBuiltinBookNotesExportTemplate(excerptSettings.bookNotesExportLegacyTemplate),
-			context: {
-				book: {
-					title: "Integration Demo",
-					author: "Author",
-					publisher: "",
-					isbn: "",
-					filePath: "Books/demo.epub",
-					sourceId: "",
-				},
-				export: {
-					notesTitle: "Notes",
-					exportedAt: "2026-06-13T00:00:00.000Z",
-				},
-				chapters: [
-					{
-						index: 0,
-						title: "Chapter 1",
-						label: "Chapter 1",
-						highlights: [
-							{
-								text: "Quoted line",
-								commentText: "",
-								color: "yellow",
-								style: "",
-								styleLabel: "Highlight",
-								createdTimeFormatted: "2026-06-13 10:00",
-								excerptId: "excerpt-1",
-								cfiRange: "cfi",
-								chapterIndex: 0,
-								chapterTitle: "Chapter 1",
-								excerptHeading: "Excerpt 1",
-								blockquote: "> Quoted line",
-								pageLabel: "p. 1",
-							},
-						],
-					},
-				],
-			},
-			trimBlocks: excerptSettings.bookNotesExportTrimBlocks,
-		});
-		expect(rendered).toContain("# Notes");
-		expect(rendered).toContain("Quoted line");
 	});
 });
 

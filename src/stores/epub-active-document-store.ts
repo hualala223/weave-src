@@ -14,7 +14,6 @@ import type {
 	TocItem,
 } from "../services/epub";
 import type { EpubTocChapterMark, EpubTocChapterMarkMap } from "../services/epub/epub-toc-chapter-mark";
-import type { FlatTocExportItem } from "../services/epub/epub-toc-export-scope";
 import type { EpubTocChapterMarkSettings } from "../services/epub/epub-toc-chapter-mark-settings";
 import type { EpubDisplayHighlight } from "../services/epub/EpubHighlightViewSnapshotService";
 import type { FlashStyle, PaginationInfo } from "../services/epub";
@@ -57,17 +56,9 @@ export interface EpubSharedState {
 	searchRequestNonce: number;
 	onDeleteBookmark: ((bookmarkId: string) => Promise<boolean>) | null;
 	onDeleteHighlight: ((highlight: EpubDisplayHighlight) => Promise<boolean>) | null;
-	onExportHighlights: ((selectionKeys: string[]) => Promise<void>) | null;
 	onSettingsClick: ((evt: MouseEvent) => void) | null;
 	onSwitchBook: ((filePath: string) => void) | null;
 	onCreateChapterReadingPoint: ((item: TocItem, event?: MouseEvent) => Promise<void>) | null;
-	onExportTocChapterMarked:
-		| ((
-				item: TocItem,
-				itemIndex: number,
-				flatTocItems: FlatTocExportItem[]
-		  ) => Promise<void>)
-		| null;
 	onSetTocChapterMark: ((item: TocItem, mark: EpubTocChapterMark | null) => Promise<void>) | null;
 	onSaveTocChapterMarkSettings: ((settings: EpubTocChapterMarkSettings) => Promise<void>) | null;
 	onNavigate: ((request: EpubNavigationRequest) => void) | null;
@@ -103,11 +94,9 @@ const EMPTY_STATE: EpubSharedState = {
 	searchRequestNonce: 0,
 	onDeleteBookmark: null,
 	onDeleteHighlight: null,
-	onExportHighlights: null,
 	onSettingsClick: null,
 	onSwitchBook: null,
 	onCreateChapterReadingPoint: null,
-	onExportTocChapterMarked: null,
 	onSetTocChapterMark: null,
 	onSaveTocChapterMarkSettings: null,
 	onNavigate: null,

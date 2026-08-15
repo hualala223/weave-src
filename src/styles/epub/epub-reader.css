@@ -5,3 +5,23 @@
 @import "./epub-nav-sidebar.css";
 @import "./epub-highlights.css";
 @import "./epub-progress-ring.css";
+
+/* ===== 大翻页按钮模式（enableLargeNavButtons）===== */
+body.weave-large-nav-enabled .clickable-icon.epub-nav-btn:not(.vertical) {
+	height: 10vh !important;
+	opacity: 0;
+	border-radius: 0 !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	cursor: pointer !important;
+}
+body.weave-large-nav-enabled .clickable-icon.epub-nav-btn:not(.vertical):first-child {
+	width: 10% !important;
+}
+body.weave-large-nav-enabled .clickable-icon.epub-nav-btn:not(.vertical):last-child {
+	width: 90% !important;
+}
+/* 隐藏底部导航状态区（上一页/下一页按钮已移除） */
+body.weave-large-nav-enabled .epub-nav-status {
+	display: none !important;
+}

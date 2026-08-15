@@ -42,6 +42,10 @@ import type {
 import { getEpubRuntime } from "./epub-runtime";
 import { EpubProgressStore, normalizePendingProgressPayload } from "./epub-progress-store";
 import {
+	DEFAULT_EPUB_EXCERPT_SETTINGS,
+	type EpubExcerptSettings,
+} from "./epub-excerpt-settings";
+import {
 	hasRetainedLocalBookData,
 	normalizeBookMetadata,
 	normalizeBookState,
@@ -4924,28 +4928,6 @@ export class EpubStorageService {
 		return null;
 	}
 }
-
-export interface EpubExcerptSettings {
-	addCreationTime: boolean;
-	strikethroughDisplayMode: EpubStrikethroughDisplayMode;
-	showStrikethroughInSidebar: boolean;
-	bookNotesExportTemplate: "template1" | "template2";
-	bookNotesExportIncludeHighlight: boolean;
-	bookNotesExportIncludeUnderline: boolean;
-	bookNotesExportIncludeStrikethrough: boolean;
-	bookNotesExportIncludeWavy: boolean;
-}
-
-export const DEFAULT_EPUB_EXCERPT_SETTINGS: EpubExcerptSettings = {
-	addCreationTime: false,
-	strikethroughDisplayMode: "conceal",
-	showStrikethroughInSidebar: false,
-	bookNotesExportTemplate: "template1",
-	bookNotesExportIncludeHighlight: true,
-	bookNotesExportIncludeUnderline: true,
-	bookNotesExportIncludeStrikethrough: true,
-	bookNotesExportIncludeWavy: true,
-};
 
 type EpubStoragePendingProgressPayload = import("./epub-progress-store").EpubPendingProgressPayload;
 

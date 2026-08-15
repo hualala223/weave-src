@@ -4,5 +4,3 @@
  * 勿在其它模块重复硬编码路径字符串。
  */
 export const DEFAULT_EPUB_BOOKMARK_FOLDER = "weave/epub-bookmarks";
-
-export const DEFAULT_BOOK_NOTES_EXPORT_TEMPLATE_FOLDER = "Weave EPUB/Export templates";

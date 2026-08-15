@@ -135,10 +135,6 @@ export class EpubView extends ItemView {
 		bindCanvasPath?: (canvasPath: string) => void;
 		unbindCanvas?: () => void;
 		getCanvasService?: () => EpubCanvasService;
-		exportCurrentChapterToMarkdown?: () => Promise<void>;
-		exportCurrentChapterMarkedToMarkdown?: () => Promise<void>;
-		exportCurrentChapterHighlightsToMarkdown?: () => Promise<void>;
-		exportBookHighlightsToMarkdown?: (event?: MouseEvent) => Promise<void>;
 		getExcerptSettings?: () => EpubExcerptSettings;
 		updateExcerptSettings?: (patch: Partial<EpubExcerptSettings>) => Promise<void>;
 		prevPage?: () => void | Promise<void>;
@@ -509,10 +505,6 @@ export class EpubView extends ItemView {
 		}
 
 		this.appendCanvasPaneMenu(menu);
-
-		if (this.filePath) {
-			this.appendExportPaneMenu(menu);
-		}
 
 		this.appendHelpPaneMenu(menu);
 	}
@@ -916,7 +908,6 @@ export class EpubView extends ItemView {
 				});
 			}
 
-			// Book-notes export template selection is configured inside the export popover.
 	}
 
 	private appendExcerptToolsPaneMenu(menu: Menu, excerptSettings: EpubExcerptSettings): void {
@@ -988,61 +979,6 @@ export class EpubView extends ItemView {
 		});
 	}
 
-	private appendExportPaneMenu(menu: Menu): void {
-		const hasExport =
-			Boolean(this.actionHandlers.exportBookHighlightsToMarkdown) ||
-			Boolean(this.actionHandlers.exportCurrentChapterToMarkdown) ||
-			Boolean(this.actionHandlers.exportCurrentChapterMarkedToMarkdown) ||
-			Boolean(this.actionHandlers.exportCurrentChapterHighlightsToMarkdown);
-		if (!hasExport) {
-			return;
-		}
-
-		this.addPaneMenuGroup(menu, "views.epubView.menu.groupExport", "download", (subMenu) => {
-			if (this.actionHandlers.exportBookHighlightsToMarkdown) {
-				subMenu.addItem((item) => {
-					item.setTitle(this.t("views.epubView.menu.exportBookHighlights"));
-					item.setIcon("notebook-pen");
-					item.onClick((evt) => {
-						this.dismissPaneMenu(menu);
-						window.setTimeout(() => {
-							void this.actionHandlers.exportBookHighlightsToMarkdown?.(evt as MouseEvent);
-						}, 0);
-					});
-				});
-			}
-
-			if (this.actionHandlers.exportCurrentChapterToMarkdown) {
-				subMenu.addItem((item) => {
-					item.setTitle(this.t("views.epubView.menu.exportCurrentChapter"));
-					item.setIcon("file-text");
-					item.onClick(() => {
-						void this.actionHandlers.exportCurrentChapterToMarkdown?.();
-					});
-				});
-			}
-
-			if (this.actionHandlers.exportCurrentChapterMarkedToMarkdown) {
-				subMenu.addItem((item) => {
-					item.setTitle(this.t("views.epubView.menu.exportCurrentChapterMarked"));
-					item.setIcon("highlighter");
-					item.onClick(() => {
-						void this.actionHandlers.exportCurrentChapterMarkedToMarkdown?.();
-					});
-				});
-			}
-
-			if (this.actionHandlers.exportCurrentChapterHighlightsToMarkdown) {
-				subMenu.addItem((item) => {
-					item.setTitle(this.t("views.epubView.menu.exportCurrentChapterHighlights"));
-					item.setIcon("notebook-pen");
-					item.onClick(() => {
-						void this.actionHandlers.exportCurrentChapterHighlightsToMarkdown?.();
-					});
-				});
-			}
-		});
-	}
 
 	allowNoFile(): boolean {
 		return true;

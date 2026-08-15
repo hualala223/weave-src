@@ -12,7 +12,6 @@ import type {
 	TocItem,
 } from "./types";
 import type { EpubChapterLocationFormat } from "./epub-excerpt-settings";
-import type { FlatTocExportItem } from "./epub-toc-export-scope";
 import type { ReaderTapEvent } from "./reader-tap-zones";
 
 export type EpubReaderEngineType = "foliate";
@@ -189,24 +188,6 @@ export interface ReaderFootnotePreviewInfo {
 	rect: { top: number; left: number; bottom: number; right: number; width: number; height: number };
 }
 
-export interface EpubChapterExportAsset {
-	placeholder: string;
-	suggestedName: string;
-	data: Uint8Array;
-	mimeType: string;
-	originalHref?: string;
-}
-
-export interface EpubChapterReadingPointDraft {
-	title: string;
-	text: string;
-	cfi: string;
-	chapterIndex: number;
-	chapterHref: string;
-	markdown?: string;
-	assets?: EpubChapterExportAsset[];
-}
-
 export interface EpubBookFootnoteEntry {
 	label: string;
 	text: string;
@@ -289,16 +270,6 @@ export interface EpubReaderEngine {
 		}
 	): Promise<void>;
 	dismissParagraphFootnotePreview?(options?: { unpin?: boolean }): void;
-	getChapterReadingPointDraft?(
-		href: string,
-		titleHint?: string
-	): Promise<EpubChapterReadingPointDraft | null>;
-	getTocChapterReadingPointDraft?(
-		href: string,
-		titleHint: string | undefined,
-		flatTocItems: FlatTocExportItem[],
-		itemIndex: number
-	): Promise<EpubChapterReadingPointDraft | null>;
 	getBookFootnotesDraft?(): Promise<EpubBookFootnotesDraft | null>;
 	getSectionHrefForCfi?(cfi: string): string | null;
 	getSectionHrefByChapterIndex?(chapterIndex: number): string | null;

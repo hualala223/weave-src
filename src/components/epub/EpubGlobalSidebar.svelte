@@ -7,7 +7,6 @@
 	import { findOpenEpubLeaf } from '../../utils/epub-leaf-utils';
 	import { EPUB_RUNTIME, type EpubBook, type TocItem } from '../../services/epub';
 	import type { EpubTocChapterMark } from '../../services/epub/epub-toc-chapter-mark';
-	import type { FlatTocExportItem } from '../../services/epub/epub-toc-export-scope';
 	import { EpubBookmarkService, type EpubBookmarkRecord } from '../../services/epub/EpubBookmarkService';
   	import { epubActiveDocumentStore } from '../../stores/epub-active-document-store';
   	import type { EpubNavigationRequest, EpubSharedState } from '../../stores/epub-active-document-store';
@@ -549,25 +548,6 @@
 		}
 	}
 
-	async function handleTocExportChapterMarked(
-		item: FlatTocExportItem,
-		itemIndex: number,
-		flatTocItems: FlatTocExportItem[]
-	) {
-		if (!sharedState?.onExportTocChapterMarked) {
-			new Notice(t('epub.reader.exportMarkdownUnavailable'));
-			return;
-		}
-
-		try {
-			await ensureEpubLeafActive();
-			await sharedState.onExportTocChapterMarked(item, itemIndex, flatTocItems);
-		} catch (error) {
-			logger.error('[EpubGlobalSidebar] Failed to export toc chapter marked markdown:', error);
-			new Notice(t('epub.reader.exportMarkdownFailed'));
-		}
-	}
-
 	async function handleTocSetChapterMark(item: TocItem, mark: EpubTocChapterMark | null) {
 		if (!sharedState?.onSetTocChapterMark) {
 			return;
@@ -987,7 +967,6 @@
 						onSetChapterMark={sharedState?.onSetTocChapterMark ? handleTocSetChapterMark : undefined}
 						onSaveTocChapterMarkSettings={sharedState?.onSaveTocChapterMarkSettings ? handleTocSaveChapterMarkSettings : undefined}
 						onAddToIncrementalReading={sharedState?.onCreateChapterReadingPoint ? handleTocCreateReadingPoint : undefined}
-						onExportChapterMarked={sharedState?.onExportTocChapterMarked ? handleTocExportChapterMarked : undefined}
 					/>
 				{:else if activeTab === 'bookmarks'}
 					<EpubBookmarksPanel
@@ -1012,7 +991,6 @@
 							currentChapterTitle={sharedState.chapterTitle}
 							currentChapterIndex={sharedState.readerService?.getCurrentChapterIndex?.() ?? -1}
 							onDeleteHighlight={sharedState.onDeleteHighlight ?? undefined}
-							onExportHighlights={sharedState.onExportHighlights ?? undefined}
 							bind:searchQuery={searchQuery}
 							bind:searchMeta={highlightSearchMeta}
 							onNavigate={handleHighlightNavigate}

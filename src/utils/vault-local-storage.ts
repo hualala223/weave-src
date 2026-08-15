@@ -8,6 +8,7 @@
  * App#loadLocalStorage (for example Obsidian's own `language` setting).
  */
 
+import type { App } from "obsidian";
 import { getConfiguredVaultStoragePath, getLegacyLocalStoragePath } from "../config/paths";
 import { getPluginPaths } from "../config/paths";
 import { getAppWithLegacyLocalStorage } from "../types/obsidian-extensions";

@@ -8,8 +8,6 @@ import { isBuiltinTranslationEnabled } from "../../config/selection-translation-
 import { BUILTIN_WEB_TRANSLATION_PROVIDERS } from "../../config/web-translation-providers";
 import { getEpubBacklinkHighlightService } from "../../services/epub/epub-backlink-highlight-access";
 import { scheduleEpubAnnotationIndexWarmup } from "../../services/epub/epub-annotation-index";
-import { listBookNotesExportTemplateFiles } from "../../services/epub/book-notes-export/template-catalog";
-import { getVaultFileBasename } from "../../utils/VaultMarkdownFileSuggest";
 import { showNotification } from "../../utils/notifications";
 import type { InterfaceLanguagePreference } from "../../utils/i18n";
 import { mountFolderSearchSetting } from "./epub-settings-folder-search";
@@ -17,8 +15,6 @@ import type {
 	EpubBasicSettingsMountOptions,
 	SettingsCleanupFn,
 } from "./epub-settings-types";
-
-const EXPORT_TEMPLATE_MANAGE_OPTION = "__manage_export_templates__";
 
 const INTERFACE_LANGUAGE_OPTIONS: Array<{
 	value: InterfaceLanguagePreference;
@@ -264,88 +260,6 @@ export function mountEpubBasicSettings(options: EpubBasicSettingsMountOptions): 
 
 		cleanupFns.push(() => inputEl.removeEventListener("blur", handleBlur));
 		cleanupFns.push(() => inputEl.removeEventListener("keydown", handleKeydown));
-	});
-
-	const exportTemplateFolderSetting = new Setting(hosts.reading)
-		.setName(t("epub.settings.basic.bookNotesExportTemplateFolder"))
-		.setDesc(t("epub.settings.basic.bookNotesExportTemplateFolderDesc"))
-		.setClass("epub-export-template-folder-setting");
-
-	mountFolderSearchSetting({
-		setting: exportTemplateFolderSetting,
-		placeholder: t("epub.settings.basic.bookNotesExportTemplateFolderPlaceholder"),
-		value: snapshot.bookNotesExportTemplateFolderValue,
-		onInput: callbacks.setBookNotesExportTemplateFolderInput,
-		onCommit: callbacks.updateBookNotesExportTemplateFolder,
-		onEscape: () => snapshot.bookNotesExportTemplateFolderValue,
-		app: plugin.app,
-		cleanupFns,
-	});
-
-	const exportTemplateSetting = new Setting(hosts.reading)
-		.setName(t("epub.settings.basic.exportTemplate"))
-		.setDesc(t("epub.settings.basic.exportTemplateDesc"))
-		.setClass("epub-export-template-select-setting");
-
-	exportTemplateSetting.addDropdown((dropdown) => {
-		dropdown.addOption("", t("epub.reader.exportNotesPopover.templateLoading"));
-		dropdown.setDisabled(true);
-
-		void (async () => {
-			const templates = await listBookNotesExportTemplateFiles(
-				plugin.app,
-				snapshot.bookNotesExportTemplateFolderValue
-			);
-
-			dropdown.selectEl.empty();
-			const selectedPath = String(snapshot.bookNotesExportDefaultTemplatePath || "").trim();
-			const optionPaths = new Set<string>();
-
-			if (templates.length === 0) {
-				dropdown.addOption("", t("epub.reader.exportNotesPopover.templateEmpty"));
-				dropdown.addOption(
-					EXPORT_TEMPLATE_MANAGE_OPTION,
-					t("epub.settings.basic.manageExportTemplates")
-				);
-				dropdown.setValue(EXPORT_TEMPLATE_MANAGE_OPTION);
-				dropdown.setDisabled(false);
-				dropdown.onChange((value) => {
-					if (value !== EXPORT_TEMPLATE_MANAGE_OPTION) {
-						return;
-					}
-					dropdown.setValue(EXPORT_TEMPLATE_MANAGE_OPTION);
-					callbacks.openBookNotesExportTemplateModal();
-				});
-				return;
-			}
-
-			for (const item of templates) {
-				dropdown.addOption(item.path, getVaultFileBasename(item.fileName));
-				optionPaths.add(item.path);
-			}
-			if (selectedPath && !optionPaths.has(selectedPath)) {
-				dropdown.addOption(selectedPath, getVaultFileBasename(selectedPath));
-				optionPaths.add(selectedPath);
-			}
-			dropdown.addOption(
-				EXPORT_TEMPLATE_MANAGE_OPTION,
-				t("epub.settings.basic.manageExportTemplates")
-			);
-
-			let activeTemplatePath =
-				selectedPath && optionPaths.has(selectedPath) ? selectedPath : templates[0]?.path || "";
-			dropdown.setValue(activeTemplatePath);
-			dropdown.setDisabled(false);
-			dropdown.onChange(async (value) => {
-				if (value === EXPORT_TEMPLATE_MANAGE_OPTION) {
-					dropdown.setValue(activeTemplatePath);
-					callbacks.openBookNotesExportTemplateModal();
-					return;
-				}
-				activeTemplatePath = value;
-				await callbacks.updateBookNotesExportTemplatePath(value);
-			});
-		})();
 	});
 
 	const autoSaveSetting = new Setting(hosts.reading)

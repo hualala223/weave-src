@@ -13,8 +13,6 @@ import {
 import {
 	EPUB_RUNTIME,
 	EpubStorageService,
-	exportBookNotesToMarkdown,
-	exportBookSectionToMarkdown,
 	loadPublicationTocItems,
 	navigateToPublicationChapter,
 	buildPublicationChapterMarkdownLink,
@@ -43,8 +41,6 @@ import {
 	unregisterEpubHost,
 	type EpubHostAISplitConfigModalInput,
 	type EpubHostCapabilities,
-	type EpubHostExportBookNotesInput,
-	type EpubHostExportChapterInput,
 	type EpubWeaveOfficialAPI,
 } from "./services/epub";
 import { EpubExcerptOfficialApiService } from "./services/epub/EpubExcerptOfficialApiService";
@@ -125,7 +121,6 @@ interface StandaloneEpubPluginSettings {
 	continuousReadingPositionAutoSavePages: number;
 	lastSelectedIRDeckId: string;
 	selectionQuickCreateLastFolder: string;
-	epubMarkdownExportLastFolder: string;
 	sourceNavigationOpenInNewTab: boolean;
 	interfaceLanguage: InterfaceLanguagePreference;
 	selectionTranslation: SelectionTranslationSettings;
@@ -148,7 +143,6 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 	continuousReadingPositionAutoSavePages: DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
 	lastSelectedIRDeckId: "",
 	selectionQuickCreateLastFolder: "",
-	epubMarkdownExportLastFolder: "",
 	sourceNavigationOpenInNewTab: true,
 	interfaceLanguage: "auto",
 	selectionTranslation: DEFAULT_SELECTION_TRANSLATION_SETTINGS,
@@ -156,7 +150,7 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 
 type PersistedStandaloneEpubPluginSettings = Omit<
 	StandaloneEpubPluginSettings,
-	"lastSelectedIRDeckId" | "selectionQuickCreateLastFolder" | "epubMarkdownExportLastFolder"
+	"lastSelectedIRDeckId" | "selectionQuickCreateLastFolder"
 >;
 
 export type WeavePlugin = StandaloneEpubPlugin & Record<string, unknown>;
@@ -318,12 +312,10 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		const {
 			lastSelectedIRDeckId,
 			selectionQuickCreateLastFolder,
-			epubMarkdownExportLastFolder,
 			...persistedSettings
 		} = this.settings;
 		void lastSelectedIRDeckId;
 		void selectionQuickCreateLastFolder;
-		void epubMarkdownExportLastFolder;
 		return persistedSettings;
 	}
 
@@ -333,9 +325,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			selectionQuickCreateLastFolder: this.normalizeRememberedFolder(
 				this.settings.selectionQuickCreateLastFolder
 			),
-			epubMarkdownExportLastFolder: this.normalizeRememberedFolder(
-				this.settings.epubMarkdownExportLastFolder
-			),
 		};
 	}
 
@@ -343,11 +332,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		if (!value || typeof value !== "object") {
 			return false;
 		}
-		return [
-			"lastSelectedIRDeckId",
-			"selectionQuickCreateLastFolder",
-			"epubMarkdownExportLastFolder",
-		].some((key) => key in value);
+		return ["lastSelectedIRDeckId", "selectionQuickCreateLastFolder"].some((key) => key in value);
 	}
 
 	private normalizeLoadedSettings(raw: unknown): Partial<PersistedStandaloneEpubPluginSettings> {
@@ -374,9 +359,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.settings.selectionQuickCreateLastFolder = this.normalizeRememberedFolder(
 			this.settings.selectionQuickCreateLastFolder
 		);
-		this.settings.epubMarkdownExportLastFolder = this.normalizeRememberedFolder(
-			this.settings.epubMarkdownExportLastFolder
-		);
 		this.settings.lastSelectedIRDeckId = String(this.settings.lastSelectedIRDeckId || "").trim();
 		const hasLocalUiMemory = await this.getEpubStorageService().hasPluginUiMemory();
 		const localUiMemory = await this.getEpubStorageService().loadPluginUiMemory();
@@ -384,11 +366,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			hasLocalUiMemory
 				? localUiMemory.selectionQuickCreateLastFolder
 				: localUiMemory.selectionQuickCreateLastFolder || this.settings.selectionQuickCreateLastFolder
-		);
-		this.settings.epubMarkdownExportLastFolder = this.normalizeRememberedFolder(
-			hasLocalUiMemory
-				? localUiMemory.epubMarkdownExportLastFolder
-				: localUiMemory.epubMarkdownExportLastFolder || this.settings.epubMarkdownExportLastFolder
 		);
 		this.settings.lastSelectedIRDeckId =
 			String(
@@ -435,9 +412,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.settings.selectionQuickCreateLastFolder = this.normalizeRememberedFolder(
 			this.settings.selectionQuickCreateLastFolder
 		);
-		this.settings.epubMarkdownExportLastFolder = this.normalizeRememberedFolder(
-			this.settings.epubMarkdownExportLastFolder
-		);
 		this.settings.lastSelectedIRDeckId = String(this.settings.lastSelectedIRDeckId || "").trim();
 		await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
 		await this.persistSettingsData();
@@ -461,21 +435,9 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		return normalizePath(raw);
 	}
 
-	private extractParentFolder(filePath: string): string {
-		const normalized = normalizePath(String(filePath || "").trim());
-		const slashIndex = normalized.lastIndexOf("/");
-		if (slashIndex <= 0) {
-			return "/";
-		}
-		return normalizePath(normalized.slice(0, slashIndex));
-	}
-
 	private async persistPreferenceSettings(): Promise<void> {
 		this.settings.selectionQuickCreateLastFolder = this.normalizeRememberedFolder(
 			this.settings.selectionQuickCreateLastFolder
-		);
-		this.settings.epubMarkdownExportLastFolder = this.normalizeRememberedFolder(
-			this.settings.epubMarkdownExportLastFolder
 		);
 		this.settings.lastSelectedIRDeckId = String(this.settings.lastSelectedIRDeckId || "").trim();
 		await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
@@ -756,23 +718,5 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			i18n.t("views.epubView.notice.bookFileMissing"),
 			i18n.t("views.epubView.notice.bookOpenFailed")
 		);
-	}
-
-	async exportEpubChapterToMarkdown(input: EpubHostExportChapterInput): Promise<void> {
-		const exportedFile = await exportBookSectionToMarkdown(this.app, {
-			...input,
-			lastSelectedFolder: this.settings.epubMarkdownExportLastFolder,
-		});
-		this.settings.epubMarkdownExportLastFolder = this.extractParentFolder(exportedFile.path);
-		await this.persistPreferenceSettings();
-	}
-
-	async exportEpubBookNotesToMarkdown(input: EpubHostExportBookNotesInput): Promise<void> {
-		const exportedFile = await exportBookNotesToMarkdown(this.app, {
-			...input,
-			lastSelectedFolder: this.settings.epubMarkdownExportLastFolder,
-		});
-		this.settings.epubMarkdownExportLastFolder = this.extractParentFolder(exportedFile.path);
-		await this.persistPreferenceSettings();
 	}
 }

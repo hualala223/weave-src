@@ -3,6 +3,49 @@ import { render, waitFor } from "@testing-library/svelte";
 import EpubSettingsPanel from "./EpubSettingsPanel.svelte";
 import { App, Plugin } from "obsidian";
 
+type CreateOptions = {
+	cls?: string;
+	text?: string;
+	attr?: Record<string, string>;
+	placeholder?: string;
+};
+
+function patchObsidianDomPrototypes(): void {
+	if (!(HTMLElement.prototype as any).createDiv) {
+		(HTMLElement.prototype as any).createDiv = function (options?: CreateOptions) {
+			const el = document.createElement("div");
+			if (options?.cls) el.className = options.cls;
+			if (typeof options?.text === "string") el.textContent = options.text;
+			if (options?.placeholder) el.setAttribute("placeholder", options.placeholder);
+			for (const [key, value] of Object.entries(options?.attr || {})) {
+				el.setAttribute(key, value);
+			}
+			this.appendChild(el);
+			return el;
+		};
+	}
+
+	if (!(HTMLElement.prototype as any).createSpan) {
+		(HTMLElement.prototype as any).createSpan = function (options?: CreateOptions) {
+			const el = document.createElement("span");
+			if (options?.cls) el.className = options.cls;
+			if (typeof options?.text === "string") el.textContent = options.text;
+			this.appendChild(el);
+			return el;
+		};
+	}
+
+	if (!(HTMLElement.prototype as any).createEl) {
+		(HTMLElement.prototype as any).createEl = function (tag: string, options?: CreateOptions) {
+			const el = document.createElement(tag);
+			if (options?.cls) el.className = options.cls;
+			if (typeof options?.text === "string") el.textContent = options.text;
+			this.appendChild(el);
+			return el;
+		};
+	}
+}
+
 function createPlugin(): Plugin {
 	const app = new App();
 	const plugin = new Plugin(app as any, { id: "fork-weave-epub-reader" });
@@ -45,6 +88,7 @@ function createPlugin(): Plugin {
 describe("settings panel renders with fork plugin id", () => {
 	beforeEach(() => {
 		vi.resetModules();
+		patchObsidianDomPrototypes();
 	});
 
 	it("renders the settings panel shell and group headers", async () => {

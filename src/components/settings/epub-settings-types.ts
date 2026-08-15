@@ -32,9 +32,6 @@ export interface EpubBasicSettingsSnapshot {
 	bookmarkFolderInput: string;
 	highlightStoragePathValue: string;
 	highlightStoragePathInput: string;
-	bookNotesExportTemplateFolderValue: string;
-	bookNotesExportTemplateFolderInput: string;
-	bookNotesExportDefaultTemplatePath: string;
 	continuousReadingPositionAutoSaveEnabled: boolean;
 	continuousReadingPositionAutoSavePages: number;
 	continuousReadingPositionAutoSavePagesInput: string;
@@ -50,16 +47,12 @@ export interface EpubBasicSettingsCallbacks {
 	setWeaveParentFolderInput: (value: string) => void;
 	setBookmarkFolderInput: (value: string) => void;
 	setHighlightStoragePathInput: (value: string) => void;
-	setBookNotesExportTemplateFolderInput: (value: string) => void;
 	setContinuousReadingPositionAutoSavePagesInput: (value: string) => void;
 	setAutoSavePagesTextControl: (control: TextComponent | null) => void;
 	updateWeaveParentFolder: (folderPath: string) => Promise<void>;
 	updateBookmarkFolder: (folderPath: string) => Promise<void>;
 	updateHighlightStoragePath: (filePath: string) => Promise<void>;
 	updatePremiumPreview: (enabled: boolean) => Promise<void>;
-	updateBookNotesExportTemplatePath: (templatePath: string) => Promise<void>;
-	updateBookNotesExportTemplateFolder: (folderPath: string) => Promise<void>;
-	openBookNotesExportTemplateModal: () => void;
 	updateContinuousReadingPositionAutoSaveEnabled: (enabled: boolean) => Promise<void>;
 	updateContinuousReadingPositionAutoSavePages: (value: string) => Promise<void>;
 	setBuiltinTranslationProviderEnabled: (providerId: string, enabled: boolean) => Promise<void>;

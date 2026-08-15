@@ -38,35 +38,6 @@ export interface EpubHostIncrementalReadingTopicOption {
 	name: string;
 }
 
-export interface EpubHostMarkdownAsset {
-	placeholder: string;
-	suggestedName: string;
-	data: Uint8Array;
-	mimeType: string;
-	originalHref?: string;
-}
-
-export interface EpubHostExportChapterInput {
-	filePath: string;
-	title: string;
-	body: string;
-	markdown?: string;
-	assets?: EpubHostMarkdownAsset[];
-	sourceLink?: string;
-	bookTitle?: string;
-	author?: string;
-	footnotesMarkdown?: string;
-}
-
-export interface EpubHostExportBookNotesInput {
-	filePath: string;
-	markdown: string;
-	bookTitle?: string;
-	sourceLink?: string;
-	targetMode?: "new" | "append";
-	appendTargetPath?: string | null;
-}
-
 export interface EpubHostSelectedTextAISplitMenuOptions {
 	event: MouseEvent | KeyboardEvent;
 	selectedText: string;
@@ -119,8 +90,6 @@ export interface EpubHostCapabilities {
 	openIRReadingPointFromExternalSelection?: (input: EpubHostReadingPointInput) => Promise<void>;
 	getAvailableEpubIncrementalReadingTopics?: () => Promise<EpubHostIncrementalReadingTopicOption[]>;
 	scheduleEpubChapterForIncrementalReading?: (input: EpubHostScheduleChapterInput) => Promise<void>;
-	exportEpubChapterToMarkdown?: (input: EpubHostExportChapterInput) => Promise<void>;
-	exportEpubBookNotesToMarkdown?: (input: EpubHostExportBookNotesInput) => Promise<void>;
 	markEpubResumePointFromReader?: (input: EpubHostResumePointInput) => Promise<void>;
 	openSelectedTextAISplitMenu?: (options: EpubHostSelectedTextAISplitMenuOptions) => void;
 	openAISplitConfigModal?: (input?: EpubHostAISplitConfigModalInput) => unknown;
@@ -185,8 +154,6 @@ const EPUB_HOST_CAPABILITY_KEYS: Array<keyof EpubHostCapabilities> = [
 	"openIRReadingPointFromExternalSelection",
 	"getAvailableEpubIncrementalReadingTopics",
 	"scheduleEpubChapterForIncrementalReading",
-	"exportEpubChapterToMarkdown",
-	"exportEpubBookNotesToMarkdown",
 	"markEpubResumePointFromReader",
 	"openSelectedTextAISplitMenu",
 	"openAISplitConfigModal",

@@ -15,7 +15,6 @@ import type { EpubTocChapterMarkSettings } from "./epub-toc-chapter-mark-setting
 export interface EpubPluginUiMemory {
 	lastSelectedIRDeckId: string;
 	selectionQuickCreateLastFolder: string;
-	epubMarkdownExportLastFolder: string;
 	bookshelfSearchQuery: string;
 	readerTutorialDismissed: boolean;
 }
@@ -77,7 +76,6 @@ export interface EpubReaderLocalDataFile {
 	uiMemory?: EpubPluginUiMemory;
 	readerSettings?: Partial<Record<EpubReaderSettingsDeviceKind, EpubReaderSettings>>;
 	excerptSettings?: EpubExcerptSettings;
-	bookNotesExportAppendByBook?: Record<string, string>;
 	scanIndex?: EpubScanIndexEntry[];
 	bookshelfMembership?: EpubBookshelfMembershipEntry[];
 	bookshelfPlaylists?: EpubBookshelfPlaylist[];
