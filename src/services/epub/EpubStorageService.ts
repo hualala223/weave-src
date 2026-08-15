@@ -4,7 +4,7 @@ import { Platform, normalizePath } from "obsidian";
 import {
 	getPluginPathsById,
 	LEGACY_PATHS,
-	getV2Paths,
+	getV2PathsFromApp,
 	toVaultAdapterPath,
 } from "../../config/paths";
 import { DirectoryUtils } from "../../utils/directory-utils";
@@ -185,7 +185,8 @@ export class EpubStorageService {
 		this.app = app;
 		const runtime = getEpubRuntime();
 		this.localPluginId = runtime.pluginDirName;
-		this.basePath = getV2Paths().ir.epub;
+		// 尊重用户配置的 weave 父目录（weaveParentFolder），避免数据散落到 vault 根 weave/
+		this.basePath = getV2PathsFromApp(app).ir.epub;
 	}
 
 	getApp(): App {

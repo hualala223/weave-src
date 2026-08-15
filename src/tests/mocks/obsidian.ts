@@ -264,6 +264,7 @@ export class Setting {
 
   setName = vi.fn().mockReturnThis();
   setDesc = vi.fn().mockReturnThis();
+  addSearch = vi.fn().mockReturnThis();
   addText = vi.fn().mockReturnThis();
   addTextArea = vi.fn().mockReturnThis();
   addToggle = vi.fn().mockReturnThis();

@@ -12,7 +12,7 @@ import {
 	type SelectionTranslationSettings,
 } from "../../config/selection-translation-settings";
 import { getEpubStorageService, normalizeEpubBookmarkFolderPath } from "../../services/epub";
-import { normalizeHighlightStoragePath } from "../../config/paths";
+import { normalizeHighlightStoragePath, normalizeWeaveParentFolder } from "../../config/paths";
 import { syncLargeNavButtonStyle } from "../../services/epub/epub-large-nav-style";
 import { notifyExcerptSettingsChanged } from "../../services/epub/excerpt-settings-events";
 import { ensureDefaultBookNotesExportTemplates } from "../../services/epub/book-notes-export/install-templates";
@@ -32,6 +32,8 @@ import type { EpubSettingsTranslateFn } from "./epub-settings-types";
 export interface EpubBasicSettingsActionDeps {
 	plugin: StandaloneEpubPlugin;
 	getTranslate: () => EpubSettingsTranslateFn;
+	getWeaveParentFolderValue: () => string;
+	setWeaveParentFolderInput: (value: string) => void;
 	getBookmarkFolderValue: () => string;
 	getHighlightStoragePathValue: () => string;
 	getInterfaceLanguageValue: () => InterfaceLanguagePreference;
@@ -89,6 +91,18 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 
 	return {
 		refreshBookNotesExportTemplateFolder,
+
+		async updateWeaveParentFolder(folderPath: string): Promise<void> {
+			const normalizedFolderPath = normalizeWeaveParentFolder(folderPath);
+			if (normalizedFolderPath === deps.getWeaveParentFolderValue()) {
+				deps.setWeaveParentFolderInput(normalizedFolderPath);
+				return;
+			}
+
+			plugin.settings.weaveParentFolder = normalizedFolderPath;
+			await deps.save();
+			showNotification(t("epub.settings.notifications.weaveParentFolderUpdated"), "success");
+		},
 
 		async updateBookmarkFolder(folderPath: string): Promise<void> {
 			const normalizedFolderPath = normalizeEpubBookmarkFolderPath(folderPath);

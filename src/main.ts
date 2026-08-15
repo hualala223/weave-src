@@ -31,6 +31,7 @@ import {
 import {
 	DEFAULT_HIGHLIGHT_STORAGE_PATH,
 	normalizeHighlightStoragePath,
+	normalizeWeaveParentFolder,
 } from "./config/paths";
 import { PremiumFeatureGuard } from "./services/premium/PremiumFeatureGuard";
 import { configureNavigationHub } from "./services/navigation/navigation-hub-access";
@@ -118,6 +119,8 @@ interface StandaloneEpubPluginSettings {
 	bookshelfDisplayMode: BookshelfDisplayMode;
 	bookmarkFolder: string;
 	highlightStoragePath: string;
+	/** 统一的 weave 数据父目录（留空 = vault 根下的 weave/）。书签/高亮/阅读状态等均解析到 <父目录>/weave/ 下。 */
+	weaveParentFolder: string;
 	continuousReadingPositionAutoSaveEnabled: boolean;
 	continuousReadingPositionAutoSavePages: number;
 	lastSelectedIRDeckId: string;
@@ -139,6 +142,7 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 	bookshelfDisplayMode: DEFAULT_BOOKSHELF_DISPLAY_MODE,
 	bookmarkFolder: DEFAULT_EPUB_BOOKMARK_FOLDER,
 	highlightStoragePath: DEFAULT_HIGHLIGHT_STORAGE_PATH,
+	weaveParentFolder: "",
 	continuousReadingPositionAutoSaveEnabled:
 		DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_ENABLED,
 	continuousReadingPositionAutoSavePages: DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
@@ -366,6 +370,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.settings.bookmarkFolder =
 			normalizeEpubBookmarkFolderPath(this.settings.bookmarkFolder) || DEFAULT_EPUB_BOOKMARK_FOLDER;
 		this.settings.highlightStoragePath = normalizeHighlightStoragePath(this.settings.highlightStoragePath);
+		this.settings.weaveParentFolder = normalizeWeaveParentFolder(this.settings.weaveParentFolder);
 		this.settings.selectionQuickCreateLastFolder = this.normalizeRememberedFolder(
 			this.settings.selectionQuickCreateLastFolder
 		);
@@ -426,6 +431,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.settings.bookmarkFolder =
 			normalizeEpubBookmarkFolderPath(this.settings.bookmarkFolder) || DEFAULT_EPUB_BOOKMARK_FOLDER;
 		this.settings.highlightStoragePath = normalizeHighlightStoragePath(this.settings.highlightStoragePath);
+		this.settings.weaveParentFolder = normalizeWeaveParentFolder(this.settings.weaveParentFolder);
 		this.settings.selectionQuickCreateLastFolder = this.normalizeRememberedFolder(
 			this.settings.selectionQuickCreateLastFolder
 		);

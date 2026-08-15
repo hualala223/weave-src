@@ -1,5 +1,6 @@
 import { getVisibleSplitActionsFromHost } from "../services/ai/ai-action-config";
 import type { EffectiveLicenseState, LicenseInfo, LicenseStore } from "../types/license";
+import { CURRENT_PLUGIN_ID } from "../config/plugin-runtime";
 import {
 	cloneLicenseAsInherited,
 	dedupeLicenses,
@@ -98,6 +99,11 @@ function getPluginById(app: PluginLookupApp | undefined, pluginId: string): Comp
 }
 
 export function getStandalonePlugin(app: PluginLookupApp | undefined): CompatiblePlugin | null {
+	// 当前实际运行插件（manifest id，fork 场景下与固定 standalone id 不同）优先
+	const currentPlugin = getPluginById(app, CURRENT_PLUGIN_ID);
+	if (currentPlugin) {
+		return currentPlugin;
+	}
 	return getPluginById(app, STANDALONE_PLUGIN_ID);
 }
 

@@ -3,12 +3,56 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	getCompatibleAISelectedTextPanelHost,
 	getCompatibleDataStorage,
+	getCompatibleWeaveParentFolder,
 	getInheritedLicensesFromLegacyWeave,
 	getCompatibleReadingMaterialManager,
 	getCompatibleWeaveParentFolderFromSettingsOwner,
+	getStandalonePlugin,
 } from "../../../utils/plugin-access";
+import { CURRENT_PLUGIN_ID } from "../../../config/plugin-runtime";
 
 describe("plugin-access compatibility fallbacks", () => {
+	it("resolves the current manifest plugin id before the fixed standalone id (fork scenario)", () => {
+		const forkPlugin = {
+			settings: {
+				weaveParentFolder: "CONFIG/STORAGE",
+			},
+		};
+		const app = {
+			plugins: {
+				getPlugin: (pluginId: string) => {
+					if (pluginId === CURRENT_PLUGIN_ID) {
+						return forkPlugin;
+					}
+					return null;
+				},
+			},
+		} as any;
+
+		expect(getStandalonePlugin(app)).toBe(forkPlugin);
+		expect(getCompatibleWeaveParentFolder(app)).toBe("CONFIG/STORAGE");
+	});
+
+	it("still falls back to the fixed standalone plugin id when the manifest id differs", () => {
+		const standalonePlugin = {
+			settings: {
+				weaveParentFolder: "StandaloneRoot",
+			},
+		};
+		const app = {
+			plugins: {
+				getPlugin: (pluginId: string) => {
+					if (pluginId === "weave-epub-reader") {
+						return standalonePlugin;
+					}
+					return null;
+				},
+			},
+		} as any;
+
+		expect(getStandalonePlugin(app)).toBe(standalonePlugin);
+	});
+
 	it("falls back to Weave readingMaterialManager when standalone plugin exists but lacks the capability", () => {
 		const legacyManager = {
 			getAllMaterials: vi.fn(async () => []),

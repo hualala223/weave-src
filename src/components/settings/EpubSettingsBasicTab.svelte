@@ -9,7 +9,7 @@
   import { EPUB_RUNTIME, normalizeEpubBookmarkFolderPath } from "../../services/epub";
   import type { CustomWebTranslationProvider } from "../../config/selection-translation-settings";
   import { normalizeInterfaceLanguagePreference, tr } from "../../utils/i18n";
-  import { normalizeHighlightStoragePath } from "../../config/paths";
+  import { normalizeHighlightStoragePath, normalizeWeaveParentFolder } from "../../config/paths";
   import type StandaloneEpubPlugin from "../../main";
   import { createEpubBasicSettingsActions } from "./epub-basic-settings-actions";
   import { mountEpubBasicSettings } from "./mount-epub-basic-settings";
@@ -31,6 +31,7 @@
 
   let bookmarkFolderInput = $state("");
   let highlightStoragePathInput = $state("");
+  let weaveParentFolderInput = $state("");
   let bookNotesExportTemplateFolderInput = $state("");
   let bookNotesExportTemplateFolderValue = $state("");
   let bookNotesExportDefaultTemplatePath = $state("");
@@ -52,6 +53,11 @@
   let highlightStoragePathValue = $derived.by(() => {
     stateVersion;
     return normalizeHighlightStoragePath(plugin.settings?.highlightStoragePath);
+  });
+
+  let weaveParentFolderValue = $derived.by(() => {
+    stateVersion;
+    return normalizeWeaveParentFolder(plugin.settings?.weaveParentFolder);
   });
 
   let debugModeEnabled = $derived.by(() => {
@@ -115,6 +121,7 @@
   const actions = createEpubBasicSettingsActions({
     plugin,
     getTranslate: () => t,
+    getWeaveParentFolderValue: () => weaveParentFolderValue,
     getBookmarkFolderValue: () => bookmarkFolderValue,
     getHighlightStoragePathValue: () => highlightStoragePathValue,
     getInterfaceLanguageValue: () => interfaceLanguageValue,
@@ -128,6 +135,9 @@
     getBookNotesExportDefaultTemplatePath: () => bookNotesExportDefaultTemplatePath,
     getCustomTranslationProviderDrafts: () => customTranslationProviderDrafts,
     getAutoSavePagesTextControl: () => autoSavePagesTextControl,
+    setWeaveParentFolderInput: (value) => {
+      weaveParentFolderInput = value;
+    },
     setBookmarkFolderInput: (value) => {
       bookmarkFolderInput = value;
     },
@@ -160,6 +170,11 @@
   $effect(() => {
     highlightStoragePathValue;
     highlightStoragePathInput = highlightStoragePathValue;
+  });
+
+  $effect(() => {
+    weaveParentFolderValue;
+    weaveParentFolderInput = weaveParentFolderValue;
   });
 
   $effect(() => {
@@ -230,6 +245,8 @@
         snapshot: {
           interfaceLanguageValue,
           premiumPreviewEnabled,
+          weaveParentFolderValue,
+          weaveParentFolderInput,
           bookmarkFolderValue,
           bookmarkFolderInput,
           highlightStoragePathValue,
@@ -248,6 +265,9 @@
         },
         callbacks: {
           save,
+          setWeaveParentFolderInput: (value) => {
+            weaveParentFolderInput = value;
+          },
           setBookmarkFolderInput: (value) => {
             bookmarkFolderInput = value;
           },
@@ -263,6 +283,7 @@
           setAutoSavePagesTextControl: (control) => {
             autoSavePagesTextControl = control;
           },
+          updateWeaveParentFolder: actions.updateWeaveParentFolder,
           updateBookmarkFolder: actions.updateBookmarkFolder,
           updateHighlightStoragePath: actions.updateHighlightStoragePath,
           updateInterfaceLanguage: actions.updateInterfaceLanguage,

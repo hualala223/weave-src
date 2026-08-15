@@ -26,6 +26,8 @@ export interface EpubBasicSettingsHosts {
 export interface EpubBasicSettingsSnapshot {
 	interfaceLanguageValue: InterfaceLanguagePreference;
 	premiumPreviewEnabled: boolean;
+	weaveParentFolderValue: string;
+	weaveParentFolderInput: string;
 	bookmarkFolderValue: string;
 	bookmarkFolderInput: string;
 	highlightStoragePathValue: string;
@@ -45,11 +47,13 @@ export interface EpubBasicSettingsSnapshot {
 
 export interface EpubBasicSettingsCallbacks {
 	save: () => Promise<void>;
+	setWeaveParentFolderInput: (value: string) => void;
 	setBookmarkFolderInput: (value: string) => void;
 	setHighlightStoragePathInput: (value: string) => void;
 	setBookNotesExportTemplateFolderInput: (value: string) => void;
 	setContinuousReadingPositionAutoSavePagesInput: (value: string) => void;
 	setAutoSavePagesTextControl: (control: TextComponent | null) => void;
+	updateWeaveParentFolder: (folderPath: string) => Promise<void>;
 	updateBookmarkFolder: (folderPath: string) => Promise<void>;
 	updateHighlightStoragePath: (filePath: string) => Promise<void>;
 	updatePremiumPreview: (enabled: boolean) => Promise<void>;

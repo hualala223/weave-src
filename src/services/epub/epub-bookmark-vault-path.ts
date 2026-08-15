@@ -1,5 +1,6 @@
 import type { App } from "obsidian";
 import { normalizePath } from "obsidian";
+import { CURRENT_PLUGIN_ID } from "../../config/plugin-runtime";
 import {
 	DEFAULT_EPUB_BOOKMARK_FOLDER,
 	isPathUnderEpubBookmarkFolder,
@@ -15,7 +16,10 @@ export function resolveEpubBookmarkFolderForApp(app: App): string {
 			getPlugin?: (id: string) => { settings?: { bookmarkFolder?: string } } | null;
 		};
 	};
+	// 当前实际运行插件（manifest id，fork 场景下与 runtime id 不同）的设置优先；
+	// 其次 runtime id（独立构建名），最后才是兼容宿主回退。
 	const plugin =
+		pluginLookup.plugins?.getPlugin?.(CURRENT_PLUGIN_ID) ??
 		pluginLookup.plugins?.getPlugin?.(runtimePluginId) ??
 		(getCompatiblePlugin(pluginLookup as unknown) as { settings?: { bookmarkFolder?: string } } | null);
 	return (

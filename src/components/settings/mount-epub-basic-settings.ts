@@ -191,6 +191,22 @@ export function mountEpubBasicSettings(options: EpubBasicSettingsMountOptions): 
 			});
 		});
 
+	const weaveParentFolderSetting = new Setting(hosts.reading)
+		.setName(t("epub.settings.basic.weaveParentFolder"))
+		.setDesc(t("epub.settings.basic.weaveParentFolderDesc"))
+		.setClass("epub-weave-parent-folder-setting");
+
+	mountFolderSearchSetting({
+		setting: weaveParentFolderSetting,
+		placeholder: t("epub.settings.basic.weaveParentFolderPlaceholder"),
+		value: snapshot.weaveParentFolderValue,
+		onInput: callbacks.setWeaveParentFolderInput,
+		onCommit: callbacks.updateWeaveParentFolder,
+		onEscape: () => snapshot.weaveParentFolderValue,
+		app: plugin.app,
+		cleanupFns,
+	});
+
 	const bookmarkFolderSetting = new Setting(hosts.reading)
 		.setName(t("epub.settings.basic.bookmarkFolder"))
 		.setDesc(t("epub.settings.basic.bookmarkFolderDesc"))

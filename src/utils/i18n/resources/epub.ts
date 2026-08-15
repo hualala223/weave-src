@@ -875,6 +875,7 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 					diagnostics: "开发与诊断",
 				},
 				notifications: {
+					weaveParentFolderUpdated: "Weave 数据根目录已更新",
 					bookmarkFolderUpdated: "书签目录已更新",
 					highlightStoragePathUpdated: "高亮数据文件路径已更新",
 					bookNotesExportTemplateFolderUpdated: "导出模板目录已更新",
@@ -904,6 +905,10 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 					showPremiumPreview: "显示高级功能预览",
 					showPremiumPreviewDesc:
 						"开启后，基础设置页与阅读器中会显示锁定状态的高级功能入口，点击后可查看功能分层说明。",
+					weaveParentFolder: "Weave 数据根目录（父目录）",
+					weaveParentFolderDesc:
+						"书签、高亮、阅读状态等数据统一存放在 <父目录>/weave/ 下。留空使用 Vault 根目录下的 weave/。修改后，未单独指定的目录会自动跟随此根目录。",
+					weaveParentFolderPlaceholder: "选择父目录（留空 = Vault 根下的 weave/）",
 					bookmarkFolder: "书签目录",
 					bookmarkFolderDesc: "书签文件会保存到所选文件夹，属于基础免费能力。",
 					bookmarkFolderPlaceholder: "选择文件夹路径",
@@ -2115,6 +2120,7 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 					diagnostics: "Development and diagnostics",
 				},
 				notifications: {
+					weaveParentFolderUpdated: "Weave data root updated",
 					bookmarkFolderUpdated: "Bookmark folder updated",
 					highlightStoragePathUpdated: "Highlight data file path updated",
 					bookNotesExportTemplateFolderUpdated: "Export template folder updated",
@@ -2144,6 +2150,10 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 					showPremiumPreview: "Show premium feature preview",
 					showPremiumPreviewDesc:
 						"When enabled, locked premium entries remain visible in settings and the reader so users can inspect feature tiers.",
+					weaveParentFolder: "Weave data root (parent folder)",
+					weaveParentFolderDesc:
+						"Bookmarks, highlights, reading state and other data live under <parent>/weave/. Leave empty to use weave/ at the vault root. Folders without an explicit value follow this root.",
+					weaveParentFolderPlaceholder: "Choose a parent folder (empty = weave/ at vault root)",
 					bookmarkFolder: "Bookmark folder",
 					bookmarkFolderDesc:
 						"Bookmark files are saved to the selected folder as a free basic capability.",

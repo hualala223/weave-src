@@ -1,5 +1,6 @@
 import type { App } from "obsidian";
 import type { LicenseInfo } from "../../types/license";
+import { CURRENT_PLUGIN_ID } from "../../config/plugin-runtime";
 import { getLegacyWeavePlugin } from "../../utils/plugin-access";
 import { getEpubRuntime } from "./epub-runtime";
 
@@ -212,7 +213,14 @@ type PluginHostApp = App & {
 
 function getRuntimePluginHost(app: App): EpubHostCapabilities | null {
 	const runtime = getEpubRuntime();
-	const pluginUnknown: unknown = (app as PluginHostApp).plugins.getPlugin(runtime.pluginId);
+	const pluginLookup = app as PluginHostApp | { plugins?: unknown };
+	if (!pluginLookup.plugins || typeof pluginLookup.plugins !== "object") {
+		return null;
+	}
+	// 当前 manifest id（fork 场景）优先，其次固定 runtime id
+	const pluginUnknown: unknown =
+		(pluginLookup as PluginHostApp).plugins.getPlugin(CURRENT_PLUGIN_ID) ??
+		(pluginLookup as PluginHostApp).plugins.getPlugin(runtime.pluginId);
 	if (!pluginUnknown || typeof pluginUnknown !== "object") {
 		return null;
 	}
