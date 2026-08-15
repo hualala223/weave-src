@@ -356,8 +356,8 @@ export class EpubStorageService {
 	private paragraphModePositionsMigrated = false;
 
 	private getParagraphModePositionsPath(): string {
-		return this.getPluginAdapterPath(
-			getPluginPathsById(this.app, this.localPluginId).cache.epubParagraphModePositions
+		return normalizePath(
+			`${this.resolveDataPath()}/cache/epub-paragraph-mode-positions.json`
 		);
 	}
 
@@ -3815,6 +3815,9 @@ export class EpubStorageService {
 		}
 		this.legacyStorageRetired = true;
 
+		// 先把旧插件目录 cache 文件迁移到统一数据目录，再删除其余旧文件。
+		await this.migrateLegacyPluginCacheFiles();
+
 		const adapter = this.app.vault.adapter as {
 			remove?: (path: string) => Promise<void>;
 		};
@@ -3874,6 +3877,65 @@ export class EpubStorageService {
 				preserveRoot: false,
 			}),
 		]);
+	}
+
+	/**
+	 * 旧插件目录 cache 文件迁移到统一数据目录（<dataPath>/cache/...）：
+	 * 旧位置存在且新位置不存在时复制内容，随后删除旧文件。
+	 */
+	private async migrateLegacyPluginCacheFiles(): Promise<void> {
+		const adapter = this.app.vault.adapter as {
+			read?: (path: string) => Promise<string>;
+			write?: (path: string, data: string) => Promise<void>;
+			remove?: (path: string) => Promise<void>;
+		};
+		if (
+			typeof adapter.read !== "function" ||
+			typeof adapter.write !== "function" ||
+			typeof adapter.remove !== "function"
+		) {
+			return;
+		}
+
+		const legacyPluginCache = getPluginPathsById(this.app, this.localPluginId).cache;
+		const dataPath = this.resolveDataPath();
+		const targets: Array<{ legacy: string; next: string }> = [
+			{
+				legacy: legacyPluginCache.incrementalReading.epubBacklinkHighlightsCache,
+				next: normalizePath(
+					`${dataPath}/cache/incremental-reading/epub-backlink-highlights-cache.json`
+				),
+			},
+			{
+				legacy: legacyPluginCache.incrementalReading.epubAnnotationViewSnapshotsCache,
+				next: normalizePath(
+					`${dataPath}/cache/incremental-reading/epub-annotation-view-snapshots-cache.json`
+				),
+			},
+			{
+				legacy: legacyPluginCache.epubParagraphModePositions,
+				next: normalizePath(`${dataPath}/cache/epub-paragraph-mode-positions.json`),
+			},
+		];
+
+		for (const { legacy, next } of targets) {
+			try {
+				if (!(await this.app.vault.adapter.exists(legacy))) {
+					continue;
+				}
+				if (!(await this.app.vault.adapter.exists(next))) {
+					const content = await adapter.read(legacy);
+					await DirectoryUtils.ensureDirForFile(this.app.vault.adapter, next);
+					await adapter.write(next, content);
+				}
+				await adapter.remove(legacy);
+			} catch (error) {
+				logger.warn(
+					`[EpubStorageService] Failed to migrate legacy cache file ${legacy}:`,
+					error
+				);
+			}
+		}
 	}
 
 	private async removeLegacyScopedFiles(rootPath: string, fileNames: string[]): Promise<void> {

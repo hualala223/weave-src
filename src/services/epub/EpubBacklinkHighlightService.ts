@@ -1,5 +1,5 @@
 import { type App, type EventRef, type TFile, normalizePath } from "obsidian";
-import { getPluginPathsById, getV2PathsFromApp } from "../../config/paths";
+import { getPluginPathsById, getV2PathsFromApp, resolveConfiguredDataPath } from "../../config/paths";
 import { CURRENT_PLUGIN_ID } from "../../config/plugin-runtime";
 import { DirectoryUtils } from "../../utils/directory-utils";
 import { safeReadJson } from "../../utils/safe-json-io";
@@ -3395,8 +3395,10 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 	}
 
 	private getDiskCachePath(): string {
-		return getPluginPathsById(this.app as unknown, this.localPluginId).cache.incrementalReading
-			.epubBacklinkHighlightsCache;
+		const dataPath = resolveConfiguredDataPath(this.app);
+		return normalizePath(
+			`${dataPath}/cache/incremental-reading/epub-backlink-highlights-cache.json`
+		);
 	}
 
 	private createEmptyDiskCacheStore(): EpubBacklinkHighlightsCacheStore {

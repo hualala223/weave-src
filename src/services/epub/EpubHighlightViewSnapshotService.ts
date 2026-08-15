@@ -1,6 +1,5 @@
-import type { App } from "obsidian";
-import { getPluginPathsById } from "../../config/paths";
-import { CURRENT_PLUGIN_ID } from "../../config/plugin-runtime";
+import { type App, normalizePath } from "obsidian";
+import { resolveConfiguredDataPath } from "../../config/paths";
 import { DirectoryUtils } from "../../utils/directory-utils";
 import { logger } from "../../utils/logger";
 import { TagExtractor } from "../../utils/tag-extractor";
@@ -401,8 +400,10 @@ export class EpubHighlightViewSnapshotService {
 		if (!this.app) {
 			return "";
 		}
-		return getPluginPathsById(this.app, CURRENT_PLUGIN_ID).cache.incrementalReading
-			.epubAnnotationViewSnapshotsCache;
+		const dataPath = resolveConfiguredDataPath(this.app);
+		return normalizePath(
+			`${dataPath}/cache/incremental-reading/epub-annotation-view-snapshots-cache.json`
+		);
 	}
 
 	private createEmptyDiskStore(): EpubHighlightViewSnapshotDiskStore {

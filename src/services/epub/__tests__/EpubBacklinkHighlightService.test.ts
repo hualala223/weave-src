@@ -1026,7 +1026,7 @@ describe('EpubBacklinkHighlightService', () => {
 
 	it('rebuildHighlightIndexes clears cached highlights and source index on disk', async () => {
 		const cachePath =
-			'.obsidian/plugins/weave/cache/incremental-reading/epub-backlink-highlights-cache.json';
+			'CONFIG/STORAGE/cache/incremental-reading/epub-backlink-highlights-cache.json';
 		const cacheContent = JSON.stringify({
 			version: '1.3.0',
 			lastUpdated: '2026-01-01T00:00:00.000Z',

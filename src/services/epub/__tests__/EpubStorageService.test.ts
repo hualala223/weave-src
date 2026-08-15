@@ -9,7 +9,7 @@ const LEGACY_LOCAL_EPUB_DATA_PATH = '.obsidian/plugins/weave/state/incremental-r
 const LOCAL_EPUB_SCAN_INDEX_PATH = '.obsidian/plugins/weave/cache/epub-scan-index.json';
 const LOCAL_EPUB_STATE_ROOT = '.obsidian/plugins/weave/state/incremental-reading/reader-state/epub';
 const LOCAL_EPUB_PARAGRAPH_MODE_POSITIONS_PATH =
-	'.obsidian/plugins/weave/cache/epub-paragraph-mode-positions.json';
+	'CONFIG/STORAGE/cache/epub-paragraph-mode-positions.json';
 const LOCAL_EPUB_ARTIFACTS_ROOT = '.obsidian/plugins/weave/cache/incremental-reading/reader-artifacts/epub';
 
 /** Bookmarks now persist in the unified weave-data.json store (default data path). */

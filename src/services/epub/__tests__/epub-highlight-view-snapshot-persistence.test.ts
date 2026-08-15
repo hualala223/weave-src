@@ -1,16 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const CACHE_PATH =
-	".obsidian/plugins/weave-epub-reader/cache/incremental-reading/epub-annotation-view-snapshots-cache.json";
+	"CONFIG/STORAGE/cache/incremental-reading/epub-annotation-view-snapshots-cache.json";
 
 vi.mock("../../../config/paths", () => ({
-	getPluginPathsById: vi.fn(() => ({
-		cache: {
-			incrementalReading: {
-				epubAnnotationViewSnapshotsCache: CACHE_PATH,
-			},
-		},
-	})),
+	resolveConfiguredDataPath: vi.fn(() => "CONFIG/STORAGE"),
 }));
 
 vi.mock("../../../utils/directory-utils", () => ({

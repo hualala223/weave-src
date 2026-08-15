@@ -570,6 +570,25 @@ export function resolveDataPath(value?: string): string {
 }
 
 /**
+ * 解析插件设置中配置的数据路径（vault 相对路径），未配置时回退默认 CONFIG/STORAGE。
+ * 参数接受任意 app 形态（Obsidian App / mock），内部安全访问 plugins.getPlugin。
+ */
+export function resolveConfiguredDataPath(app?: unknown): string {
+	const candidate = app as
+		| {
+				plugins?: {
+					getPlugin?: (pluginId: string) => {
+						settings?: { dataPath?: string };
+					} | null | undefined;
+				};
+		  }
+		| null
+		| undefined;
+	const plugin = candidate?.plugins?.getPlugin?.(CURRENT_PLUGIN_ID);
+	return normalizeDataPath(plugin?.settings?.dataPath);
+}
+
+/**
  * 统一数据文件完整路径：<dataPath>/weave-data.json。
  */
 export function resolveWeaveDataFilePath(dataPath?: string): string {

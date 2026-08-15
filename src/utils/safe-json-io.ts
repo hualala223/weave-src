@@ -8,12 +8,12 @@
  * 备份存储位置：.obsidian/plugins/<current-plugin-id>/backups/
  */
 
-import { getPluginPaths } from "../config/paths";
+import { resolveConfiguredDataPath, resolveDataBackupsDir } from "../config/paths";
 import { DirectoryUtils } from "./directory-utils";
 import { logger } from "./logger";
 
 function getBackupDir(app?: { vault: { configDir: string } }): string {
-	return `${getPluginPaths(app).backups}/json-recovery`;
+	return resolveDataBackupsDir(resolveConfiguredDataPath(app));
 }
 
 /**

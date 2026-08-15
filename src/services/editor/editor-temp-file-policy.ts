@@ -1,6 +1,6 @@
 import type { App } from "obsidian";
 import { normalizePath } from "obsidian";
-import { LEGACY_DOT_TUANKI, PATHS, getPluginPaths, getV2PathsFromApp } from "../../config/paths";
+import { LEGACY_DOT_TUANKI, PATHS, getV2PathsFromApp, resolveConfiguredDataPath } from "../../config/paths";
 
 export const DETACHED_EDITOR_TEMP_FILE_PREFIX = "weave-editor-";
 export const DETACHED_EDITOR_TEMP_FILE_SUFFIX = ".md";
@@ -110,7 +110,7 @@ function sanitizeDetachedEditorSourcePath(sourcePath?: string): string {
 }
 
 export function getPluginEditorTempDir(app: App): string {
-	return normalizePath(getPluginPaths(app).cache.editorTemp);
+	return normalizePath(`${resolveConfiguredDataPath(app)}/cache/editor-temp`);
 }
 
 export function getVaultEditorTempDir(app: App): string {
