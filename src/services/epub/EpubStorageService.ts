@@ -126,6 +126,11 @@ export interface EpubShelfSectionData {
 	scanIndex?: EpubScanIndexEntry[];
 }
 
+/** weave-data.json `traceability` 领域分区（溯源注册表）。 */
+export interface EpubTraceabilitySectionData {
+	sourceRegistry?: EpubSourceRegistryEntry[];
+}
+
 export type { EpubBookshelfMembershipEntry };
 
 export type { EpubBookshelfPlaylist };
@@ -402,10 +407,6 @@ export class EpubStorageService {
 
 	private getBookshelfMembershipPath(): string {
 		return `${this.basePath}/bookshelf-membership.json`;
-	}
-
-	private getSourceRegistryPath(): string {
-		return `${this.basePath}/epub-source-registry.json`;
 	}
 
 	private paragraphModePositionsMigrated = false;
@@ -1171,17 +1172,12 @@ export class EpubStorageService {
 			changed = true;
 		}
 
-		const canonicalSourceRegistry = this.canonicalizeSourceRegistryEntries(
-			nextUnifiedData.sourceRegistry
-		);
+		const currentSourceRegistry = await this.loadSourceRegistry();
+		const canonicalSourceRegistry = this.canonicalizeSourceRegistryEntries(currentSourceRegistry);
 		if (
-			this.haveSourceRegistryEntriesChanged(
-				nextUnifiedData.sourceRegistry,
-				canonicalSourceRegistry
-			)
+			this.haveSourceRegistryEntriesChanged(currentSourceRegistry, canonicalSourceRegistry)
 		) {
-			nextUnifiedData.sourceRegistry = canonicalSourceRegistry;
-			changed = true;
+			await this.saveSourceRegistry(canonicalSourceRegistry);
 		}
 
 		if (changed) {
@@ -1344,15 +1340,6 @@ export class EpubStorageService {
 		}
 	}
 
-	private parseSourceRegistryEntries(content: string): EpubSourceRegistryEntry[] {
-		try {
-			return this.normalizeSourceRegistryEntries(JSON.parse(content));
-		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to parse epub-source-registry.json:", error);
-			return [];
-		}
-	}
-
 	private async readStoredBookshelfMembership(): Promise<EpubBookshelfMembershipEntry[] | null> {
 		const membershipPath = this.getBookshelfMembershipPath();
 		const adapter = this.app.vault.adapter;
@@ -1365,22 +1352,6 @@ export class EpubStorageService {
 			return this.parseBookshelfMembershipEntries(content);
 		} catch (error) {
 			logger.warn("[EpubStorageService] Failed to read bookshelf-membership.json:", error);
-			return null;
-		}
-	}
-
-	private async readStoredSourceRegistry(): Promise<EpubSourceRegistryEntry[] | null> {
-		const registryPath = this.getSourceRegistryPath();
-		const adapter = this.app.vault.adapter;
-		if (!(await adapter.exists(registryPath))) {
-			return null;
-		}
-
-		try {
-			const content = await adapter.read(registryPath);
-			return this.parseSourceRegistryEntries(content);
-		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to read epub-source-registry.json:", error);
 			return null;
 		}
 	}
@@ -2249,19 +2220,22 @@ export class EpubStorageService {
 	}
 
 	async loadSourceRegistry(): Promise<EpubSourceRegistryEntry[]> {
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		if ((await this.hasUnifiedLocalDataFile()) && Array.isArray(unifiedData.sourceRegistry)) {
-			return unifiedData.sourceRegistry;
-		}
-
-		const entries = await this.readStoredSourceRegistry();
-		return entries ?? [];
+		const traceability = await this.getDataStore().getSection<EpubTraceabilitySectionData>(
+			"traceability"
+		);
+		return Array.isArray(traceability?.sourceRegistry)
+			? this.normalizeSourceRegistryEntries(traceability.sourceRegistry)
+			: [];
 	}
 
 	async saveSourceRegistry(entries: EpubSourceRegistryEntry[]): Promise<void> {
 		const normalizedEntries = this.normalizeSourceRegistryEntries(entries);
-		await this.updateUnifiedLocalReaderData((localData) => {
-			localData.sourceRegistry = normalizedEntries;
+		const store = this.getDataStore();
+		// 先确保文档已加载，避免 mutate 基于空文档覆盖其它领域分区。
+		await store.getDocument();
+		store.mutate((document) => {
+			const traceability = (document.traceability ?? {}) as EpubTraceabilitySectionData;
+			document.traceability = { ...traceability, sourceRegistry: normalizedEntries };
 		});
 	}
 
@@ -4211,7 +4185,6 @@ export class EpubStorageService {
 			`${this.basePath}/reader-settings.mobile.json`,
 			`${this.basePath}/excerpt-settings.json`,
 			`${this.basePath}/canvas-bindings.json`,
-			`${this.basePath}/epub-source-registry.json`,
 			`${this.basePath}/bookshelf-membership.json`,
 			...this.getLegacyUnifiedLocalDataPaths(),
 			normalizePath(`${this.getLocalReaderStateRoot()}/reader-settings.desktop.json`),
@@ -4356,19 +4329,6 @@ export class EpubStorageService {
 			);
 			if (mergeResult.changed) {
 				unifiedData.bookshelfMembership = mergeResult.merged;
-				markChanged();
-			}
-		}
-
-		const legacyRegistry = await this.readStoredSourceRegistry();
-		if (legacyRegistry) {
-			const mergeResult = this.mergeArrayByKey(
-				unifiedData.sourceRegistry,
-				legacyRegistry,
-				(entry) => entry.sourceId
-			);
-			if (mergeResult.changed) {
-				unifiedData.sourceRegistry = mergeResult.merged;
 				markChanged();
 			}
 		}

@@ -20,6 +20,9 @@ import { TFile } from 'obsidian';
 import { EpubBacklinkHighlightService } from '../EpubBacklinkHighlightService';
 import { EpubExcerptOfficialApiService } from '../EpubExcerptOfficialApiService';
 
+/** 溯源注册表现存于统一 weave-data.json 的 traceability 分区（默认数据路径）。 */
+const WEAVE_DATA_FILE = 'CONFIG/STORAGE/weave-data.json';
+
 type MockFile = {
 	path: string;
 	name: string;
@@ -484,14 +487,19 @@ describe('EpubBacklinkHighlightService', () => {
 		const { app } = createMockApp({
 			[notePath]: noteContent,
 			'Books/new-demo.epub': 'same-binary',
-			'weave/incremental-reading/epub-reading/epub-source-registry.json': JSON.stringify([
-				{
-					sourceId: 'epubsrc-stable',
-					filePath: 'Books/new-demo.epub',
-					lastSeenAt: 1710000000000,
-					lastKnownPath: 'Books/new-demo.epub',
+			[WEAVE_DATA_FILE]: JSON.stringify({
+				schemaVersion: 1,
+				traceability: {
+					sourceRegistry: [
+						{
+							sourceId: 'epubsrc-stable',
+							filePath: 'Books/new-demo.epub',
+							lastSeenAt: 1710000000000,
+							lastKnownPath: 'Books/new-demo.epub',
+						},
+					],
 				},
-			]),
+			}),
 		});
 		app.metadataCache.resolvedLinks = {};
 		const service = new EpubBacklinkHighlightService(app);
@@ -521,14 +529,19 @@ describe('EpubBacklinkHighlightService', () => {
 		const { app, files } = createMockApp({
 			[notePath]: noteContent,
 			'Books/new-demo.epub': 'same-binary',
-			'weave/incremental-reading/epub-reading/epub-source-registry.json': JSON.stringify([
-				{
-					sourceId: 'epubsrc-stable',
-					filePath: 'Books/new-demo.epub',
-					lastSeenAt: 1710000000000,
-					lastKnownPath: 'Books/new-demo.epub',
+			[WEAVE_DATA_FILE]: JSON.stringify({
+				schemaVersion: 1,
+				traceability: {
+					sourceRegistry: [
+						{
+							sourceId: 'epubsrc-stable',
+							filePath: 'Books/new-demo.epub',
+							lastSeenAt: 1710000000000,
+							lastKnownPath: 'Books/new-demo.epub',
+						},
+					],
 				},
-			]),
+			}),
 		});
 		const service = new EpubBacklinkHighlightService(app);
 

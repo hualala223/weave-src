@@ -47,6 +47,14 @@ function readShelfScanIndex(files: Map<string, string>): Array<{ path: string }>
   return (parsed.shelf?.scanIndex ?? []) as Array<{ path: string }>;
 }
 
+function readTraceabilityRegistry(files: Map<string, string>): Array<Record<string, unknown>> {
+  if (!files.has(WEAVE_DATA_FILE)) {
+    return [];
+  }
+  const parsed = JSON.parse(files.get(WEAVE_DATA_FILE) || '{}');
+  return (parsed.traceability?.sourceRegistry ?? []) as Array<Record<string, unknown>>;
+}
+
 function createMemoryApp(
   initialFiles: Record<string, string> = {},
   vaultFiles: string[] = [],
@@ -874,12 +882,6 @@ describe('EpubStorageService', () => {
       canvasBindings: {
         'book-1': 'Canvas/demo.canvas',
       },
-      sourceRegistry: [
-        {
-          sourceId: 'epubsrc-1',
-          filePath: 'Books/demo.epub',
-        },
-      ],
     });
     expect(files.has(`${SYNC_EPUB_ROOT}/books.json`)).toBe(false);
     expect(files.has(`${SYNC_EPUB_ROOT}/book-1/bookmarks.json`)).toBe(false);
@@ -888,7 +890,8 @@ describe('EpubStorageService', () => {
     expect(files.has(`${SYNC_EPUB_ROOT}/book-1/notes.json`)).toBe(false);
     expect(files.has(`${SYNC_EPUB_ROOT}/reader-settings.desktop.json`)).toBe(false);
     expect(files.has(`${SYNC_EPUB_ROOT}/canvas-bindings.json`)).toBe(false);
-    expect(files.has(`${SYNC_EPUB_ROOT}/epub-source-registry.json`)).toBe(false);
+    // Legacy source registry is left untouched until storage retirement (ticket 20).
+    expect(files.has(`${SYNC_EPUB_ROOT}/epub-source-registry.json`)).toBe(true);
     // Legacy scan index is left untouched until storage retirement (ticket 20).
     expect(files.has(`${SYNC_EPUB_ROOT}/epub-scan-index.json`)).toBe(true);
     expect(files.has(`${LOCAL_EPUB_ARTIFACTS_ROOT}/book-1/concealed-texts.json`)).toBe(false);
@@ -1676,7 +1679,6 @@ describe('EpubStorageService', () => {
   it('deletes the tracked book file and cleans associated epub state', async () => {
     const booksPath = `${SYNC_EPUB_ROOT}/books.json`;
     const membershipPath = `${SYNC_EPUB_ROOT}/bookshelf-membership.json`;
-    const sourceRegistryPath = `${SYNC_EPUB_ROOT}/epub-source-registry.json`;
     const { app, files, vaultFiles } = createMemoryApp({
       [booksPath]: JSON.stringify({
         'book-1': createBook({ sourceId: 'epubsrc-demo' }),
@@ -1694,21 +1696,23 @@ describe('EpubStorageService', () => {
             },
           ],
         },
+        traceability: {
+          sourceRegistry: [
+            {
+              sourceId: 'epubsrc-demo',
+              filePath: 'Books/demo.epub',
+              sourceFingerprint: 'fingerprint-demo',
+              sourceSize: 1024,
+              sourceMtime: 1710000000000,
+              lastSeenAt: 1710000000000,
+            },
+          ],
+        },
       }),
       [membershipPath]: JSON.stringify([
         {
           path: 'Books/demo.epub',
           addedAt: 100,
-        },
-      ]),
-      [sourceRegistryPath]: JSON.stringify([
-        {
-          sourceId: 'epubsrc-demo',
-          filePath: 'Books/demo.epub',
-          sourceFingerprint: 'fingerprint-demo',
-          sourceSize: 1024,
-          sourceMtime: 1710000000000,
-          lastSeenAt: 1710000000000,
         },
       ]),
       [`${LOCAL_EPUB_STATE_ROOT}/book-1/state.json`]: JSON.stringify({
@@ -1743,7 +1747,8 @@ describe('EpubStorageService', () => {
     expect(await reloadedService.listBookshelfEntries()).toEqual([]);
     expect(localData.books || {}).toEqual({});
     expect(localData.bookshelfMembership).toEqual([]);
-    expect(localData.sourceRegistry).toEqual([
+    await flushWeaveDataStore(app);
+    expect(readTraceabilityRegistry(files)).toEqual([
       expect.objectContaining({
         sourceId: expect.stringMatching(/^epubsrc-/),
         filePath: '',
@@ -1877,15 +1882,20 @@ describe('EpubStorageService', () => {
         canvasBindings: {
           'epub-old-runtime': 'Canvas/demo.canvas',
         },
-        sourceRegistry: [
-          {
-            sourceId: legacySourceId,
-            filePath: 'Books/demo.epub',
-            sourceFingerprint,
-            lastSeenAt: 10,
-            lastKnownPath: 'Books/demo.epub',
-          },
-        ],
+      }),
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        schemaVersion: 1,
+        traceability: {
+          sourceRegistry: [
+            {
+              sourceId: legacySourceId,
+              filePath: 'Books/demo.epub',
+              sourceFingerprint,
+              lastSeenAt: 10,
+              lastKnownPath: 'Books/demo.epub',
+            },
+          ],
+        },
       }),
     }, ['Books/demo.epub'], {
       'Books/demo.epub': 'same-binary-epub',
@@ -1906,7 +1916,8 @@ describe('EpubStorageService', () => {
     expect(localData.canvasBindings).toEqual({
       [canonicalBookId]: 'Canvas/demo.canvas',
     });
-    expect(localData.sourceRegistry).toEqual([
+    await flushWeaveDataStore(app);
+    expect(readTraceabilityRegistry(files)).toEqual([
       expect.objectContaining({
         sourceId: canonicalSourceId,
         sourceFingerprint,
