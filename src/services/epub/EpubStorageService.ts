@@ -6,7 +6,10 @@ import {
 	LEGACY_PATHS,
 	getV2PathsFromApp,
 	toVaultAdapterPath,
+	DEFAULT_DATA_PATH,
+	normalizeDataPath,
 } from "../../config/paths";
+import { CURRENT_PLUGIN_ID } from "../../config/plugin-runtime";
 import { DirectoryUtils } from "../../utils/directory-utils";
 import { logger } from "../../utils/logger";
 import {
@@ -88,7 +91,7 @@ import {
 	sortBookshelfPlaylists,
 	type EpubBookshelfPlaylist,
 } from "./epub-bookshelf-playlist-store";
-import { peelEmbeddedScanIndexFromUnifiedData } from "./epub-unified-local-data-read";
+import { getWeaveDataStore, type WeaveDataStore } from "./weave-data-store";
 import {
 	normalizeTocChapterMarkKey,
 	normalizeTocChapterMarkMap,
@@ -116,6 +119,11 @@ export interface EpubBookshelfIndexEntry {
 export interface EpubScanIndexEntry extends EpubBookshelfIndexEntry {
 	mtime: number;
 	coverImage?: string;
+}
+
+/** weave-data.json `shelf` 领域分区（书架/扫描索引）。 */
+export interface EpubShelfSectionData {
+	scanIndex?: EpubScanIndexEntry[];
 }
 
 export type { EpubBookshelfMembershipEntry };
@@ -202,11 +210,26 @@ export class EpubStorageService {
 		return this.bookmarkService;
 	}
 
+	/** 生效的 weave-data.json 数据路径（读取插件设置 dataPath，回退默认）。 */
+	private resolveDataPath(): string {
+		const plugin = (this.app as unknown as {
+			plugins?: {
+				getPlugin?: (pluginId: string) => {
+					settings?: { dataPath?: string };
+				} | null | undefined;
+			};
+		})?.plugins?.getPlugin?.(CURRENT_PLUGIN_ID);
+		return normalizeDataPath(plugin?.settings?.dataPath) || DEFAULT_DATA_PATH;
+	}
+
+	private getDataStore(): WeaveDataStore {
+		return getWeaveDataStore(this.app, () => this.resolveDataPath());
+	}
+
 	async ensureDirectories(): Promise<void> {
 		await Promise.all([
 			this.ensureSyncBaseDirectory(),
 			this.ensureUnifiedLocalDataDirectory(),
-			this.ensureScanIndexDirectory(),
 		]);
 	}
 
@@ -216,10 +239,6 @@ export class EpubStorageService {
 
 	private async ensureUnifiedLocalDataDirectory(): Promise<void> {
 		await DirectoryUtils.ensureDirForFile(this.app.vault.adapter, this.getUnifiedLocalDataPath());
-	}
-
-	private async ensureScanIndexDirectory(): Promise<void> {
-		await DirectoryUtils.ensureDirForFile(this.app.vault.adapter, this.getScanIndexPath());
 	}
 
 	async loadBooks(options?: { hydrateStates?: boolean }): Promise<Record<string, EpubBook>> {
@@ -379,20 +398,6 @@ export class EpubStorageService {
 		return Array.from(
 			new Set([normalizePath(this.basePath), normalizePath(LEGACY_PATHS.epubReading)])
 		).filter(Boolean);
-	}
-
-	private getBookshelfIndexPath(): string {
-		return `${this.basePath}/bookshelf-index.json`;
-	}
-
-	private getScanIndexPath(): string {
-		return this.getPluginAdapterPath(
-			getPluginPathsById(this.app, this.localPluginId).cache.epubScanIndex
-		);
-	}
-
-	private getLegacyStoredScanIndexPath(): string {
-		return `${this.basePath}/epub-scan-index.json`;
 	}
 
 	private getBookshelfMembershipPath(): string {
@@ -802,14 +807,7 @@ export class EpubStorageService {
 
 		try {
 			const content = await adapter.read(sourcePath);
-			const parsed = this.normalizeLocalReaderData(JSON.parse(content));
-			const { data: normalized, embeddedScanIndex } = peelEmbeddedScanIndexFromUnifiedData(parsed);
-			if (embeddedScanIndex) {
-				const cachedScanIndex = await this.readCachedScanIndex();
-				if (cachedScanIndex === null) {
-					await this.writeCachedScanIndex(embeddedScanIndex);
-				}
-			}
+			const normalized = this.normalizeLocalReaderData(JSON.parse(content));
 			this.setCachedUnifiedLocalReaderData(normalized);
 			if (sourcePath !== this.getUnifiedLocalDataPath()) {
 				await this.writeUnifiedLocalReaderData(normalized);
@@ -843,15 +841,7 @@ export class EpubStorageService {
 			}
 			try {
 				const content = await adapter.read(sourcePath);
-				const parsed = this.normalizeLocalReaderData(JSON.parse(content));
-				const { data: normalized, embeddedScanIndex } = peelEmbeddedScanIndexFromUnifiedData(parsed);
-				if (embeddedScanIndex) {
-					const cachedScanIndex = await this.readCachedScanIndex();
-					if (cachedScanIndex === null) {
-						await this.writeCachedScanIndex(embeddedScanIndex);
-					}
-				}
-				return normalized;
+				return this.normalizeLocalReaderData(JSON.parse(content));
 			} catch {
 				// Retry once for transient partial-write reads during startup.
 			}
@@ -1328,53 +1318,21 @@ export class EpubStorageService {
 	}
 
 	private async readCachedScanIndex(): Promise<EpubScanIndexEntry[] | null> {
-		const indexPath = this.getScanIndexPath();
-		const adapter = this.app.vault.adapter;
-		if (!(await adapter.exists(indexPath))) {
+		const shelf = await this.getDataStore().getSection<EpubShelfSectionData>("shelf");
+		if (!shelf || !Array.isArray(shelf.scanIndex)) {
 			return null;
 		}
-
-		try {
-			const content = await adapter.read(indexPath);
-			return this.parseScanIndexEntries(content);
-		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to read epub-scan-index.json:", error);
-			return null;
-		}
+		return this.normalizeScanIndexEntries(shelf.scanIndex);
 	}
 
 	private async writeCachedScanIndex(entries: EpubScanIndexEntry[]): Promise<void> {
-		await this.ensureScanIndexDirectory();
-		await this.app.vault.adapter.write(this.getScanIndexPath(), JSON.stringify(entries));
-	}
-
-	private async clearLegacyScanIndexFromLocalState(): Promise<void> {
-		if (!(await this.hasUnifiedLocalDataFile())) {
-			return;
-		}
-		await this.updateUnifiedLocalReaderData((localData) => {
-			if (Object.prototype.hasOwnProperty.call(localData, "scanIndex")) {
-				localData.scanIndex = undefined;
-			}
+		const store = this.getDataStore();
+		// 先确保文档已加载，避免 mutate 基于空文档覆盖其它领域分区。
+		await store.getDocument();
+		store.mutate((document) => {
+			const shelf = (document.shelf ?? {}) as EpubShelfSectionData;
+			document.shelf = { ...shelf, scanIndex: entries };
 		});
-	}
-
-	private parseBookshelfIndexEntries(content: string): EpubBookshelfIndexEntry[] {
-		try {
-			return this.normalizeBookshelfIndexEntries(JSON.parse(content));
-		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to parse bookshelf-index.json:", error);
-			return [];
-		}
-	}
-
-	private parseScanIndexEntries(content: string): EpubScanIndexEntry[] {
-		try {
-			return this.normalizeScanIndexEntries(JSON.parse(content));
-		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to parse epub-scan-index.json:", error);
-			return [];
-		}
 	}
 
 	private parseBookshelfMembershipEntries(content: string): EpubBookshelfMembershipEntry[] {
@@ -1392,38 +1350,6 @@ export class EpubStorageService {
 		} catch (error) {
 			logger.warn("[EpubStorageService] Failed to parse epub-source-registry.json:", error);
 			return [];
-		}
-	}
-
-	private async readStoredBookshelfIndex(): Promise<EpubBookshelfIndexEntry[] | null> {
-		const indexPath = this.getBookshelfIndexPath();
-		const adapter = this.app.vault.adapter;
-		if (!(await adapter.exists(indexPath))) {
-			return null;
-		}
-
-		try {
-			const content = await adapter.read(indexPath);
-			return this.parseBookshelfIndexEntries(content);
-		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to read bookshelf-index.json:", error);
-			return null;
-		}
-	}
-
-	private async readStoredScanIndex(): Promise<EpubScanIndexEntry[] | null> {
-		const indexPath = this.getLegacyStoredScanIndexPath();
-		const adapter = this.app.vault.adapter;
-		if (!(await adapter.exists(indexPath))) {
-			return null;
-		}
-
-		try {
-			const content = await adapter.read(indexPath);
-			return this.parseScanIndexEntries(content);
-		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to read epub-scan-index.json:", error);
-			return null;
 		}
 	}
 
@@ -1833,14 +1759,6 @@ export class EpubStorageService {
 		if (cachedEntries !== null) {
 			return cachedEntries;
 		}
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		if (Array.isArray(unifiedData.scanIndex)) {
-			return unifiedData.scanIndex;
-		}
-		const storedEntries = await this.readStoredScanIndex();
-		if (storedEntries !== null) {
-			return storedEntries;
-		}
 		const books = await this.loadBooks({ hydrateStates: false });
 		return this.buildBookshelfIndexEntriesFromBooks(books).map((entry) => ({
 			...entry,
@@ -2004,37 +1922,16 @@ export class EpubStorageService {
 
 	async loadScanIndex(): Promise<EpubScanIndexEntry[]> {
 		await this.ensureAutomaticDataMigrations();
-		const unifiedData = await this.readUnifiedLocalReaderData();
 		let entries = await this.readCachedScanIndex();
 
-		if (entries === null && Array.isArray(unifiedData.scanIndex)) {
-			entries = unifiedData.scanIndex;
-			await this.writeCachedScanIndex(entries);
-			await this.clearLegacyScanIndexFromLocalState();
-		}
-
 		if (entries === null) {
-			const legacyStoredEntries = await this.readStoredScanIndex();
-			if (legacyStoredEntries !== null) {
-				entries = legacyStoredEntries;
+			const books = await this.loadBooks({ hydrateStates: false });
+			entries = this.buildBookshelfIndexEntriesFromBooks(books).map((entry) => ({
+				...entry,
+				mtime: 0,
+			}));
+			if (entries.length > 0) {
 				await this.saveScanIndex(entries);
-			}
-		}
-
-		if (entries === null) {
-			const legacyEntries = await this.readStoredBookshelfIndex();
-			if (legacyEntries !== null) {
-				entries = legacyEntries.map((entry) => ({ ...entry, mtime: 0 }));
-				await this.saveScanIndex(entries);
-			} else {
-				const books = await this.loadBooks({ hydrateStates: false });
-				entries = this.buildBookshelfIndexEntriesFromBooks(books).map((entry) => ({
-					...entry,
-					mtime: 0,
-				}));
-				if (entries.length > 0) {
-					await this.saveScanIndex(entries);
-				}
 			}
 		}
 
@@ -2070,8 +1967,6 @@ export class EpubStorageService {
 			).values()
 		).sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
 		await this.writeCachedScanIndex(normalizedEntries);
-		await this.clearLegacyScanIndexFromLocalState();
-		await this.removeStoredCompatibilityFile(this.getLegacyStoredScanIndexPath());
 	}
 
 	async cacheBookshelfCoverImage(
@@ -2203,8 +2098,7 @@ export class EpubStorageService {
 
 		if (entries === null) {
 			const books = await this.loadBooks({ hydrateStates: false });
-			const legacyEntries =
-				(await this.readStoredBookshelfIndex()) ?? this.buildBookshelfIndexEntriesFromBooks(books);
+			const legacyEntries = this.buildBookshelfIndexEntriesFromBooks(books);
 			entries = this.buildMembershipEntriesFromLegacyData(books, legacyEntries);
 			if (entries.length > 0) {
 				await this.saveBookshelfMembership(entries);
@@ -4318,8 +4212,6 @@ export class EpubStorageService {
 			`${this.basePath}/excerpt-settings.json`,
 			`${this.basePath}/canvas-bindings.json`,
 			`${this.basePath}/epub-source-registry.json`,
-			`${this.basePath}/epub-scan-index.json`,
-			`${this.basePath}/bookshelf-index.json`,
 			`${this.basePath}/bookshelf-membership.json`,
 			...this.getLegacyUnifiedLocalDataPaths(),
 			normalizePath(`${this.getLocalReaderStateRoot()}/reader-settings.desktop.json`),
@@ -4452,35 +4344,6 @@ export class EpubStorageService {
 			markChanged();
 		}
 
-		const legacyScanIndex = await this.readStoredScanIndex();
-		if (legacyScanIndex) {
-			const mergeResult = this.mergeArrayByKey(unifiedData.scanIndex, legacyScanIndex, (entry) =>
-				normalizePath(entry.path || "")
-			);
-			if (mergeResult.changed) {
-				await this.writeCachedScanIndex(mergeResult.merged);
-				if (Object.prototype.hasOwnProperty.call(unifiedData, "scanIndex")) {
-					unifiedData.scanIndex = undefined;
-				}
-				markChanged();
-			}
-		}
-		if (legacyScanIndex === null) {
-			const legacyBookshelfIndex = await this.readStoredBookshelfIndex();
-			if (legacyBookshelfIndex !== null) {
-				await this.writeCachedScanIndex(
-					legacyBookshelfIndex.map((entry) => ({
-						...entry,
-						mtime: 0,
-					}))
-				);
-				if (Object.prototype.hasOwnProperty.call(unifiedData, "scanIndex")) {
-					unifiedData.scanIndex = undefined;
-				}
-				markChanged();
-			}
-		}
-
 		const legacyMembership = await this.readStoredBookshelfMembership();
 		if (
 			legacyMembership
@@ -4544,10 +4407,6 @@ export class EpubStorageService {
 
 		if (changed) {
 			await this.writeUnifiedLocalReaderData(unifiedData);
-		}
-
-		if (cleanupLegacyFiles && legacyScanIndex) {
-			await this.removeStoredCompatibilityFile(this.getLegacyStoredScanIndexPath());
 		}
 
 		let removedLegacyFileCount = 0;

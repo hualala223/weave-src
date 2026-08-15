@@ -39,8 +39,12 @@ function readLocalEpubData(files: Map<string, string>) {
   return JSON.parse(files.get(resolveLocalEpubDataPath(files)) || '{}');
 }
 
-function readLocalScanIndex(files: Map<string, string>) {
-  return JSON.parse(files.get(LOCAL_EPUB_SCAN_INDEX_PATH) || '[]');
+function readShelfScanIndex(files: Map<string, string>): Array<{ path: string }> {
+  if (!files.has(WEAVE_DATA_FILE)) {
+    return [];
+  }
+  const parsed = JSON.parse(files.get(WEAVE_DATA_FILE) || '{}');
+  return (parsed.shelf?.scanIndex ?? []) as Array<{ path: string }>;
 }
 
 function createMemoryApp(
@@ -839,15 +843,9 @@ describe('EpubStorageService', () => {
 
     expect(report.failures).toEqual([]);
     expect(report.remainingLegacyFiles).toEqual([]);
-    expect(readLocalScanIndex(files)).toEqual([
-      {
-        path: 'Books/demo.epub',
-        name: 'demo',
-        folder: 'Books',
-        size: 1024,
-        mtime: 1710000000000,
-      },
-    ]);
+    await flushWeaveDataStore(app);
+    // Fresh start: legacy scan-index file is not migrated into the store.
+    expect(readShelfScanIndex(files)).toEqual([]);
     expect(localData).toMatchObject({
       bookCatalogStoredLocally: true,
       books: {
@@ -891,7 +889,8 @@ describe('EpubStorageService', () => {
     expect(files.has(`${SYNC_EPUB_ROOT}/reader-settings.desktop.json`)).toBe(false);
     expect(files.has(`${SYNC_EPUB_ROOT}/canvas-bindings.json`)).toBe(false);
     expect(files.has(`${SYNC_EPUB_ROOT}/epub-source-registry.json`)).toBe(false);
-    expect(files.has(`${SYNC_EPUB_ROOT}/epub-scan-index.json`)).toBe(false);
+    // Legacy scan index is left untouched until storage retirement (ticket 20).
+    expect(files.has(`${SYNC_EPUB_ROOT}/epub-scan-index.json`)).toBe(true);
     expect(files.has(`${LOCAL_EPUB_ARTIFACTS_ROOT}/book-1/concealed-texts.json`)).toBe(false);
   });
 
@@ -963,20 +962,21 @@ describe('EpubStorageService', () => {
     ]);
   });
 
-  it('moves legacy local scanIndex into the root cache file and clears it from local state', async () => {
+  it('loads the bookshelf scan index from the unified weave-data store', async () => {
     const { app, files } = createMemoryApp({
-      [LEGACY_LOCAL_EPUB_DATA_PATH]: JSON.stringify({
-        version: 1,
-        updatedAt: 1710000000000,
-        scanIndex: [
-          {
-            path: 'Books/demo.epub',
-            name: 'demo',
-            folder: 'Books',
-            size: 1024,
-            mtime: 1710000000000,
-          },
-        ],
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        schemaVersion: 1,
+        shelf: {
+          scanIndex: [
+            {
+              path: 'Books/demo.epub',
+              name: 'demo',
+              folder: 'Books',
+              size: 1024,
+              mtime: 1710000000000,
+            },
+          ],
+        },
       }),
     }, ['Books/demo.epub']);
 
@@ -991,8 +991,10 @@ describe('EpubStorageService', () => {
         mtime: 1710000000000,
       },
     ]);
-    expect(files.has(LEGACY_LOCAL_EPUB_DATA_PATH)).toBe(false);
-    expect(readLocalScanIndex(files)).toEqual([
+    // Scan index lives in weave-data.json; no legacy cache file is written.
+    expect(files.has(LOCAL_EPUB_SCAN_INDEX_PATH)).toBe(false);
+    await flushWeaveDataStore(app);
+    expect(readShelfScanIndex(files)).toEqual([
       {
         path: 'Books/demo.epub',
         name: 'demo',
@@ -1001,7 +1003,6 @@ describe('EpubStorageService', () => {
         mtime: 1710000000000,
       },
     ]);
-    expect([undefined, []]).toContainEqual(readLocalEpubData(files).scanIndex);
   });
 
   it('persists canvas bindings into unified local data without recreating legacy sync files', async () => {
@@ -1051,29 +1052,34 @@ describe('EpubStorageService', () => {
   });
 
   it('refreshes folder bookshelf entries when cached folder data misses new epub files', async () => {
-    const indexPath = 'weave/incremental-reading/epub-reading/epub-scan-index.json';
     const { app, files } = createMemoryApp({
-      [indexPath]: JSON.stringify([
-        {
-          path: 'Books/old.epub',
-          name: 'old',
-          folder: 'Books',
-          size: 1024,
-          mtime: 0,
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        schemaVersion: 1,
+        shelf: {
+          scanIndex: [
+            {
+              path: 'Books/old.epub',
+              name: 'old',
+              folder: 'Books',
+              size: 1024,
+              mtime: 0,
+            },
+            {
+              path: 'Other/outside.epub',
+              name: 'outside',
+              folder: 'Other',
+              size: 1024,
+              mtime: 0,
+            },
+          ],
         },
-        {
-          path: 'Other/outside.epub',
-          name: 'outside',
-          folder: 'Other',
-          size: 1024,
-          mtime: 0,
-        },
-      ]),
+      }),
     }, ['Books/old.epub', 'Books/new.epub', 'Other/outside.epub']);
 
     const service = new EpubStorageService(app);
     const entries = await service.loadBookshelfEntriesForFolder('Books');
-    const scanIndex = readLocalScanIndex(files);
+    await flushWeaveDataStore(app);
+    const scanIndex = readShelfScanIndex(files);
 
     expect(entries.map((entry) => entry.path)).toEqual([
       'Books/new.epub',
@@ -1107,12 +1113,16 @@ describe('EpubStorageService', () => {
 
   it('does not resurrect bookshelf entries from books cache when stored index is explicitly empty', async () => {
     const booksPath = `${SYNC_EPUB_ROOT}/books.json`;
-    const indexPath = 'weave/incremental-reading/epub-reading/bookshelf-index.json';
     const { app } = createMemoryApp({
       [booksPath]: JSON.stringify({
         'book-1': createBook(),
       }),
-      [indexPath]: JSON.stringify([]),
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        schemaVersion: 1,
+        shelf: {
+          scanIndex: [],
+        },
+      }),
     }, ['Books/demo.epub']);
 
     const service = new EpubStorageService(app);
@@ -1204,38 +1214,44 @@ describe('EpubStorageService', () => {
     const entries = await service.scanVaultBooks();
 
     expect(entries.map((entry) => entry.path)).toEqual(['Books/visible.epub']);
-    expect(readLocalScanIndex(files).map((entry: { path: string }) => entry.path)).toEqual([
+    await flushWeaveDataStore(app);
+    expect(readShelfScanIndex(files).map((entry: { path: string }) => entry.path)).toEqual([
       'Books/visible.epub',
     ]);
     expect(readLocalEpubData(files).version).toBe(1);
   });
 
   it('drops trashed paths from cached scan index on load', async () => {
-    const indexPath = LOCAL_EPUB_SCAN_INDEX_PATH;
     const { app, files } = createMemoryApp({
-      [indexPath]: JSON.stringify([
-        {
-          path: 'Books/visible.epub',
-          name: 'visible',
-          folder: 'Books',
-          size: 1024,
-          mtime: 0,
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        schemaVersion: 1,
+        shelf: {
+          scanIndex: [
+            {
+              path: 'Books/visible.epub',
+              name: 'visible',
+              folder: 'Books',
+              size: 1024,
+              mtime: 0,
+            },
+            {
+              path: '.trash/deleted.epub',
+              name: 'deleted',
+              folder: '.trash',
+              size: 1024,
+              mtime: 0,
+            },
+          ],
         },
-        {
-          path: '.trash/deleted.epub',
-          name: 'deleted',
-          folder: '.trash',
-          size: 1024,
-          mtime: 0,
-        },
-      ]),
+      }),
     }, ['Books/visible.epub']);
 
     const service = new EpubStorageService(app);
     const scanIndex = await service.loadScanIndex();
 
     expect(scanIndex.map((entry) => entry.path)).toEqual(['Books/visible.epub']);
-    expect(readLocalScanIndex(files).map((entry: { path: string }) => entry.path)).toEqual([
+    await flushWeaveDataStore(app);
+    expect(readShelfScanIndex(files).map((entry: { path: string }) => entry.path)).toEqual([
       'Books/visible.epub',
     ]);
   });
@@ -1247,15 +1263,20 @@ describe('EpubStorageService', () => {
         updatedAt: 1,
         bookshelfMembership: [{ path: 'demo.epub', addedAt: 10 }],
       }),
-      [LOCAL_EPUB_SCAN_INDEX_PATH]: JSON.stringify([
-        {
-          path: 'demo.epub',
-          name: 'demo',
-          folder: '',
-          size: 1024,
-          mtime: 0,
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        schemaVersion: 1,
+        shelf: {
+          scanIndex: [
+            {
+              path: 'demo.epub',
+              name: 'demo',
+              folder: '',
+              size: 1024,
+              mtime: 0,
+            },
+          ],
         },
-      ]),
+      }),
     }, ['Books/demo.epub']);
 
     const service = new EpubStorageService(app);
@@ -1276,15 +1297,20 @@ describe('EpubStorageService', () => {
           { path: 'Books/missing.epub', addedAt: 10 },
         ],
       }),
-      [LOCAL_EPUB_SCAN_INDEX_PATH]: JSON.stringify([
-        {
-          path: 'Books/missing.epub',
-          name: 'missing',
-          folder: 'Books',
-          size: 1024,
-          mtime: 0,
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        schemaVersion: 1,
+        shelf: {
+          scanIndex: [
+            {
+              path: 'Books/missing.epub',
+              name: 'missing',
+              folder: 'Books',
+              size: 1024,
+              mtime: 0,
+            },
+          ],
         },
-      ]),
+      }),
     });
 
     const service = new EpubStorageService(app);
@@ -1305,22 +1331,28 @@ describe('EpubStorageService', () => {
           { path: 'Books/missing.epub', addedAt: 10 },
         ],
       }),
-      [LOCAL_EPUB_SCAN_INDEX_PATH]: JSON.stringify([
-        {
-          path: 'Books/missing.epub',
-          name: 'missing',
-          folder: 'Books',
-          size: 1024,
-          mtime: 0,
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        schemaVersion: 1,
+        shelf: {
+          scanIndex: [
+            {
+              path: 'Books/missing.epub',
+              name: 'missing',
+              folder: 'Books',
+              size: 1024,
+              mtime: 0,
+            },
+          ],
         },
-      ]),
+      }),
     });
 
     const service = new EpubStorageService(app);
     await service.pruneMissingBooks();
 
     expect(readLocalEpubData(files).bookshelfMembership).toEqual([]);
-    expect(readLocalScanIndex(files)).toEqual([]);
+    await flushWeaveDataStore(app);
+    expect(readShelfScanIndex(files)).toEqual([]);
   });
 
   it('removeMissingBookshelfEntry clears membership and scan cache for a missing file', async () => {
@@ -1332,22 +1364,28 @@ describe('EpubStorageService', () => {
           { path: 'Books/missing.epub', addedAt: 10 },
         ],
       }),
-      [LOCAL_EPUB_SCAN_INDEX_PATH]: JSON.stringify([
-        {
-          path: 'Books/missing.epub',
-          name: 'missing',
-          folder: 'Books',
-          size: 1024,
-          mtime: 0,
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        schemaVersion: 1,
+        shelf: {
+          scanIndex: [
+            {
+              path: 'Books/missing.epub',
+              name: 'missing',
+              folder: 'Books',
+              size: 1024,
+              mtime: 0,
+            },
+          ],
         },
-      ]),
+      }),
     });
 
     const service = new EpubStorageService(app);
     await service.removeMissingBookshelfEntry('Books/missing.epub');
 
     expect(readLocalEpubData(files).bookshelfMembership).toEqual([]);
-    expect(readLocalScanIndex(files)).toEqual([]);
+    await flushWeaveDataStore(app);
+    expect(readShelfScanIndex(files)).toEqual([]);
   });
 
   it('updateBookDisplayTitle persists renamed metadata for later loads', async () => {
@@ -1515,19 +1553,23 @@ describe('EpubStorageService', () => {
   });
 
   it('updates scan index and membership paths when an EPUB file is renamed', async () => {
-    const scanIndexPath = `${SYNC_EPUB_ROOT}/epub-scan-index.json`;
     const membershipPath = `${SYNC_EPUB_ROOT}/bookshelf-membership.json`;
     const booksPath = `${SYNC_EPUB_ROOT}/books.json`;
     const { app, files } = createMemoryApp({
-      [scanIndexPath]: JSON.stringify([
-        {
-          path: 'Books/old.epub',
-          name: 'old',
-          folder: 'Books',
-          size: 1024,
-          mtime: 0,
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        schemaVersion: 1,
+        shelf: {
+          scanIndex: [
+            {
+              path: 'Books/old.epub',
+              name: 'old',
+              folder: 'Books',
+              size: 1024,
+              mtime: 0,
+            },
+          ],
         },
-      ]),
+      }),
       [membershipPath]: JSON.stringify([
         {
           path: 'Books/old.epub',
@@ -1542,7 +1584,8 @@ describe('EpubStorageService', () => {
     const service = new EpubStorageService(app);
     const updated = await service.updateBookFileReferences('Books/old.epub', 'Books/new.epub');
     const localData = readLocalEpubData(files);
-    const scanIndex = readLocalScanIndex(files);
+    await flushWeaveDataStore(app);
+    const scanIndex = readShelfScanIndex(files);
 
     expect(updated).toBe(1);
     expect(scanIndex).toEqual([
@@ -1567,21 +1610,25 @@ describe('EpubStorageService', () => {
 
   it('removes book cache and bookshelf index by file path for reimport', async () => {
     const booksPath = `${SYNC_EPUB_ROOT}/books.json`;
-    const scanIndexPath = `${SYNC_EPUB_ROOT}/epub-scan-index.json`;
     const membershipPath = `${SYNC_EPUB_ROOT}/bookshelf-membership.json`;
     const { app, files } = createMemoryApp({
       [booksPath]: JSON.stringify({
         'book-1': createBook(),
       }),
-      [scanIndexPath]: JSON.stringify([
-        {
-          path: 'Books/demo.epub',
-          name: 'demo',
-          folder: 'Books',
-          size: 1024,
-          mtime: 0,
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        schemaVersion: 1,
+        shelf: {
+          scanIndex: [
+            {
+              path: 'Books/demo.epub',
+              name: 'demo',
+              folder: 'Books',
+              size: 1024,
+              mtime: 0,
+            },
+          ],
         },
-      ]),
+      }),
       [membershipPath]: JSON.stringify([
         {
           path: 'Books/demo.epub',
@@ -1609,8 +1656,8 @@ describe('EpubStorageService', () => {
 
     expect(result.removedBookId).toMatch(/^epub-book-/);
     expect(files.has(booksPath)).toBe(false);
-    expect(files.has(scanIndexPath)).toBe(false);
-    expect(readLocalScanIndex(files)).toEqual([
+    await flushWeaveDataStore(app);
+    expect(readShelfScanIndex(files)).toEqual([
       {
         path: 'Books/demo.epub',
         name: 'demo',
@@ -1628,22 +1675,26 @@ describe('EpubStorageService', () => {
 
   it('deletes the tracked book file and cleans associated epub state', async () => {
     const booksPath = `${SYNC_EPUB_ROOT}/books.json`;
-    const scanIndexPath = `${SYNC_EPUB_ROOT}/epub-scan-index.json`;
     const membershipPath = `${SYNC_EPUB_ROOT}/bookshelf-membership.json`;
     const sourceRegistryPath = `${SYNC_EPUB_ROOT}/epub-source-registry.json`;
     const { app, files, vaultFiles } = createMemoryApp({
       [booksPath]: JSON.stringify({
         'book-1': createBook({ sourceId: 'epubsrc-demo' }),
       }),
-      [scanIndexPath]: JSON.stringify([
-        {
-          path: 'Books/demo.epub',
-          name: 'demo',
-          folder: 'Books',
-          size: 1024,
-          mtime: 0,
+      [WEAVE_DATA_FILE]: JSON.stringify({
+        schemaVersion: 1,
+        shelf: {
+          scanIndex: [
+            {
+              path: 'Books/demo.epub',
+              name: 'demo',
+              folder: 'Books',
+              size: 1024,
+              mtime: 0,
+            },
+          ],
         },
-      ]),
+      }),
       [membershipPath]: JSON.stringify([
         {
           path: 'Books/demo.epub',
@@ -1687,8 +1738,8 @@ describe('EpubStorageService', () => {
     expect(result.removedBookIds[0]).toMatch(/^epub-book-/);
     expect(app.fileManager.trashFile).toHaveBeenCalledTimes(1);
     expect(vaultFiles.has('Books/demo.epub')).toBe(false);
-    expect(files.has(scanIndexPath)).toBe(false);
-    expect(readLocalScanIndex(files)).toEqual([]);
+    await flushWeaveDataStore(app);
+    expect(readShelfScanIndex(files)).toEqual([]);
     expect(await reloadedService.listBookshelfEntries()).toEqual([]);
     expect(localData.books || {}).toEqual({});
     expect(localData.bookshelfMembership).toEqual([]);
