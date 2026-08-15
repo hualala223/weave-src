@@ -1,11 +1,9 @@
-import { Setting, ToggleComponent } from "obsidian";
+import { Setting } from "obsidian";
 import {
 	DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
 	MAX_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
 	MIN_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
 } from "../../config/reading-position-auto-save";
-import { isBuiltinTranslationEnabled } from "../../config/selection-translation-settings";
-import { BUILTIN_WEB_TRANSLATION_PROVIDERS } from "../../config/web-translation-providers";
 import { getEpubBacklinkHighlightService } from "../../services/epub/epub-backlink-highlight-access";
 import { scheduleEpubAnnotationIndexWarmup } from "../../services/epub/epub-annotation-index";
 import { showNotification } from "../../utils/notifications";
@@ -33,126 +31,7 @@ function clearHosts(hosts: EpubBasicSettingsMountOptions["hosts"]): void {
 	hosts.interface.replaceChildren();
 	hosts.premiumPreview.replaceChildren();
 	hosts.reading.replaceChildren();
-	hosts.selectionTranslation.replaceChildren();
 	hosts.diagnostics.replaceChildren();
-}
-
-function renderCustomTranslationProvidersPanel(
-	options: EpubBasicSettingsMountOptions,
-	cleanupFns: SettingsCleanupFn[]
-): void {
-	const { hosts, snapshot, callbacks, t } = options;
-	const host = hosts.selectionTranslation;
-
-	const panel = host.createDiv({ cls: "epub-custom-translation-panel" });
-	const intro = panel.createDiv({ cls: "epub-custom-translation-panel__intro" });
-	intro.createDiv({
-		cls: "epub-custom-translation-panel__title",
-		text: t("epub.settings.basic.customTranslationProviders"),
-	});
-	intro.createDiv({
-		cls: "epub-custom-translation-panel__hint",
-		text: t("epub.settings.basic.customTranslationUrlHint"),
-	});
-
-	const rowsHost = panel.createDiv({ cls: "epub-custom-translation-panel__rows" });
-	snapshot.customTranslationProviderDrafts.forEach((customProvider, index) => {
-		const row = rowsHost.createDiv({ cls: "epub-custom-translation-panel__row" });
-		const fields = row.createDiv({ cls: "epub-custom-translation-panel__fields" });
-
-		const nameField = fields.createDiv({ cls: "epub-custom-translation-panel__field" });
-		nameField.createDiv({
-			cls: "epub-custom-translation-panel__field-label",
-			text: t("epub.settings.basic.customTranslationName"),
-		});
-		const nameInput = nameField.createEl("input", {
-			cls: "epub-custom-translation-panel__input",
-			type: "text",
-			placeholder: t("epub.settings.basic.customTranslationNamePlaceholder"),
-		});
-		nameInput.value = customProvider.name;
-
-		const handleNameInput = () => {
-			void callbacks.updateCustomTranslationProviderDraft(index, { name: nameInput.value });
-		};
-		const handleNameCommit = () => {
-			void callbacks.commitCustomTranslationProviderDrafts();
-		};
-		const handleNameKeydown = (event: KeyboardEvent) => {
-			if (event.key === "Enter") {
-				event.preventDefault();
-				void callbacks.commitCustomTranslationProviderDrafts();
-				nameInput.blur();
-			}
-		};
-		nameInput.addEventListener("input", handleNameInput);
-		nameInput.addEventListener("blur", handleNameCommit);
-		nameInput.addEventListener("keydown", handleNameKeydown);
-		cleanupFns.push(() => nameInput.removeEventListener("input", handleNameInput));
-		cleanupFns.push(() => nameInput.removeEventListener("blur", handleNameCommit));
-		cleanupFns.push(() => nameInput.removeEventListener("keydown", handleNameKeydown));
-
-		const urlField = fields.createDiv({ cls: "epub-custom-translation-panel__field" });
-		urlField.createDiv({
-			cls: "epub-custom-translation-panel__field-label",
-			text: t("epub.settings.basic.customTranslationUrl"),
-		});
-		const urlInput = urlField.createEl("input", {
-			cls: "epub-custom-translation-panel__input",
-			type: "text",
-			placeholder: "https://example.com/search?q={query}",
-		});
-		urlInput.value = customProvider.urlTemplate;
-
-		const handleUrlInput = () => {
-			void callbacks.updateCustomTranslationProviderDraft(index, { urlTemplate: urlInput.value });
-		};
-		const handleUrlCommit = () => {
-			void callbacks.commitCustomTranslationProviderDrafts();
-		};
-		const handleUrlKeydown = (event: KeyboardEvent) => {
-			if (event.key === "Enter") {
-				event.preventDefault();
-				void callbacks.commitCustomTranslationProviderDrafts();
-				urlInput.blur();
-			}
-		};
-		urlInput.addEventListener("input", handleUrlInput);
-		urlInput.addEventListener("blur", handleUrlCommit);
-		urlInput.addEventListener("keydown", handleUrlKeydown);
-		cleanupFns.push(() => urlInput.removeEventListener("input", handleUrlInput));
-		cleanupFns.push(() => urlInput.removeEventListener("blur", handleUrlCommit));
-		cleanupFns.push(() => urlInput.removeEventListener("keydown", handleUrlKeydown));
-
-		const actions = row.createDiv({ cls: "epub-custom-translation-panel__actions" });
-		const toggleHost = actions.createDiv({ cls: "epub-custom-translation-panel__toggle" });
-		const toggle = new ToggleComponent(toggleHost);
-		toggle.setValue(customProvider.enabled);
-		toggle.onChange(async (value) => {
-			await callbacks.updateCustomTranslationProvider(index, { enabled: value });
-		});
-
-		const removeButton = actions.createEl("button", {
-			cls: "epub-custom-translation-panel__remove",
-			text: t("epub.settings.basic.removeCustomTranslationProvider"),
-		});
-		const handleRemove = () => {
-			void callbacks.removeCustomTranslationProvider(index);
-		};
-		removeButton.addEventListener("click", handleRemove);
-		cleanupFns.push(() => removeButton.removeEventListener("click", handleRemove));
-	});
-
-	const footer = panel.createDiv({ cls: "epub-custom-translation-panel__footer" });
-	const addButton = footer.createEl("button", {
-		cls: "mod-cta epub-custom-translation-panel__add",
-		text: t("epub.settings.basic.addCustomTranslationProvider"),
-	});
-	const handleAdd = () => {
-		void callbacks.addCustomTranslationProvider();
-	};
-	addButton.addEventListener("click", handleAdd);
-	cleanupFns.push(() => addButton.removeEventListener("click", handleAdd));
 }
 
 export function mountEpubBasicSettings(options: EpubBasicSettingsMountOptions): SettingsCleanupFn {
@@ -347,24 +226,6 @@ export function mountEpubBasicSettings(options: EpubBasicSettingsMountOptions): 
 				await callbacks.updateLargeNavButtons(value);
 			});
 		});
-
-	for (const builtin of BUILTIN_WEB_TRANSLATION_PROVIDERS) {
-		const builtinEnabled = isBuiltinTranslationEnabled(
-			snapshot.selectionTranslationSettings,
-			builtin.id
-		);
-		new Setting(hosts.selectionTranslation)
-			.setName(t(`epub.translationProviders.${builtin.nameKey}`))
-			.setClass("epub-selection-translation-builtin-setting")
-			.addToggle((toggle) => {
-				toggle.setValue(builtinEnabled);
-				toggle.onChange(async (value) => {
-					await callbacks.setBuiltinTranslationProviderEnabled(builtin.id, value);
-				});
-			});
-	}
-
-	renderCustomTranslationProvidersPanel(options, cleanupFns);
 
 	new Setting(hosts.diagnostics)
 		.setName(t("epub.settings.basic.sourceNavigationOpenInNewTab"))

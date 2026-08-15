@@ -5,9 +5,7 @@
     normalizeContinuousReadingPositionAutoSaveEnabled,
     normalizeContinuousReadingPositionAutoSavePages,
   } from "../../config/reading-position-auto-save";
-  import { normalizeSelectionTranslationSettings } from "../../config/selection-translation-settings";
   import { EPUB_RUNTIME, normalizeEpubBookmarkFolderPath } from "../../services/epub";
-  import type { CustomWebTranslationProvider } from "../../config/selection-translation-settings";
   import { normalizeInterfaceLanguagePreference, tr } from "../../utils/i18n";
   import { normalizeHighlightStoragePath, normalizeWeaveParentFolder } from "../../config/paths";
   import type StandaloneEpubPlugin from "../../main";
@@ -26,14 +24,12 @@
   let interfaceSettingsHost = $state<HTMLDivElement | null>(null);
   let premiumPreviewSettingsHost = $state<HTMLDivElement | null>(null);
   let readingSettingsHost = $state<HTMLDivElement | null>(null);
-  let selectionTranslationSettingsHost = $state<HTMLDivElement | null>(null);
   let diagnosticsSettingsHost = $state<HTMLDivElement | null>(null);
 
   let bookmarkFolderInput = $state("");
   let highlightStoragePathInput = $state("");
   let weaveParentFolderInput = $state("");
   let continuousReadingPositionAutoSavePagesInput = $state("");
-  let customTranslationProviderDrafts = $state<CustomWebTranslationProvider[]>([]);
   let autoSavePagesTextControl = $state<TextComponent | null>(null);
 
   async function save(): Promise<void> {
@@ -95,25 +91,6 @@
     return normalizeInterfaceLanguagePreference(plugin.settings?.interfaceLanguage);
   });
 
-  let selectionTranslationSettings = $derived.by(() => {
-    stateVersion;
-    return normalizeSelectionTranslationSettings(plugin.settings?.selectionTranslation);
-  });
-
-  let selectionTranslationCustomProviderCount = $derived.by(() => {
-    stateVersion;
-    return selectionTranslationSettings.customProviders.length;
-  });
-
-  function updateCustomTranslationProviderDraft(
-    index: number,
-    patch: Partial<CustomWebTranslationProvider>
-  ): void {
-    customTranslationProviderDrafts = customTranslationProviderDrafts.map((provider, providerIndex) =>
-      providerIndex === index ? { ...provider, ...patch } : provider
-    );
-  }
-
   const actions = createEpubBasicSettingsActions({
     plugin,
     getTranslate: () => t,
@@ -127,7 +104,6 @@
     getSourceNavigationOpenInNewTab: () => sourceNavigationOpenInNewTab,
     getLargeNavButtonsEnabled: () => largeNavButtonsEnabled,
     getDebugModeEnabled: () => debugModeEnabled,
-    getCustomTranslationProviderDrafts: () => customTranslationProviderDrafts,
     getAutoSavePagesTextControl: () => autoSavePagesTextControl,
     setWeaveParentFolderInput: (value) => {
       weaveParentFolderInput = value;
@@ -167,13 +143,6 @@
     continuousReadingPositionAutoSavePagesInput = String(continuousReadingPositionAutoSavePages);
   });
 
-  $effect(() => {
-    selectionTranslationCustomProviderCount;
-    customTranslationProviderDrafts = structuredClone(
-      normalizeSelectionTranslationSettings(plugin.settings?.selectionTranslation).customProviders
-    );
-  });
-
   onMount(() => {
     const handleExcerptSettingsChanged = () => {
       excerptSettingsVersion += 1;
@@ -199,7 +168,6 @@
       !interfaceSettingsHost
       || !premiumPreviewSettingsHost
       || !readingSettingsHost
-      || !selectionTranslationSettingsHost
       || !diagnosticsSettingsHost
     ) {
       return;
@@ -207,7 +175,6 @@
 
     excerptSettingsVersion;
     t;
-    selectionTranslationCustomProviderCount;
 
     let dispose: (() => void) | undefined;
 
@@ -219,7 +186,6 @@
           interface: interfaceSettingsHost,
           premiumPreview: premiumPreviewSettingsHost,
           reading: readingSettingsHost,
-          selectionTranslation: selectionTranslationSettingsHost,
           diagnostics: diagnosticsSettingsHost,
         },
         snapshot: {
@@ -237,8 +203,6 @@
           sourceNavigationOpenInNewTab,
           largeNavButtonsEnabled,
           debugModeEnabled,
-          selectionTranslationSettings,
-          customTranslationProviderDrafts,
         },
         callbacks: {
           save,
@@ -266,12 +230,6 @@
             actions.updateContinuousReadingPositionAutoSaveEnabled,
           updateContinuousReadingPositionAutoSavePages:
             actions.updateContinuousReadingPositionAutoSavePages,
-          setBuiltinTranslationProviderEnabled: actions.setBuiltinTranslationProviderEnabled,
-          updateCustomTranslationProvider: actions.updateCustomTranslationProvider,
-          updateCustomTranslationProviderDraft,
-          commitCustomTranslationProviderDrafts: actions.commitCustomTranslationProviderDrafts,
-          addCustomTranslationProvider: actions.addCustomTranslationProvider,
-          removeCustomTranslationProvider: actions.removeCustomTranslationProvider,
           updateSourceNavigationOpenInNewTab: actions.updateSourceNavigationOpenInNewTab,
           updateLargeNavButtons: actions.updateLargeNavButtons,
           updateDebugMode: actions.updateDebugMode,
@@ -303,14 +261,6 @@
       <h3 class="epub-settings-group-title with-accent-bar accent-purple">{t("epub.settings.groups.reading")}</h3>
     </div>
     <div bind:this={readingSettingsHost} class="epub-native-settings-host"></div>
-  </div>
-
-  <div class="epub-settings-group epub-settings-group--panel">
-    <div class="epub-settings-group-header">
-      <h3 class="epub-settings-group-title with-accent-bar accent-cyan">{t("epub.settings.groups.selectionTranslation")}</h3>
-      <p class="epub-settings-group-description">{t("epub.settings.basic.selectionTranslationDesc")}</p>
-    </div>
-    <div bind:this={selectionTranslationSettingsHost} class="epub-native-settings-host"></div>
   </div>
 
   <div class="epub-settings-group epub-settings-group--panel">

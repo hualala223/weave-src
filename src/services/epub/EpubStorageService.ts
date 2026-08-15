@@ -37,7 +37,6 @@ import type {
 	EpubReaderSettings,
 	ReadingPosition,
 	ReadingStats,
-	EpubStrikethroughDisplayMode,
 } from "./types";
 import { getEpubRuntime } from "./epub-runtime";
 import { EpubProgressStore, normalizePendingProgressPayload } from "./epub-progress-store";

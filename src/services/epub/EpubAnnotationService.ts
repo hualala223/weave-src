@@ -1,12 +1,10 @@
-import { t } from "../../utils/i18n";
 import { generateCardUUID } from "../identifier/WeaveIDGenerator";
 import type { EpubBacklinkHighlightService } from "./EpubBacklinkHighlightService";
 import { EpubLinkService } from "./EpubLinkService";
 import { getReaderHighlightIdentityKey } from "./highlight/highlight-identity";
 import type { EpubStorageService } from "./EpubStorageService";
 import type { HighlightSourceLocator, ReaderHighlight } from "./reader-engine-types";
-import { resolveDisplayProgress } from "./book-progress";
-import type { ConcealedText, HighlightColor } from "./types";
+import type { ConcealedText } from "./types";
 
 export class EpubAnnotationService {
 	private storageService: EpubStorageService;

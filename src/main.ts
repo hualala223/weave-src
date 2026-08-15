@@ -97,11 +97,6 @@ import {
 	normalizeBookshelfDisplayMode,
 	type BookshelfDisplayMode,
 } from "./services/epub/bookshelf-display-mode";
-import {
-	DEFAULT_SELECTION_TRANSLATION_SETTINGS,
-	normalizeSelectionTranslationSettings,
-	type SelectionTranslationSettings,
-} from "./config/selection-translation-settings";
 
 interface StandaloneEpubPluginSettings {
 	license: LicenseInfo;
@@ -123,7 +118,6 @@ interface StandaloneEpubPluginSettings {
 	selectionQuickCreateLastFolder: string;
 	sourceNavigationOpenInNewTab: boolean;
 	interfaceLanguage: InterfaceLanguagePreference;
-	selectionTranslation: SelectionTranslationSettings;
 }
 
 const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
@@ -145,7 +139,6 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 	selectionQuickCreateLastFolder: "",
 	sourceNavigationOpenInNewTab: true,
 	interfaceLanguage: "auto",
-	selectionTranslation: DEFAULT_SELECTION_TRANSLATION_SETTINGS,
 };
 
 type PersistedStandaloneEpubPluginSettings = Omit<
@@ -378,7 +371,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.syncPremiumPreviewSettings();
 		this.syncBookshelfDisplaySettings();
 		this.syncReadingPositionAutoSaveSettings();
-		this.syncSelectionTranslationSettings();
 		this.settings.sourceNavigationOpenInNewTab = this.settings.sourceNavigationOpenInNewTab !== false;
 		this.settings.interfaceLanguage = normalizeInterfaceLanguagePreference(
 			this.settings.interfaceLanguage
@@ -404,7 +396,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.syncPremiumPreviewSettings();
 		this.syncBookshelfDisplaySettings();
 		this.syncReadingPositionAutoSaveSettings();
-		this.syncSelectionTranslationSettings();
 		this.settings.bookmarkFolder =
 			normalizeEpubBookmarkFolderPath(this.settings.bookmarkFolder) || DEFAULT_EPUB_BOOKMARK_FOLDER;
 		this.settings.highlightStoragePath = normalizeHighlightStoragePath(this.settings.highlightStoragePath);
@@ -416,12 +407,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
 		await this.persistSettingsData();
 		await this.refreshPremiumState();
-	}
-
-	private syncSelectionTranslationSettings(): void {
-		this.settings.selectionTranslation = normalizeSelectionTranslationSettings(
-			this.settings.selectionTranslation
-		);
 	}
 
 	private normalizeRememberedFolder(folderPath?: string | null): string {

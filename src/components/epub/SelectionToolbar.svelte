@@ -252,93 +252,6 @@
 		clearAndHide();
 	}
 
-	async function runWebSearch(): Promise<void> {
-		if (!selectedText.trim()) {
-			return;
-		}
-		const opened = await openObsidianWebSearch(app, selectedText);
-		if (!opened) {
-			showNotification(t('epub.selectionToolbar.webSearchUnavailable'), 'warning');
-		}
-	}
-
-	function handleTranslate(event: MouseEvent) {
-		event.stopPropagation();
-		const text = selectedText.trim();
-		if (!text) {
-			return;
-		}
-
-		dismissActiveToolbarMenu();
-		const menu = new Menu();
-		activeToolbarMenu = menu;
-		addLookupProviderMenuItems(
-			menu,
-			listTranslationProviders(),
-			text,
-			t('epub.selectionToolbar.translateUnavailable'),
-			t('epub.selectionToolbar.translateOpenFailed')
-		);
-		menu.showAtMouseEvent(event);
-	}
-
-	function resolveBuiltinTranslationLabel(
-		provider: { nameKey: string }
-	): string {
-		return t(`epub.translationProviders.${provider.nameKey}`);
-	}
-
-	function listTranslationProviders(): ResolvedWebTranslationProvider[] {
-		return listActiveTranslationProviders({
-			app,
-			resolveBuiltinLabel: resolveBuiltinTranslationLabel,
-		});
-	}
-
-	async function openLookupProvider(
-		provider: ResolvedWebTranslationProvider,
-		query: string
-	): Promise<boolean> {
-		const settings = readSelectionTranslationSettings(app);
-		const context = extractSelectionContext(iframeDoc, query);
-		return openWebTranslationProvider(app, provider, query, {
-			context,
-			settings,
-			resolveBuiltinLabel: resolveBuiltinTranslationLabel,
-		});
-	}
-
-	function addLookupProviderMenuItems(
-		menu: Menu,
-		providers: ResolvedWebTranslationProvider[],
-		query: string,
-		unavailableLabel: string,
-		openFailedLabel: string
-	): void {
-		if (providers.length === 0) {
-			menu.addItem((subItem) => {
-				subItem.setTitle(unavailableLabel);
-				subItem.setIcon('info');
-				subItem.setDisabled(true);
-			});
-			return;
-		}
-
-		for (const provider of providers) {
-			menu.addItem((subItem) => {
-				subItem.setTitle(provider.label);
-				subItem.setIcon(provider.icon);
-				subItem.onClick(async () => {
-					const opened = await openLookupProvider(provider, query);
-					if (!opened) {
-						showNotification(openFailedLabel, 'warning');
-					}
-					clearAndHide();
-				});
-			});
-		}
-	}
-
 	function handlePointerDownOutside(event: Event) {
 		if (!shouldDismissToolbarOnPointerDown(toolbarEl, event)) {
 			const target = getEventTargetNode(event.target);
@@ -671,14 +584,6 @@
 	</div>
 	<div class="selection-actions-shell">
 		<div class="toolbar-row actions-row selection-actions-row">
-			<button class="clickable-icon action-item" onclick={() => { void runWebSearch(); clearAndHide(); }} title={t('epub.selectionToolbar.webSearchTitle')}>
-				<span class="action-icon" use:icon={'globe'}></span>
-				<span class="action-label">{t('epub.selectionToolbar.webSearch')}</span>
-			</button>
-			<button class="clickable-icon action-item" onclick={handleTranslate} title={t('epub.selectionToolbar.translateTitle')}>
-				<span class="action-icon" use:icon={'languages'}></span>
-				<span class="action-label">{t('epub.selectionToolbar.translate')}</span>
-			</button>
 		</div>
 	</div>
 	<div class="toolbar-arrow"></div>

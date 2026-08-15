@@ -5,16 +5,9 @@ import {
 	normalizeContinuousReadingPositionAutoSaveEnabled,
 	normalizeContinuousReadingPositionAutoSavePages,
 } from "../../config/reading-position-auto-save";
-import {
-	createCustomTranslationProvider,
-	normalizeSelectionTranslationSettings,
-	type CustomWebTranslationProvider,
-	type SelectionTranslationSettings,
-} from "../../config/selection-translation-settings";
-import { getEpubStorageService, normalizeEpubBookmarkFolderPath } from "../../services/epub";
+import { normalizeEpubBookmarkFolderPath } from "../../services/epub";
 import { normalizeHighlightStoragePath, normalizeWeaveParentFolder } from "../../config/paths";
 import { syncLargeNavButtonStyle } from "../../services/epub/epub-large-nav-style";
-import { notifyExcerptSettingsChanged } from "../../services/epub/excerpt-settings-events";
 import {
 	normalizeInterfaceLanguagePreference,
 	setInterfaceLanguagePreference,
@@ -38,7 +31,6 @@ export interface EpubBasicSettingsActionDeps {
 	getSourceNavigationOpenInNewTab: () => boolean;
 	getLargeNavButtonsEnabled: () => boolean;
 	getDebugModeEnabled: () => boolean;
-	getCustomTranslationProviderDrafts: () => CustomWebTranslationProvider[];
 	getAutoSavePagesTextControl: () => TextComponent | null;
 	setBookmarkFolderInput: (value: string) => void;
 	setHighlightStoragePathInput: (value: string) => void;
@@ -51,17 +43,6 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 	const { plugin } = deps;
 	const t = (key: string, params?: Record<string, string | number>) =>
 		deps.getTranslate()(key, params);
-
-	function getSelectionTranslationSettings(): SelectionTranslationSettings {
-		return normalizeSelectionTranslationSettings(plugin.settings?.selectionTranslation);
-	}
-
-	async function persistSelectionTranslationSettings(
-		next: SelectionTranslationSettings
-	): Promise<void> {
-		plugin.settings.selectionTranslation = next;
-		await deps.save();
-	}
 
 	return {
 		async updateWeaveParentFolder(folderPath: string): Promise<void> {
@@ -213,74 +194,6 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 					: t("epub.settings.notifications.debugDisabled"),
 				"success"
 			);
-		},
-
-		async setBuiltinTranslationProviderEnabled(
-			providerId: string,
-			enabled: boolean
-		): Promise<void> {
-			const current = getSelectionTranslationSettings();
-			const disabled = new Set(current.disabledBuiltinIds);
-			if (enabled) {
-				disabled.delete(providerId);
-			} else {
-				disabled.add(providerId);
-			}
-			await persistSelectionTranslationSettings({
-				...current,
-				disabledBuiltinIds: [...disabled],
-			});
-		},
-
-		async addCustomTranslationProvider(): Promise<void> {
-			const current = getSelectionTranslationSettings();
-			await persistSelectionTranslationSettings({
-				...current,
-				customProviders: [...current.customProviders, createCustomTranslationProvider()],
-			});
-		},
-
-		async updateCustomTranslationProvider(
-			index: number,
-			patch: Partial<CustomWebTranslationProvider>
-		): Promise<void> {
-			const current = getSelectionTranslationSettings();
-			const customProviders = current.customProviders.map((provider, providerIndex) =>
-				providerIndex === index ? { ...provider, ...patch } : provider
-			);
-			await persistSelectionTranslationSettings({
-				...current,
-				customProviders,
-			});
-		},
-
-		async commitCustomTranslationProviderDrafts(): Promise<void> {
-			const current = getSelectionTranslationSettings();
-			const normalizedDrafts = deps.getCustomTranslationProviderDrafts().map((provider) => ({
-				...provider,
-				name: String(provider.name || "").trim(),
-				urlTemplate: String(provider.urlTemplate || "").trim(),
-				category: "translation" as const,
-			}));
-			const unchanged =
-				JSON.stringify(current.customProviders) === JSON.stringify(normalizedDrafts);
-			if (unchanged) {
-				return;
-			}
-			await persistSelectionTranslationSettings({
-				...current,
-				customProviders: normalizedDrafts,
-			});
-		},
-
-		async removeCustomTranslationProvider(index: number): Promise<void> {
-			const current = getSelectionTranslationSettings();
-			await persistSelectionTranslationSettings({
-				...current,
-				customProviders: current.customProviders.filter(
-					(_, providerIndex) => providerIndex !== index
-				),
-			});
 		},
 	};
 }

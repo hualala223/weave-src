@@ -60,13 +60,6 @@ function createPlugin(): Plugin {
 		sourceNavigationOpenInNewTab: true,
 		continuousReadingPositionAutoSaveEnabled: true,
 		continuousReadingPositionAutoSavePages: 1,
-		selectionTranslation: {
-			disabledBuiltinIds: [],
-			customProviders: [],
-			smartRoutingEnabled: false,
-			preferNativeDictionaryApp: false,
-			clipboardFallbackOnSchemeOpen: true,
-		},
 	};
 	(plugin as any).app = app;
 	(plugin as any).saveSettings = vi.fn(async () => undefined);
