@@ -15,7 +15,6 @@ export const EPUB_FEATURE_IDS = {
 	SOURCE_LOCATION: "epub-source-location",
 	CANVAS_EXCERPTS: "epub-canvas-excerpts",
 	FOOTNOTE_PREVIEW: "epub-footnote-preview",
-	CHAPTER_EXPORT: "epub-chapter-export",
 } as const;
 
 export const EPUB_CORE_FEATURE_IDS = [
@@ -31,7 +30,6 @@ export const EPUB_PREMIUM_FEATURE_IDS = [
 	EPUB_FEATURE_IDS.SOURCE_LOCATION,
 	EPUB_FEATURE_IDS.CANVAS_EXCERPTS,
 	EPUB_FEATURE_IDS.FOOTNOTE_PREVIEW,
-	EPUB_FEATURE_IDS.CHAPTER_EXPORT,
 ] as const;
 
 export const EPUB_CORE_FEATURE_ID_SET = new Set<string>(EPUB_CORE_FEATURE_IDS);

@@ -83,10 +83,6 @@ export function canUseEpubFootnotePreview(_app: App): boolean {
 	return true;
 }
 
-export function canUseEpubChapterExport(_app: App): boolean {
-	return true;
-}
-
 export function requestEpubPremiumFeaturePreview(_app: App, _featureId: string): void {
 	/* 免费开放：无预览弹层 */
 }
