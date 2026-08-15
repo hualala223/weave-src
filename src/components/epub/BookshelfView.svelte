@@ -3419,7 +3419,6 @@
         <BookshelfToolbar
                 {searching}
                 backButtonLabel={effectiveBackButtonLabel}
-                {t}
                 onImport={scanVaultAndPromptImport}
                 onToggleSearch={toggleBookshelfSearch}
                 onBack={handleToolbarBack}
@@ -3460,7 +3459,6 @@
                         }))}
                         emptyMessage={activePlaylistEmptyMessage}
                         showProgress={canShowBookshelfProgress}
-                        {t}
                         onOpenBook={switchBook}
                         onBookContextMenu={handleContextMenu}
                         onBookKeydown={handleBookKeydown}
@@ -3493,7 +3491,6 @@
                                                         isOpening={openingBookPath === (file as DisplayBookItem).path}
                                                         isContinueReading={isContinueReadingBook(file as DisplayBookItem)}
                                                         showProgress={canShowBookshelfProgress}
-                                                        {t}
                                                         onOpen={switchBook}
                                                         onContextMenu={handleContextMenu}
                                                         onKeydown={handleBookKeydown}
@@ -3512,7 +3509,6 @@
                                                         isOpening={openingBookPath === file.path}
                                                         isContinueReading={isContinueReadingBook(file)}
                                                         showProgress={canShowBookshelfProgress}
-                                                        {t}
                                                         onOpen={switchBook}
                                                         onContextMenu={handleContextMenu}
                                                         onKeydown={handleBookKeydown}
@@ -3525,7 +3521,6 @@
                                                         isOpening={openingBookPath === file.path}
                                                         isContinueReading={isContinueReadingBook(file)}
                                                         showProgress={canShowBookshelfProgress}
-                                                        {t}
                                                         onOpen={switchBook}
                                                         onContextMenu={handleContextMenu}
                                                         onKeydown={handleBookKeydown}
@@ -3538,7 +3533,6 @@
                                                         isOpening={openingBookPath === file.path}
                                                         isContinueReading={isContinueReadingBook(file)}
                                                         showProgress={canShowBookshelfProgress}
-                                                        {t}
                                                         onOpen={switchBook}
                                                         onContextMenu={handleContextMenu}
                                                         onKeydown={handleBookKeydown}

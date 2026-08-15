@@ -10,7 +10,6 @@
 		books: BookshelfPlaylistDetailBook[];
 		emptyMessage?: string;
 		showProgress?: boolean;
-		t: (key: string, params?: Record<string, unknown>) => string;
 		onOpenBook: (path: string) => void;
 		onBookContextMenu: (event: MouseEvent, path: string) => void;
 		onBookKeydown: (event: KeyboardEvent, path: string) => void;
@@ -20,7 +19,6 @@
 		books,
 		emptyMessage,
 		showProgress = false,
-		t,
 		onOpenBook,
 		onBookContextMenu,
 		onBookKeydown,
@@ -45,7 +43,6 @@
 					isOpening={false}
 					isContinueReading={false}
 					{showProgress}
-					{t}
 					onOpen={onOpenBook}
 					onContextMenu={onBookContextMenu}
 					onKeydown={onBookKeydown}

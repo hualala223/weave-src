@@ -15,8 +15,10 @@ const FORBIDDEN_STRINGS = [
 	"BatchParsingManager",
 ];
 
+// 产物不压缩（vite.config.ts shouldMinifyOutput=false），raw 体积约 2.7MB；
+// 上限按不压缩产物设定，避免 CI 在无基线文件时误报。
 const DEFAULT_MAX_GZIP_KB = 640;
-const DEFAULT_MAX_RAW_KB = 2100;
+const DEFAULT_MAX_RAW_KB = 3200;
 const GROWTH_TOLERANCE_RATIO = 1.05;
 
 function fail(message) {

@@ -82,7 +82,9 @@ export default defineConfig(({ mode }) => {
   const desktopHotReloadOutputDir = process.env.WEAVE_DESKTOP_SOURCE_DIR?.trim()
     ? path.resolve(process.env.WEAVE_DESKTOP_SOURCE_DIR)
     : path.resolve(process.cwd(), ".desktop-hot-reload");
-  const shouldMinifyOutput = !isDev || isMobileHotReloadBuild;
+  // 不压缩产物：保留可读变量名与行号，便于排查运行时错误（Obsidian 控制台报错可直接定位到源码）。
+  // 注意：压缩产物体积更小，如需恢复请改回 !isDev || isMobileHotReloadBuild。
+  const shouldMinifyOutput = false;
   const buildSourceMap = isMobileHotReloadBuild ? "hidden" : isDev ? "inline" : false;
 
   const suppressedSvelteWarnings = new Set([

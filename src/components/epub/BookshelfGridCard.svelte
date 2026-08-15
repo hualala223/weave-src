@@ -23,7 +23,6 @@
 		isOpening?: boolean;
 		isContinueReading?: boolean;
 		showProgress?: boolean;
-		t: (key: string, params?: Record<string, unknown>) => string;
 		onOpen: (path: string) => void;
 		onContextMenu: (event: MouseEvent, path: string) => void;
 		onKeydown: (event: KeyboardEvent, path: string) => void;
@@ -36,7 +35,6 @@
 		isOpening = false,
 		isContinueReading = false,
 		showProgress = false,
-		t,
 		onOpen,
 		onContextMenu,
 		onKeydown,

@@ -4,7 +4,6 @@
 	export interface BookshelfToolbarProps {
 		searching: boolean;
 		backButtonLabel: string;
-		t: (key: string) => string;
 		onImport: () => void | Promise<void>;
 		onToggleSearch: () => void;
 		onBack: () => void | Promise<void>;
@@ -14,7 +13,6 @@
 	let {
 		searching = false,
 		backButtonLabel,
-		t,
 		onImport,
 		onToggleSearch,
 		onBack,
