@@ -1,4 +1,3 @@
-import { getVisibleSplitActionsFromHost } from "../services/ai/ai-action-config";
 import type { EffectiveLicenseState, LicenseInfo, LicenseStore } from "../types/license";
 import { CURRENT_PLUGIN_ID } from "../config/plugin-runtime";
 import {
@@ -17,11 +16,6 @@ export type PluginLookupApp = {
 type PluginSettingsOwner = {
 	app?: PluginLookupApp;
 	settings?: CompatiblePluginSettings;
-};
-
-type CompatibleAIDataStorage = CompatibleDataStorage & {
-	getDecks: () => unknown[] | Promise<unknown[]>;
-	saveCard: (card: unknown) => unknown;
 };
 
 export type CompatibleIncrementalReadingSettings = {
@@ -48,9 +42,6 @@ export type CompatiblePluginSettings = {
 	bookmarkFolder?: string;
 	license?: Partial<LicenseInfo>;
 	licenseState?: Partial<LicenseStore>;
-	aiConfig?: {
-		customSplitActions?: unknown[];
-	};
 };
 
 export type CompatibleDataStorage = {
@@ -74,12 +65,6 @@ export type CompatiblePlugin = {
 	readingMaterialManager?: CompatibleReadingMaterialManager;
 	getLocalLicenses?: () => LicenseInfo[];
 	getEffectiveLicenseState?: () => EffectiveLicenseState;
-};
-
-export type CompatibleAISelectedTextPanelHost = CompatiblePlugin & {
-	app: PluginLookupApp;
-	settings: CompatiblePluginSettings;
-	dataStorage: CompatibleAIDataStorage;
 };
 
 export const STANDALONE_PLUGIN_ID = "weave-epub-reader";
@@ -113,37 +98,6 @@ export function getLegacyWeavePlugin(app: PluginLookupApp | undefined): Compatib
 
 export function getCompatiblePlugin(app: PluginLookupApp | undefined): CompatiblePlugin | null {
 	return getStandalonePlugin(app) ?? getLegacyWeavePlugin(app);
-}
-
-function hasAISelectedTextPanelCapability(
-	plugin: CompatiblePlugin | null | undefined
-): plugin is CompatiblePlugin & {
-	settings: CompatiblePluginSettings;
-	dataStorage: CompatibleAIDataStorage;
-} {
-	return Boolean(
-		plugin?.settings &&
-			typeof plugin.dataStorage?.getDecks === "function" &&
-			typeof plugin.dataStorage?.saveCard === "function"
-	);
-}
-
-function createCompatibleAISelectedTextPanelHost(
-	app: PluginLookupApp | undefined,
-	plugin: CompatiblePlugin & {
-		settings: CompatiblePluginSettings;
-		dataStorage: CompatibleAIDataStorage;
-	}
-): CompatibleAISelectedTextPanelHost | null {
-	if (!app) {
-		return null;
-	}
-
-	return Object.assign(Object.create(plugin as object), {
-		app,
-		settings: plugin.settings,
-		dataStorage: plugin.dataStorage,
-	}) as CompatibleAISelectedTextPanelHost;
 }
 
 export function getCompatibleWeaveParentFolder(app: PluginLookupApp | undefined): string | undefined {
@@ -188,26 +142,6 @@ export function getCompatibleSelectionQuickCreateLastFolder(
 	app: PluginLookupApp | undefined
 ): string {
 	return getCompatibleIncrementalReadingSettings(app).selectionQuickCreateLastFolder ?? "";
-}
-
-export function getCompatibleAISelectedTextPanelHost(
-	app: PluginLookupApp | undefined
-): CompatibleAISelectedTextPanelHost | null {
-	const standalonePlugin = getStandalonePlugin(app);
-	const legacyPlugin = getLegacyWeavePlugin(app);
-
-	const capablePlugins = [standalonePlugin, legacyPlugin].filter(
-		hasAISelectedTextPanelCapability
-	);
-	if (capablePlugins.length === 0) {
-		return null;
-	}
-
-	const preferredPlugin =
-		capablePlugins.find((plugin) => getVisibleSplitActionsFromHost(plugin).length > 0) ||
-		capablePlugins[0];
-
-	return createCompatibleAISelectedTextPanelHost(app, preferredPlugin);
 }
 
 export function getCompatibleDataStorage(

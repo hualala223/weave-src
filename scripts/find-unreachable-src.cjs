@@ -29,9 +29,7 @@ const ENTRY_DIRECTORIES = [
 
 const ENTRY_FILES = [
 	"styles/obsidian-confirm.css",
-	"services/ai/ai-action-config.ts",
-	"services/ai/ai-host.ts",
-	"services/editor/editor-temp-file-policy.ts",
+			"services/editor/editor-temp-file-policy.ts",
 	"modals/VaultFileSuggestModal.ts",
 	"modals/VaultFolderSuggestModal.ts",
 	"modals/weaveComplexSuggestion.ts",

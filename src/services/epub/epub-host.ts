@@ -37,31 +37,12 @@ export interface EpubHostIncrementalReadingTopicOption {
 	name: string;
 }
 
-export interface EpubHostSelectedTextAISplitMenuOptions {
-	event: MouseEvent | KeyboardEvent;
-	selectedText: string;
-	onSelectAction: (actionId: string) => void;
-}
-
 export interface EpubHostResumePointInput {
 	filePath: string;
 	cfi: string;
 	chapterHref?: string;
 	chapterTitle?: string;
 	deckId?: string;
-}
-
-export interface EpubHostSelectedTextAIPanelInput {
-	filePath: string;
-	selectedText: string;
-	actionId: string;
-	sourceLink?: string;
-}
-
-export interface EpubHostAISplitConfigModalInput {
-	mode?: string;
-	title?: string;
-	availableDecks?: unknown[];
 }
 
 export interface EpubHostCapabilities {
@@ -87,10 +68,6 @@ export interface EpubHostCapabilities {
 	getAvailableEpubIncrementalReadingTopics?: () => Promise<EpubHostIncrementalReadingTopicOption[]>;
 	scheduleEpubChapterForIncrementalReading?: (input: EpubHostScheduleChapterInput) => Promise<void>;
 	markEpubResumePointFromReader?: (input: EpubHostResumePointInput) => Promise<void>;
-	openSelectedTextAISplitMenu?: (options: EpubHostSelectedTextAISplitMenuOptions) => void;
-	openAISplitConfigModal?: (input?: EpubHostAISplitConfigModalInput) => unknown;
-	openSelectedTextAIPanelFromEpub?: (input: EpubHostSelectedTextAIPanelInput) => Promise<void>;
-	closeSelectedTextAIPanelFromEpub?: (filePath: string) => Promise<void>;
 	openCardBacklinkFromEpub?: (cardUuid: string) => Promise<void>;
 }
 
@@ -148,22 +125,10 @@ const EPUB_HOST_CAPABILITY_KEYS: Array<keyof EpubHostCapabilities> = [
 	"getAvailableEpubIncrementalReadingTopics",
 	"scheduleEpubChapterForIncrementalReading",
 	"markEpubResumePointFromReader",
-	"openSelectedTextAISplitMenu",
-	"openAISplitConfigModal",
-	"openSelectedTextAIPanelFromEpub",
-	"closeSelectedTextAIPanelFromEpub",
 	"openCardBacklinkFromEpub",
 ];
 
 const registeredEpubHosts = new WeakMap<App, EpubHostCapabilities>();
-const LEGACY_AI_SPLIT_CONFIG_MODAL_METHODS = [
-	"openAISplitConfigModal",
-	"openAiSplitConfigModal",
-	"openSelectedTextAISplitConfigModal",
-	"openSplitActionConfigModal",
-	"openAIActionConfigModal",
-	"openAIConfigModal",
-] as const;
 
 type PluginHostApp = App & {
 	plugins: {
@@ -194,20 +159,7 @@ function getLegacyHost(app: App): EpubHostCapabilities | null {
 		return null;
 	}
 
-	const host = Object.create(legacyPlugin) as EpubHostCapabilities;
-
-	for (const methodName of LEGACY_AI_SPLIT_CONFIG_MODAL_METHODS) {
-		const candidate: unknown = Reflect.get(legacyPlugin, methodName);
-		if (typeof candidate !== "function") {
-			continue;
-		}
-
-		host.openAISplitConfigModal = (input?: EpubHostAISplitConfigModalInput) =>
-			(candidate as (...args: unknown[]) => unknown).call(legacyPlugin, input);
-		break;
-	}
-
-	return host;
+	return Object.create(legacyPlugin) as EpubHostCapabilities;
 }
 
 function listEpubHostCandidates(app: App): EpubHostCapabilities[] {

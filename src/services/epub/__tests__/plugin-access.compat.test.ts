@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-	getCompatibleAISelectedTextPanelHost,
 	getCompatibleDataStorage,
 	getCompatibleWeaveParentFolder,
 	getInheritedLicensesFromLegacyWeave,
@@ -93,87 +92,6 @@ describe("plugin-access compatibility fallbacks", () => {
 		} as any;
 
 		expect(getCompatibleDataStorage(app)).toBe(legacyDataStorage);
-	});
-
-	it("falls back to Weave AI selected text host when standalone plugin lacks AI capability", () => {
-		const legacyDataStorage = {
-			getDecks: vi.fn(async () => []),
-			saveCard: vi.fn(async () => ({ success: true })),
-		};
-		const app = {
-			plugins: {
-				getPlugin: (pluginId: string) => {
-					if (pluginId === "weave-epub-reader") {
-						return {
-							settings: {},
-						};
-					}
-					if (pluginId === "weave") {
-						return {
-							settings: {},
-							dataStorage: legacyDataStorage,
-						};
-					}
-					return null;
-				},
-			},
-		} as any;
-
-		const host = getCompatibleAISelectedTextPanelHost(app);
-		expect(host?.app).toBe(app);
-		expect(host?.dataStorage).toBe(legacyDataStorage);
-	});
-
-	it("prefers the host that actually exposes visible split actions when both plugins support AI", () => {
-		const standaloneDataStorage = {
-			getDecks: vi.fn(async () => []),
-			saveCard: vi.fn(async () => ({ success: true })),
-		};
-		const legacyDataStorage = {
-			getDecks: vi.fn(async () => []),
-			saveCard: vi.fn(async () => ({ success: true })),
-		};
-		const legacySettings = {
-			aiConfig: {
-				customSplitActions: [
-					{
-						id: "legacy-split-action",
-						name: "知识点拆分",
-						systemPrompt: "system",
-						userPromptTemplate: "user",
-						splitConfig: {
-							targetCount: 3,
-							splitStrategy: "knowledge-point",
-							outputFormat: "qa",
-						},
-						enabled: true,
-					},
-				],
-			},
-		};
-		const app = {
-			plugins: {
-				getPlugin: (pluginId: string) => {
-					if (pluginId === "weave-epub-reader") {
-						return {
-							settings: {},
-							dataStorage: standaloneDataStorage,
-						};
-					}
-					if (pluginId === "weave") {
-						return {
-							settings: legacySettings,
-							dataStorage: legacyDataStorage,
-						};
-					}
-					return null;
-				},
-			},
-		} as any;
-
-		const host = getCompatibleAISelectedTextPanelHost(app);
-		expect(host?.settings).toBe(legacySettings);
-		expect(host?.dataStorage).toBe(legacyDataStorage);
 	});
 
 	it("prefers the current plugin settings owner weaveParentFolder before app-level fallback", () => {

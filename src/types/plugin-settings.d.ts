@@ -8,122 +8,6 @@
  */
 
 // ============================================================================
-// AI配置类型
-// ============================================================================
-
-/**
- * 卡片拆分配置
- */
-export interface CardSplittingConfig {
-  /**
-   * 是否启用卡片拆分功能
-   */
-  enabled?: boolean;
-  
-  /**
-   * 默认拆分指令
-   */
-  defaultInstruction?: string;
-  
-  /**
-   * 目标卡片数量
-   */
-  targetCount?: number;
-  
-  /**
-   * 最小卡片数量
-   */
-  minCount?: number;
-  
-  /**
-   * 最大卡片数量
-   */
-  maxCount?: number;
-}
-
-/**
- * AI格式化配置
- */
-export interface FormattingConfig {
-  /**
-   * 是否启用自动格式化
-   */
-  enabled?: boolean;
-  
-  /**
-   * 默认格式化规则
-   */
-  defaultRules?: string[];
-  
-  /**
-   * 自定义格式化动作
-   */
-  customActions?: CustomFormatAction[];
-}
-
-/**
- * AI配置总接口
- */
-export interface AIConfig {
-  /**
-   * API密钥配置（多服务商）
-   * 支持的提供商：openai, gemini, anthropic, deepseek, zhipu, siliconflow, xai
-   */
-  apiKeys?: Partial<Record<'openai' | 'gemini' | 'anthropic' | 'deepseek' | 'zhipu' | 'siliconflow' | 'xai', {
-    apiKey: string;
-    model: string;
-    verified: boolean;
-    lastVerified?: string;
-    baseUrl?: string;
-  }>>;
-  
-  /**
-   * 默认AI服务提供商
-   */
-  defaultProvider?: string;
-  
-  /**
-   * 上次使用的 AI 服务提供商（用于持久化用户选择）
-   */
-  lastUsedProvider?: string;
-  
-  /**
-   * 上次使用的 AI 模型（用于持久化用户选择）
-   */
-  lastUsedModel?: string;
-  
-  /**
-   * 卡片拆分配置
-   */
-  cardSplitting?: CardSplittingConfig;
-  
-  /**
-   * 格式化配置
-   */
-  formatting?: FormattingConfig;
-  
-  /**
-   * 自定义格式化功能
-   */
-  customFormatActions?: unknown[];
-  
-  /**
-   * 自定义AI拆分功能
-   */
-  customSplitActions?: unknown[];
-  
-  /**
-   * 温度参数（0-1）
-   */
-  temperature?: number;
-  
-  /**
-   * 最大生成长度
-   */
-  maxTokens?: number;
-}
-
-// ============================================================================
 // 学习设置类型
 // ============================================================================
 
@@ -594,10 +478,6 @@ export const DEFAULT_IR_SETTINGS: IncrementalReadingSettings = {
  * Weave插件完整设置
  */
 export interface WeaveSettings {
-  /**
-   * AI功能配置
-   */
-  aiConfig?: AIConfig;
   
   /**
    * 学习配置

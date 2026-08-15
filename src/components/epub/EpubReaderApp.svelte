@@ -60,7 +60,6 @@
 	import { epubActiveDocumentStore } from '../../stores/epub-active-document-store';
 	import { logger } from '../../utils/logger';
 	import { tr } from '../../utils/i18n';
-	import { isWeaveMainPluginEnabled } from '../../utils/weave-reader-access';
 	import { getOpenEpubFilePath, pathsReferToSameOpenBook } from '../../utils/epub-leaf-utils';
 	import { showObsidianChoice, showObsidianConfirm } from '../../utils/obsidian-confirm';
 	import { UnifiedThemeManager } from '../../utils/theme-detection';
@@ -3057,32 +3056,6 @@
 			'Failed to extract selection to card',
 			t('epub.reader.createCardFailed')
 		);
-	}
-
-	function showSelectedTextAIMenu(event: MouseEvent, text: string, cfiRange: string) {
-		if (!isWeaveMainPluginEnabled(app)) {
-			new Notice(t('epub.reader.weaveRequired'));
-			return;
-		}
-
-		const host = resolveEpubHost(app);
-		if (!host?.openSelectedTextAISplitMenu || !host.openSelectedTextAIPanelFromEpub) {
-			new Notice(t('epub.reader.weaveRequired'));
-			return;
-		}
-
-		host.openSelectedTextAISplitMenu({
-			event,
-			selectedText: text,
-			onSelectAction: (actionId: string) => {
-				void host.openSelectedTextAIPanelFromEpub?.({
-					filePath,
-					selectedText: text,
-					actionId,
-					sourceLink: buildReadingPointSourceLink(text, cfiRange),
-				});
-			},
-		});
 	}
 
 	async function handleCreateReadingPoint(text: string, cfiRange: string) {

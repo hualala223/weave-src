@@ -40,7 +40,6 @@ import {
 	canHandleEpubPagedNavigation,
 	shouldIgnoreEpubReaderShortcut,
 } from "../utils/epub-reader-keyboard-guards";
-import { getWeaveMainPlugin } from "../utils/weave-reader-access";
 import type { EpubViewHost } from "./epub-view-host";
 import { VIEW_TYPE_EPUB_SIDEBAR } from "./EpubSidebarView";
 
@@ -926,13 +925,6 @@ export class EpubView extends ItemView {
 		}
 	}
 
-	async closeSelectedTextAIPanel(): Promise<void> {
-		if (!this.filePath) {
-			return;
-		}
-		const weave = getWeaveMainPlugin(this.app);
-		await weave?.closeSelectedTextAIPanelFromEpub?.(this.filePath);
-	}
 
 	private buildInlineToolbar(shellEl: HTMLDivElement): void {
 		this.inlineToolbarEl = shellEl.createDiv({ cls: "epub-left-inline-toolbar" });
@@ -1212,7 +1204,6 @@ export class EpubView extends ItemView {
 		try {
 			this.ensureViewShell();
 
-			await this.closeSelectedTextAIPanel();
 			if (this.component) {
 				const { unmount } = await import("svelte");
 				try {
@@ -1402,7 +1393,6 @@ export class EpubView extends ItemView {
 			}
 			this.component = null;
 		}
-		await this.closeSelectedTextAIPanel();
 		this.readerHostEl = null;
 		this.inlineToolbarEl = null;
 		this.inlineToolbarActionsEl = null;

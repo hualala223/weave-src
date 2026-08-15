@@ -51,15 +51,12 @@ export {
 	unregisterEpubHost,
 } from "./epub-host";
 export type {
-	EpubHostAISplitConfigModalInput,
 	EpubHostCapabilities,
 	EpubHostCreateCardInput,
 	EpubHostIncrementalReadingTopicOption,
 	EpubHostReadingPointInput,
 	EpubHostResumePointInput,
 	EpubHostScheduleChapterInput,
-	EpubHostSelectedTextAIPanelInput,
-	EpubHostSelectedTextAISplitMenuOptions,
 	EpubWeaveExcerptRemovalMode,
 	EpubWeaveOfficialAPI,
 	EpubWeaveOfficialAPIInfo,

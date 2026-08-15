@@ -1,7 +1,6 @@
 import "./utils/group-by-compat";
 import "./utils/blob-url-registry";
-import { Menu, Notice, Plugin, TAbstractFile, TFile, normalizePath } from "obsidian";
-import { domInstanceOf } from "./utils/dom-instance-of";
+import { Plugin, TAbstractFile, TFile, normalizePath } from "obsidian";
 
 import { EpubDataManagementModalObsidian } from "./components/epub/EpubDataManagementModalObsidian";
 import { DEFAULT_EPUB_BOOKMARK_FOLDER } from "./config/epub-user-vault-folders";
@@ -36,9 +35,7 @@ import { getBookSessionManager } from "./services/epub/session/book-session-mana
 import { syncLargeNavButtonStyle } from "./services/epub/epub-large-nav-style";
 import {
 	registerEpubHost,
-	resolveEpubHost,
 	unregisterEpubHost,
-	type EpubHostAISplitConfigModalInput,
 	type EpubHostCapabilities,
 	type EpubWeaveOfficialAPI,
 } from "./services/epub";
@@ -50,17 +47,6 @@ import {
 	registerEpubProtocolHandler,
 	registerEpubWorkspaceViews,
 } from "./services/epub/epub-plugin-support";
-import { getVisibleSplitActionsFromHost } from "./services/ai/ai-action-config";
-import { aiConfigStore } from "./stores/ai-config.store";
-import {
-	getWeaveMainPlugin,
-	isWeaveMainPluginEnabled,
-	requireWeaveMainPlugin,
-} from "./utils/weave-reader-access";
-import { safeOpenSettings } from "./utils/obsidian-api-safe";
-import {
-	getCompatibleAISelectedTextPanelHost,
-} from "./utils/plugin-access";
 import { registerCanvasExcerptAnchorCacheWarmup } from "./services/epub/canvas-excerpt-anchor";
 import { registerCanvasDirectionMenu } from "./services/epub/register-canvas-direction-menu";
 import { registerCanvasExcerptAnchorMenu } from "./services/epub/register-canvas-excerpt-anchor-menu";
@@ -74,7 +60,6 @@ import {
 	type InterfaceLanguagePreference,
 } from "./utils/i18n";
 import { vaultStorage } from "./utils/vault-local-storage";
-import type { AIConfig } from "./types/plugin-settings";
 import {
 	DEFAULT_BOOKSHELF_DISPLAY_MODE,
 	normalizeBookshelfDisplayMode,
@@ -82,7 +67,6 @@ import {
 } from "./services/epub/bookshelf-display-mode";
 
 interface StandaloneEpubPluginSettings {
-	aiConfig?: AIConfig;
 	enableDebugMode: boolean;
 	enableLargeNavButtons: boolean;
 	bookshelfAutoViewByLocationEnabled: boolean;
@@ -392,105 +376,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.workspaceViewsRegistered = true;
 	}
 
-	private notifyWeaveRequired(): void {
-		new Notice(i18n.t("epub.reader.weaveRequired"));
-	}
-
-	openSelectedTextAISplitMenu(options: {
-		event: MouseEvent | KeyboardEvent;
-		selectedText: string;
-		onSelectAction: (actionId: string) => void;
-	}): void {
-		if (!isWeaveMainPluginEnabled(this.app)) {
-			this.notifyWeaveRequired();
-			return;
-		}
-
-		const actions = getVisibleSplitActionsFromHost(
-			getCompatibleAISelectedTextPanelHost(this.app) ?? this
-		);
-		const menu = new Menu();
-		if (actions.length > 0) {
-			for (const action of actions) {
-				menu.addItem((item) => {
-					item.setTitle(action.name);
-					item.setIcon(action.icon || "sparkles");
-					item.onClick(() => {
-						options.onSelectAction(action.id);
-					});
-				});
-			}
-		} else {
-			menu.addItem((item) => {
-				item.setTitle(i18n.t("epub.commands.aiSplitUnavailable"));
-				item.setIcon("info");
-				item.setDisabled(true);
-			});
-		}
-
-		menu.addSeparator();
-		menu.addItem((item) => {
-			item.setTitle(i18n.t("epub.commands.aiSplitConfig"));
-			item.setIcon("settings");
-			item.onClick(() => {
-				if (!this.tryOpenAISplitConfigModalFromMainPlugin()) {
-					safeOpenSettings(this.app, this.manifest.id);
-				}
-			});
-		});
-
-		if (domInstanceOf(options.event, MouseEvent)) {
-			menu.showAtMouseEvent(options.event);
-			return;
-		}
-
-		const eventTarget = options.event.target;
-		const target = domInstanceOf(eventTarget, HTMLElement) ? eventTarget : null;
-		if (target) {
-			const rect = target.getBoundingClientRect();
-			menu.showAtPosition({ x: rect.left, y: rect.bottom + 4 });
-			return;
-		}
-
-		menu.showAtPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-	}
-
-	private tryOpenAISplitConfigModalFromMainPlugin(): boolean {
-		const input: EpubHostAISplitConfigModalInput = { mode: "split" };
-		const host = resolveEpubHost(this.app);
-		const openAISplitConfigModal = host?.openAISplitConfigModal;
-		if (typeof openAISplitConfigModal !== "function") {
-			return false;
-		}
-
-		try {
-			openAISplitConfigModal(input);
-			return true;
-		} catch (error) {
-			void error;
-			return false;
-		}
-	}
-
-	async openSelectedTextAIPanelFromEpub(input: {
-		filePath: string;
-		selectedText: string;
-		actionId: string;
-		sourceLink?: string;
-	}): Promise<void> {
-		const weave = requireWeaveMainPlugin(this.app);
-		if (!weave?.openSelectedTextAIPanelFromEpub) {
-			this.notifyWeaveRequired();
-			return;
-		}
-		await weave.openSelectedTextAIPanelFromEpub(input);
-	}
-
-	async closeSelectedTextAIPanelFromEpub(filePath: string): Promise<void> {
-		const weave = getWeaveMainPlugin(this.app);
-		await weave?.closeSelectedTextAIPanelFromEpub?.(filePath);
-	}
-
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		syncLargeNavButtonStyle(this.settings.enableLargeNavButtons === true);
@@ -505,8 +390,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			cardSyncDedupeMs: 600,
 			getEnableDebugMode: () => this.settings.enableDebugMode === true,
 		});
-		aiConfigStore.initialize(this);
-		const { EpubSettingsTab } = await import("./components/settings/EpubSettingsTab");
+			const { EpubSettingsTab } = await import("./components/settings/EpubSettingsTab");
 		this.addSettingTab(new EpubSettingsTab(this.app, this));
 		registerCanvasExcerptAnchorMenu(this);
 		registerCanvasDirectionMenu(this);

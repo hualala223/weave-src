@@ -70,56 +70,6 @@ describe("epub-host resolution", () => {
 		expect(legacyCreateCard).toHaveBeenCalledWith({ initialContent: "demo" });
 	});
 
-	it("falls back to legacy Weave AI split config modal when the local host is registered", () => {
-		const legacyOpenAISplitConfigModal = vi.fn();
-		const localHost = {
-			openEpubReader: vi.fn(async () => undefined),
-		};
-		const app = {
-			plugins: {
-				getPlugin: vi.fn((pluginId: string) => {
-					if (pluginId === "weave-epub-reader") {
-						return localHost;
-					}
-					if (pluginId === "weave") {
-						return {
-							openAISplitConfigModal: legacyOpenAISplitConfigModal,
-						};
-					}
-					return null;
-				}),
-			},
-		} as any;
-
-		registerEpubHost(app, localHost);
-		const resolved = resolveEpubHost(app);
-		resolved?.openAISplitConfigModal?.({ mode: "split" });
-		unregisterEpubHost(app);
-
-		expect(legacyOpenAISplitConfigModal).toHaveBeenCalledWith({ mode: "split" });
-	});
-
-	it("supports legacy AI split config modal alias methods", () => {
-		const legacyOpenAiSplitConfigModal = vi.fn();
-		const app = {
-			plugins: {
-				getPlugin: vi.fn((pluginId: string) => {
-					if (pluginId === "weave") {
-						return {
-							openAiSplitConfigModal: legacyOpenAiSplitConfigModal,
-						};
-					}
-					return null;
-				}),
-			},
-		} as any;
-
-		const resolved = resolveEpubHost(app);
-		resolved?.openAISplitConfigModal?.({ mode: "split" });
-
-		expect(legacyOpenAiSplitConfigModal).toHaveBeenCalledWith({ mode: "split" });
-	});
-
 	it("does not expose local IR capabilities when the standalone host does not implement them", () => {
 		const localHost = {
 			openEpubReader: vi.fn(async () => undefined),
