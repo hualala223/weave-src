@@ -10,7 +10,7 @@
 	import EpubHighlightToolbar from './EpubHighlightToolbar.svelte';
 	import EpubCommentEditorPopover from './EpubCommentEditorPopover.svelte';
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
-	import { canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, createTapBurstTracker, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, TAP_FLIP_GRACE_MS, TAP_TRIPLE_WINDOW_MS } from '../../services/epub';
+	import { createEpubReaderEngine, createTapBurstTracker, DEFAULT_EPUB_EXCERPT_SETTINGS, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, TAP_FLIP_GRACE_MS, TAP_TRIPLE_WINDOW_MS } from '../../services/epub';
 	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderTapEvent, ReadingPosition } from '../../services/epub';
 	import { EpubBookmarkService } from '../../services/epub/EpubBookmarkService';
 	import {
@@ -32,6 +32,7 @@
 		getBookshelfDisplayModeOptions,
 		getBookshelfDisplayModeOption,
 		normalizeBookshelfDisplayMode,
+		DEFAULT_BOOKSHELF_DISPLAY_MODE,
 		type BookshelfDisplayMode,
 	} from '../../services/epub/bookshelf-display-mode';
 	import {
@@ -66,6 +67,7 @@
 		normalizeContinuousReadingPositionAutoSaveEnabled,
 		normalizeContinuousReadingPositionAutoSavePages,
 	} from '../../config/reading-position-auto-save';
+	import { CURRENT_PLUGIN_ID } from '../../config/plugin-runtime';
 	import '../../styles/epub/epub-reader.css';
 
 	interface Props {
@@ -278,27 +280,27 @@
 	}
 
 	function hasReadingProgressCapability(): boolean {
-		return canUseEpubReadingProgress(app);
+		return true;
 	}
 
 	function hasReadingReferenceCapability(): boolean {
-		return canUseEpubReadingReference(app);
+		return true;
 	}
 
 	function hasExcerptNotesCapability(): boolean {
-		return canUseEpubExcerptNotes(app);
+		return true;
 	}
 
 	function hasStyledExcerptCapability(): boolean {
-		return canUseEpubStyledExcerpts(app);
+		return true;
 	}
 
 	function hasSourceLocationCapability(): boolean {
-		return canUseEpubSourceLocation(app);
+		return true;
 	}
 
 	function hasFootnotePreviewCapability(): boolean {
-		return canUseEpubFootnotePreview(app);
+		return true;
 	}
 
 
@@ -578,7 +580,7 @@
 	}
 
 	function getEpubActionHost() {
-		return resolveEpubHost(app);
+		return (app.plugins.getPlugin(CURRENT_PLUGIN_ID) as any) ?? null;
 	}
 
 	function getContinuousReadingPositionAutoSaveConfig(): { enabled: boolean; pages: number } {
@@ -1465,11 +1467,9 @@
 
 	function showSettingsMenu(evt: MouseEvent) {
 		const menu = new Menu();
-		const bookshelfSettingsHost = resolveEpubHost(app) as
-			| ({ settings?: Record<string, unknown>; saveSettings?: () => Promise<void> })
-			| null;
+		const bookshelfSettingsHost = (app.plugins.getPlugin(CURRENT_PLUGIN_ID) as any) ?? null;
 		const currentBookshelfDisplayMode = normalizeBookshelfDisplayMode(
-			bookshelfSettingsHost?.settings?.bookshelfDisplayMode
+			bookshelfSettingsHost?.settings?.bookshelfDisplayMode ?? DEFAULT_BOOKSHELF_DISPLAY_MODE
 		);
 
 		const applyBookshelfDisplayMode = (mode: BookshelfDisplayMode) => {
@@ -1984,9 +1984,6 @@
 	}
 
 	function requestSourceBookLocate(nav: BookLocateIntent): boolean {
-		if (!ensureBookSourceLocationAccess(app, '双向链接定位是高级功能，请激活许可证后使用')) {
-			return false;
-		}
 		epubNavigation.requestBookLocate(nav);
 		return true;
 	}

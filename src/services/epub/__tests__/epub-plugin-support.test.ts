@@ -3,13 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   notices,
   navigationHubNavigateMock,
-  ensureEpubFileAccessMock,
   ensureBookOnBookshelfMock,
   storageCtorMock,
 } = vi.hoisted(() => ({
   notices: [] as string[],
   navigationHubNavigateMock: vi.fn(async () => ({ success: true, leaf: { id: 'leaf-1' } })),
-  ensureEpubFileAccessMock: vi.fn(() => true),
   ensureBookOnBookshelfMock: vi.fn(),
   storageCtorMock: vi.fn(),
 }));
@@ -52,10 +50,6 @@ vi.mock('../../navigation/navigation-hub-access', () => ({
   getNavigationHub: () => ({
     navigate: navigationHubNavigateMock,
   }),
-}));
-
-vi.mock('../epub-premium', () => ({
-  ensureEpubFileAccess: ensureEpubFileAccessMock,
 }));
 
 vi.mock('../EpubStorageService', () => ({
@@ -108,8 +102,6 @@ describe('epub-plugin-support openEpubReader', () => {
     notices.length = 0;
     navigationHubNavigateMock.mockReset();
     navigationHubNavigateMock.mockResolvedValue({ success: true, leaf: { id: 'leaf-1' } });
-    ensureEpubFileAccessMock.mockReset();
-    ensureEpubFileAccessMock.mockReturnValue(true);
     ensureBookOnBookshelfMock.mockReset();
     storageCtorMock.mockReset();
   });
@@ -126,7 +118,6 @@ describe('epub-plugin-support openEpubReader', () => {
       'failed'
     );
 
-    expect(ensureEpubFileAccessMock).toHaveBeenCalledWith(app, 'Books/demo.epub');
     expect(navigationHubNavigateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'book',

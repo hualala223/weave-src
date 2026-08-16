@@ -16,9 +16,8 @@ vi.mock('obsidian', () => ({
 	normalizePath: (value: string) => String(value || '').replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, ''),
 }));
 
-const { navigateMock, ensureBookSourceLocationAccessMock, ensureSourceIdentityMock } = vi.hoisted(() => ({
+const { navigateMock, ensureSourceIdentityMock } = vi.hoisted(() => ({
 	navigateMock: vi.fn(async () => ({ success: true, leaf: { id: "leaf-1" } })),
-	ensureBookSourceLocationAccessMock: vi.fn(() => true),
 	ensureSourceIdentityMock: vi.fn(async () => ({
 		sourceId: "epubsrc-test123456789",
 		sourceFingerprint: "demo-fingerprint",
@@ -38,10 +37,6 @@ vi.mock('../epub-storage-access', () => ({
 	}),
 }));
 
-vi.mock('../epub-premium', () => ({
-	ensureBookSourceLocationAccess: ensureBookSourceLocationAccessMock,
-}));
-
 import { TFile } from 'obsidian';
 import { EpubLinkService } from '../EpubLinkService';
 import { EPUB_RUNTIME } from '../epub-runtime';
@@ -59,7 +54,6 @@ const buildCompactReadiumLocator = (href: string, progression: string, highlight
 describe('EpubLinkService legacy link compatibility', () => {
 	it('routes note-to-book navigation through NavigationHub', async () => {
 		navigateMock.mockReset();
-		ensureBookSourceLocationAccessMock.mockReturnValue(true);
 		navigateMock.mockResolvedValueOnce({ success: true, leaf: { id: 'leaf-1' } });
 		const app = {} as any;
 		const service = new EpubLinkService(app);
@@ -75,15 +69,21 @@ describe('EpubLinkService legacy link compatibility', () => {
 		);
 	});
 
-	it('does not navigate to book locations when source location is unavailable', async () => {
+	it('routes note-to-book navigation for non-epub supported formats', async () => {
 		navigateMock.mockReset();
-		ensureBookSourceLocationAccessMock.mockReturnValueOnce(false);
+		navigateMock.mockResolvedValueOnce({ success: true, leaf: { id: 'leaf-1' } });
 		const app = {} as any;
 		const service = new EpubLinkService(app);
 
 		await service.navigateToEpubLocation('Books/demo.cbz', 'epubcfi(/6/2)', 'Page 3');
 
-		expect(navigateMock).not.toHaveBeenCalled();
+		expect(navigateMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				kind: 'book',
+				resourcePath: 'Books/demo.cbz',
+				locate: { cfi: 'epubcfi(/6/2)', text: 'Page 3' },
+			})
+		);
 	});
 
 	it('extracts the first EPUB wikilink for both current and legacy hash formats', () => {

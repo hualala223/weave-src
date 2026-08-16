@@ -11,7 +11,6 @@ import {
 	isSupportedBookPath,
 	stripSupportedBookExtension,
 } from "./book-format";
-import { ensureBookSourceLocationAccess } from "./epub-premium";
 
 export interface EpubLinkParams {
 	filePath: string;
@@ -1044,14 +1043,6 @@ export class EpubLinkService {
 		if (!normalizedHref) {
 			return;
 		}
-		if (
-			!ensureBookSourceLocationAccess(
-				this.app,
-				'双向链接定位是高级功能，请激活许可证后使用'
-			)
-		) {
-			return;
-		}
 		try {
 			const { getNavigationHub } = await import("../navigation/navigation-hub-access");
 			const result = await getNavigationHub(this.app).navigate({
@@ -1079,14 +1070,6 @@ export class EpubLinkService {
 		sourceId?: string,
 		sourceMarkdownPath?: string
 	): Promise<void> {
-		if (
-			!ensureBookSourceLocationAccess(
-				this.app,
-				'双向链接定位是高级功能，请激活许可证后使用'
-			)
-		) {
-			return;
-		}
 		try {
 			const { getNavigationHub } = await import("../navigation/navigation-hub-access");
 			const result = await getNavigationHub(this.app).navigate({

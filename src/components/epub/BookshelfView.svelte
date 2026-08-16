@@ -6,10 +6,9 @@
         import { logger } from '../../utils/logger';
         import {
                 EPUB_RUNTIME,
-                canUseEpubReadingProgress,
                 getEpubStorageService,
-                resolveEpubHost,
         } from '../../services/epub';
+        import { CURRENT_PLUGIN_ID } from '../../config/plugin-runtime';
         import { getBookFormatDisplayLabel, isSupportedBookFile, stripSupportedBookExtension } from '../../services/epub/book-format';
         import { FoliateVaultPublicationParser } from '../../services/epub/FoliateVaultPublicationParser';
         import type { BookMetadata, EpubBook } from '../../services/epub';
@@ -50,6 +49,7 @@
                 getBookshelfDisplayModeOption,
                 normalizeBookshelfDisplayMode,
                 resolveBookshelfViewMode,
+                DEFAULT_BOOKSHELF_DISPLAY_MODE,
                 type BookshelfDisplayMode
         } from '../../services/epub/bookshelf-display-mode';
         import {
@@ -159,7 +159,7 @@
         let bookshelfSearchPersistTimer: ReturnType<typeof window.setTimeout> | null = null;
         let bookshelfDisplayMode = $state<BookshelfDisplayMode>('adaptive');
         let canShowBookshelfProgress = $derived.by(() => {
-                return canUseEpubReadingProgress(app);
+                return true;
         });
         let detectedSurfaceContext = $state<'main' | 'sidebar'>('main');
         let bookshelfRootEl = $state<HTMLDivElement | null>(null);
@@ -231,7 +231,7 @@
         }
 
         function getEpubHost(): any {
-                return resolveEpubHost(app) as any;
+                return (app.plugins.getPlugin(CURRENT_PLUGIN_ID) as any) ?? null;
         }
 
         function buildBookMeta(book: EpubBook): BookshelfBookMeta {

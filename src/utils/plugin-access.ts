@@ -1,10 +1,4 @@
-import type { EffectiveLicenseState, LicenseInfo, LicenseStore } from "../types/license";
 import { CURRENT_PLUGIN_ID } from "../config/plugin-runtime";
-import {
-	cloneLicenseAsInherited,
-	dedupeLicenses,
-	normalizeLicenseStore,
-} from "./license-state";
 
 export type PluginLookupApp = {
 	vault?: unknown;
@@ -22,8 +16,6 @@ export type CompatiblePluginSettings = {
 	weaveParentFolder?: string;
 	selectionQuickCreateLastFolder?: string;
 	bookmarkFolder?: string;
-	license?: Partial<LicenseInfo>;
-	licenseState?: Partial<LicenseStore>;
 };
 
 export type CompatibleDataStorage = {
@@ -45,8 +37,6 @@ export type CompatiblePlugin = {
 	settings?: CompatiblePluginSettings;
 	dataStorage?: CompatibleDataStorage;
 	readingMaterialManager?: CompatibleReadingMaterialManager;
-	getLocalLicenses?: () => LicenseInfo[];
-	getEffectiveLicenseState?: () => EffectiveLicenseState;
 };
 
 export const STANDALONE_PLUGIN_ID = "weave-epub-reader";
@@ -122,38 +112,4 @@ export function getCompatibleReadingMaterialManager(
 
 	const legacyManager = getLegacyWeavePlugin(app)?.readingMaterialManager;
 	return legacyManager?.getAllMaterials ? legacyManager : standaloneManager ?? legacyManager ?? null;
-}
-
-function getPluginLocalLicenses(plugin: CompatiblePlugin): LicenseInfo[] {
-	if (typeof plugin.getLocalLicenses === "function") {
-		return plugin.getLocalLicenses();
-	}
-
-	return normalizeLicenseStore(plugin.settings?.license, plugin.settings?.licenseState).localLicenses;
-}
-
-function getPluginActiveLicenses(plugin: CompatiblePlugin): LicenseInfo[] {
-	if (typeof plugin.getEffectiveLicenseState === "function") {
-		return plugin.getEffectiveLicenseState().activeLicenses ?? [];
-	}
-
-	return getPluginLocalLicenses(plugin);
-}
-
-export function getInheritedLicensesFromLegacyWeave(
-	app: PluginLookupApp | undefined
-): LicenseInfo[] {
-	const legacyPlugin = getLegacyWeavePlugin(app);
-	if (!legacyPlugin) {
-		return [];
-	}
-
-	const sourcePluginId = String(legacyPlugin.manifest?.id || LEGACY_WEAVE_PLUGIN_ID).trim()
-		|| LEGACY_WEAVE_PLUGIN_ID;
-
-	return dedupeLicenses(
-		getPluginActiveLicenses(legacyPlugin).map((license) =>
-			cloneLicenseAsInherited(license, sourcePluginId)
-		)
-	);
 }

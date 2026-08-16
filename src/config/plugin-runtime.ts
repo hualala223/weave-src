@@ -1,7 +1,6 @@
 import manifest from "../../manifest.json";
-import type { LicensedProduct } from "../types/license";
 
-export const CURRENT_PLUGIN_ID = manifest.id as LicensedProduct;
+export const CURRENT_PLUGIN_ID = manifest.id as string;
 export const CURRENT_PLUGIN_NAME = manifest.name;
 export const CURRENT_PLUGIN_VERSION = manifest.version;
 export const CURRENT_PLUGIN_DISPLAY_VERSION = `v${CURRENT_PLUGIN_VERSION}`;

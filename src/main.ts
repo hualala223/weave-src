@@ -28,13 +28,6 @@ import { configureNavigationHub } from "./services/navigation/navigation-hub-acc
 import { getBookSessionManager } from "./services/epub/session/book-session-manager-access";
 import { syncLargeNavButtonStyle } from "./services/epub/epub-large-nav-style";
 import {
-	registerEpubHost,
-	unregisterEpubHost,
-	type EpubHostCapabilities,
-	type EpubWeaveOfficialAPI,
-} from "./services/epub";
-import { EpubExcerptOfficialApiService } from "./services/epub/EpubExcerptOfficialApiService";
-import {
 	openEpubBookshelf,
 	openEpubReader,
 	registerEpubMarkdownPostProcessor,
@@ -87,11 +80,10 @@ type PersistedStandaloneEpubPluginSettings = Omit<
 
 export type WeavePlugin = StandaloneEpubPlugin & Record<string, unknown>;
 
-export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapabilities {
+export default class StandaloneEpubPlugin extends Plugin {
 	private workspaceViewsRegistered = false;
 	private pendingBookshelfRefreshTimer: number | null = null;
 	private epubStorageService: EpubStorageService | null = null;
-	private epubOfficialApiService: EpubExcerptOfficialApiService | null = null;
 	settings: StandaloneEpubPluginSettings = DEFAULT_STANDALONE_EPUB_SETTINGS;
 
 	private syncDebugSettings(): void {
@@ -127,13 +119,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			this.epubStorageService = new EpubStorageService(this.app);
 		}
 		return this.epubStorageService;
-	}
-
-	getOfficialAPI(): EpubWeaveOfficialAPI {
-		if (!this.epubOfficialApiService) {
-			this.epubOfficialApiService = new EpubExcerptOfficialApiService();
-		}
-		return this.epubOfficialApiService;
 	}
 
 	private getPersistedSettings(): PersistedStandaloneEpubPluginSettings {
@@ -300,7 +285,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		await this.loadSettings();
 		syncLargeNavButtonStyle(this.settings.enableLargeNavButtons === true);
 		await vaultStorage.initialize(this.app);
-		registerEpubHost(this.app, this);
 		configureNavigationHub(this.app, {
 			getSourceNavigationOpenInNewTab: () => this.settings.sourceNavigationOpenInNewTab !== false,
 			getEnableDebugMode: () => this.settings.enableDebugMode === true,
@@ -348,7 +332,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.epubStorageService = null;
 		resetEpubStorageServiceCache(this.app);
 		logger.setDebugMode(false);
-		unregisterEpubHost(this.app);
 	}
 
 	private async openEpubBookshelf(): Promise<void> {

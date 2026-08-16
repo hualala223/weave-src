@@ -4,8 +4,6 @@ import {
 	openEpubInPreferredLeaf,
 } from "../../utils/epub-leaf-utils";
 import { logger } from "../../utils/logger";
-import { ensureBookSourceLocationAccess, ensureEpubFileAccess } from "../epub/epub-premium";
-import { hasBookLocateTarget } from "./navigation-intent";
 import { resolveEpubVaultPath } from "../epub/epub-vault-path";
 import { getEpubStorageService } from "../epub/epub-storage-access";
 import type { NavigationIntent, NavigationResult, PendingLocateState } from "./navigation-intent";
@@ -86,16 +84,6 @@ export class NavigationHub {
 	}
 
 	private async navigateBook(intent: NavigationIntent): Promise<NavigationResult> {
-		if (
-			hasBookLocateTarget(intent.locate) &&
-			!ensureBookSourceLocationAccess(
-				this.app,
-				'双向链接定位是高级功能，请激活许可证后使用'
-			)
-		) {
-			return { success: false, error: "premium_unavailable" };
-		}
-
 		const normalizedLinkPath = normalizePath(String(intent.resourcePath || "").trim());
 		const vaultPath =
 			resolveEpubVaultPath(this.app, normalizedLinkPath, intent.context?.sourceMarkdownPath) ||
@@ -112,9 +100,6 @@ export class NavigationHub {
 				sourceId: intent.context?.sourceId,
 			});
 			return { success: false, error: "unresolved_path" };
-		}
-		if (!ensureEpubFileAccess(this.app, resolvedFilePath)) {
-			return { success: false, error: "access_denied" };
 		}
 
 		const viewState = buildBookViewState(resolvedFilePath, intent.locate);

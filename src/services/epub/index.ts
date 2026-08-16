@@ -45,20 +45,6 @@ export {
 export type { EpubExcerptSettings } from "./epub-excerpt-settings";
 export { DEFAULT_EPUB_EXCERPT_SETTINGS } from "./epub-excerpt-settings";
 export {
-	registerEpubHost,
-	resolveEpubHost,
-	resolveEpubWeaveOfficialAPI,
-	unregisterEpubHost,
-} from "./epub-host";
-export type {
-	EpubHostCapabilities,
-	EpubWeaveExcerptRemovalMode,
-	EpubWeaveOfficialAPI,
-	EpubWeaveOfficialAPIInfo,
-	EpubWeaveRemoveExcerptInput,
-	EpubWeaveRemoveExcerptResult,
-} from "./epub-host";
-export {
 	EPUB_RUNTIME,
 	getEpubRuntime,
 	isLegacyEpubProtocolName,
@@ -80,26 +66,6 @@ export {
 } from "./EpubBookmarkService";
 export { EpubLinkService } from "./EpubLinkService";
 export { EpubLocationMigrationService } from "./EpubLocationMigrationService";
-export {
-	canOpenBookWithCurrentLicense,
-	canUseEpubCanvasExcerpts,
-	canOpenEpubFile,
-	canUseEpubExcerptNotes,
-	canUseEpubFootnotePreview,
-	canUseEpubParagraphMode,
-	getEpubFeatureTierPreview,
-	getEpubPremiumFeaturePreviewContent,
-	canUseEpubPremiumFeature,
-	canUseEpubReadingProgress,
-	canUseEpubReadingReference,
-	canUseEpubSourceLocation,
-	canUseEpubStyledExcerpts,
-	ensureBookSourceLocationAccess,
-	ensureEpubFileAccess,
-	ensureEpubPremiumFeature,
-	requestEpubPremiumFeaturePreview,
-	PREMIUM_FEATURES,
-} from "./epub-premium";
 export * from "./types";
 export {
 	createReaderTapZoneController,

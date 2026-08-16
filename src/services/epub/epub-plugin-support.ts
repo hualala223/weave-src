@@ -13,7 +13,6 @@ import { createEpubLinkPostProcessor } from "./EpubLinkPostProcessor";
 import { EpubLinkService } from "./EpubLinkService";
 import { isSupportedBookFile, SUPPORTED_BOOK_EXTENSIONS } from "./book-format";
 import { EPUB_RUNTIME } from "./epub-runtime";
-import { ensureEpubFileAccess } from "./epub-premium";
 
 type EpubPluginHost = EpubViewHost & Plugin;
 
@@ -162,9 +161,6 @@ export async function openEpubReader(
 		const targetFile = app.vault.getAbstractFileByPath(String(filePath || "").trim());
 		if (!(targetFile instanceof TFile) || !isSupportedBookFile(targetFile)) {
 			new Notice(missingFileNotice);
-			return;
-		}
-		if (!ensureEpubFileAccess(app, targetFile.path)) {
 			return;
 		}
 
