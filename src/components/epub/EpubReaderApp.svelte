@@ -1861,17 +1861,6 @@
 		}
 	}
 
-	async function copyImageToClipboard(blob: Blob) {
-		try {
-			await navigator.clipboard.write([
-				new ClipboardItem({ [blob.type]: blob })
-			]);
-			new Notice('图片已复制到剪贴板');
-		} catch (_e) {
-			new Notice('图片复制失败');
-		}
-	}
-
 	function outputNote(text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) {
 		/* Always allow output */ 
 		const content = buildNoteContent(text, cfiRange, color, style, autoInsert);
