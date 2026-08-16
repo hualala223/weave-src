@@ -80,7 +80,6 @@ describe("FoliateReaderService comment marker layering", () => {
 				persistentHighlight: highlight,
 				currentStrikethroughPresentation: service.currentStrikethroughPresentation,
 				colorScheme: service.getCurrentColorScheme(),
-				temporarilyRevealedConcealmentKeys: (service as any).temporarilyRevealedConcealmentTimers,
 			});
 
 			expect(rendered.annotation).toMatchObject({
@@ -368,14 +367,12 @@ describe("FoliateReaderService comment marker layering", () => {
 					annotation: base,
 					currentStrikethroughPresentation: service.currentStrikethroughPresentation,
 					colorScheme: service.getCurrentColorScheme(),
-					temporarilyRevealedConcealmentKeys: (service as any).temporarilyRevealedConcealmentTimers,
 				})
 			).not.toBe(
 				buildAnnotationRenderSignature({
 					annotation: updated,
 					currentStrikethroughPresentation: service.currentStrikethroughPresentation,
 					colorScheme: service.getCurrentColorScheme(),
-					temporarilyRevealedConcealmentKeys: (service as any).temporarilyRevealedConcealmentTimers,
 				})
 			);
 		} finally {

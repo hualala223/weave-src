@@ -3,7 +3,6 @@ import { resolveConfiguredDataPath } from "../../config/paths";
 import { DirectoryUtils } from "../../utils/directory-utils";
 import { logger } from "../../utils/logger";
 import { TagExtractor } from "../../utils/tag-extractor";
-import type { EpubAnnotationService } from "./EpubAnnotationService";
 import { shouldIncludeHighlightInSidebarSnapshot } from "./reader-annotation-model";
 import type { EpubReaderEngine, ReaderHighlight } from "./reader-engine-types";
 
@@ -61,7 +60,6 @@ export interface EpubHighlightSnapshotContextInput {
 
 export interface EpubHighlightSnapshotRevalidateInput
 	extends EpubHighlightSnapshotContextInput {
-	annotationService?: EpubAnnotationService;
 	readerService?: EpubReaderEngine | null;
 	highlightRevision?: number;
 	/** When provided, skips another vault-wide collectAllHighlights pass. */

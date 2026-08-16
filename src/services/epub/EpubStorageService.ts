@@ -1,5 +1,4 @@
 import { type App, TAbstractFile, TFile } from "obsidian";
-import { unknownPlainText } from "../../utils/unknown-plain-text";
 import { Platform, normalizePath } from "obsidian";
 import {
 	getPluginPathsById,
@@ -27,12 +26,10 @@ import {
 	resolveSupportedBookFile,
 	resolveSupportedBookFilePath as resolveCanonicalSupportedBookFilePath,
 } from "./epub-vault-path";
-import { normalizeCanvasExcerptAnchorsMap } from "./canvas-excerpt-anchor";
 import { EpubBookmarkService, type EpubBookmarkReadingState } from "./EpubBookmarkService";
 import { normalizeReadingPaceStats } from "./reading-pace";
 import type {
 	BookMetadata,
-	ConcealedText,
 	EpubBook,
 	EpubLastOpenBookmark,
 	EpubParagraphModeReadingPosition,
@@ -52,8 +49,6 @@ import {
 	normalizeBookMetadata,
 	normalizeBookState,
 	normalizeBookshelfMembershipEntries,
-	normalizeConcealedTextMode,
-	normalizeConcealedTexts,
 	normalizeExcerptSettings,
 	normalizeLastOpenBookmark,
 	normalizeLegacySourceIds,
@@ -71,13 +66,12 @@ import {
 	toStoredBookDescriptor,
 } from "./epub-local-data-normalize";
 import type {
-	CanvasExcerptAnchorRecord,
 	EpubPluginUiMemory,
 	EpubReaderLocalBookRecord,
 	EpubReaderLocalDataFile,
 	EpubStoredBookDescriptor,
 } from "./epub-local-data-types";
-export type { CanvasExcerptAnchorRecord, EpubPluginUiMemory } from "./epub-local-data-types";
+export type { EpubPluginUiMemory } from "./epub-local-data-types";
 import { dedupeBookshelfMembershipEntries, type EpubBookshelfMembershipEntry } from "./epub-bookshelf-membership-store";
 import {
 	createBookshelfPlaylistId,
@@ -94,16 +88,6 @@ import {
 	type WeaveDataDocument,
 	type WeaveDataStore,
 } from "./weave-data-store";
-import {
-	normalizeTocChapterMarkKey,
-	normalizeTocChapterMarkMap,
-	type EpubTocChapterMark,
-	type EpubTocChapterMarkMap,
-} from "./epub-toc-chapter-mark";
-import {
-	normalizeTocChapterMarkSettings,
-	type EpubTocChapterMarkSettings,
-} from "./epub-toc-chapter-mark-settings";
 
 export interface EpubBookshelfSettings {
 	lastScanAt?: number;
@@ -694,20 +678,8 @@ export class EpubStorageService {
 		if (document.excerptSettings !== undefined) {
 			data.excerptSettings = document.excerptSettings as EpubExcerptSettings;
 		}
-		if (document.canvasBindings !== undefined) {
-			data.canvasBindings = document.canvasBindings as Record<string, string>;
-		}
-		if (document.canvasExcerptAnchors !== undefined) {
-			data.canvasExcerptAnchors = document.canvasExcerptAnchors as Record<
-				string,
-				CanvasExcerptAnchorRecord
-			>;
-		}
 		if (document.uiMemory !== undefined) {
 			data.uiMemory = document.uiMemory as EpubPluginUiMemory;
-		}
-		if (document.tocChapterMarkSettings !== undefined) {
-			data.tocChapterMarkSettings = document.tocChapterMarkSettings as EpubTocChapterMarkSettings;
 		}
 		return data;
 	}
@@ -720,10 +692,7 @@ export class EpubStorageService {
 			document.bookshelfPlaylists !== undefined ||
 			document.readerSettings !== undefined ||
 			document.excerptSettings !== undefined ||
-			document.canvasBindings !== undefined ||
-			document.canvasExcerptAnchors !== undefined ||
-			document.uiMemory !== undefined ||
-			document.tocChapterMarkSettings !== undefined
+			document.uiMemory !== undefined
 		);
 	}
 
@@ -742,10 +711,7 @@ export class EpubStorageService {
 			document.bookshelfPlaylists = normalizedData.bookshelfPlaylists;
 			document.readerSettings = normalizedData.readerSettings;
 			document.excerptSettings = normalizedData.excerptSettings;
-			document.canvasBindings = normalizedData.canvasBindings;
-			document.canvasExcerptAnchors = normalizedData.canvasExcerptAnchors;
 			document.uiMemory = normalizedData.uiMemory;
-			document.tocChapterMarkSettings = normalizedData.tocChapterMarkSettings;
 			document.updatedAt = normalizedData.updatedAt;
 		});
 		this.setCachedUnifiedLocalReaderData(normalizedData);
@@ -1003,14 +969,6 @@ export class EpubStorageService {
 		};
 
 		let changed = booksChanged;
-		const remappedCanvasBindings = this.remapCanvasBindingsToCanonicalBookIds(
-			nextUnifiedData.canvasBindings,
-			oldToNewBookIds
-		);
-		if (this.haveCanvasBindingsChanged(nextUnifiedData.canvasBindings, remappedCanvasBindings)) {
-			nextUnifiedData.canvasBindings = remappedCanvasBindings;
-			changed = true;
-		}
 
 		const currentSourceRegistry = await this.loadSourceRegistry();
 		const canonicalSourceRegistry = this.canonicalizeSourceRegistryEntries(currentSourceRegistry);
@@ -1049,10 +1007,6 @@ export class EpubStorageService {
 			incoming.lastOpenBookmark && incomingSavedAt >= existingSavedAt
 				? incoming.lastOpenBookmark
 				: existing.lastOpenBookmark || incoming.lastOpenBookmark;
-		const preferredConcealedTexts =
-			(existing.concealedTexts || []).length >= (incoming.concealedTexts || []).length
-				? existing.concealedTexts || incoming.concealedTexts
-				: incoming.concealedTexts;
 
 		return {
 			descriptor: incoming.descriptor || existing.descriptor,
@@ -1060,32 +1014,7 @@ export class EpubStorageService {
 			lastOpenBookmark: preferredLastOpen,
 			readingReferencePoint:
 				existing.readingReferencePoint || incoming.readingReferencePoint,
-			concealedTexts: preferredConcealedTexts,
 		};
-	}
-
-	private remapCanvasBindingsToCanonicalBookIds(
-		bindings: Record<string, string> | undefined,
-		oldToNewBookIds: Map<string, string>
-	): Record<string, string> {
-		const nextBindings: Record<string, string> = {};
-		for (const [bookId, canvasPath] of Object.entries(bindings || {})) {
-			const nextBookId = oldToNewBookIds.get(bookId) || bookId;
-			if (!nextBookId || !canvasPath) {
-				continue;
-			}
-			nextBindings[nextBookId] = normalizePath(unknownPlainText(canvasPath).trim());
-		}
-		return nextBindings;
-	}
-
-	private haveCanvasBindingsChanged(
-		current: Record<string, string> | undefined,
-		next: Record<string, string>
-	): boolean {
-		const currentEntries = Object.entries(current || {}).sort(([a], [b]) => a.localeCompare(b));
-		const nextEntries = Object.entries(next).sort(([a], [b]) => a.localeCompare(b));
-		return JSON.stringify(currentEntries) !== JSON.stringify(nextEntries);
 	}
 
 	private canonicalizeSourceRegistryEntries(
@@ -1661,32 +1590,12 @@ export class EpubStorageService {
 		await this.writeCachedScanIndex(normalizedEntries);
 	}
 
+	/** 封面不再持久化：现读 + 会话内存缓存（见 BookshelfView.covers）。此方法保留为 no-op 兼容调用方。 */
 	async cacheBookshelfCoverImage(
-		filePath: string,
-		coverImage: string | null | undefined
+		_filePath: string,
+		_coverImage: string | null | undefined
 	): Promise<void> {
-		const normalizedPath = normalizePath(filePath || "");
-		if (!normalizedPath) {
-			return;
-		}
-
-		const normalizedCover =
-			typeof coverImage === "string" && coverImage.trim() ? coverImage.trim() : undefined;
-		const scanEntries = await this.loadScanIndex();
-		const existingIndex = scanEntries.findIndex((entry) => entry.path === normalizedPath);
-		if (existingIndex < 0) {
-			return;
-		}
-
-		if (scanEntries[existingIndex].coverImage === normalizedCover) {
-			return;
-		}
-
-		scanEntries[existingIndex] = {
-			...scanEntries[existingIndex],
-			coverImage: normalizedCover,
-		};
-		await this.saveScanIndex(scanEntries);
+		return;
 	}
 
 	async saveBookshelfIndex(entries: EpubBookshelfIndexEntry[]): Promise<void> {
@@ -3255,70 +3164,6 @@ export class EpubStorageService {
 		return book;
 	}
 
-	async loadConcealedTexts(bookId: string): Promise<ConcealedText[]> {
-		bookId = await this.resolveCanonicalBookId(bookId);
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		const bookRecord = unifiedData.books?.[bookId];
-		if (
-			bookRecord &&
-			Object.prototype.hasOwnProperty.call(bookRecord, "concealedTexts")
-		) {
-			return [...(bookRecord.concealedTexts || [])];
-		}
-
-		return [];
-	}
-
-	async saveConcealedTexts(bookId: string, concealedTexts: ConcealedText[]): Promise<void> {
-		bookId = await this.resolveCanonicalBookId(bookId);
-		const normalizedConcealedTexts = this.normalizeConcealedTexts(concealedTexts);
-		await this.updateUnifiedLocalReaderData((localData) => {
-			localData.books = localData.books || {};
-			const current = localData.books[bookId] || {};
-			localData.books[bookId] = {
-				...current,
-				concealedTexts: normalizedConcealedTexts,
-			};
-		});
-	}
-
-	async addConcealedText(bookId: string, concealedText: ConcealedText): Promise<void> {
-		const concealedTexts = await this.loadConcealedTexts(bookId);
-		const existingIndex = concealedTexts.findIndex(
-			(item) => item.cfiRange === concealedText.cfiRange
-		);
-		const normalizedItem = {
-			...concealedText,
-			mode: this.normalizeConcealedTextMode(concealedText.mode),
-		};
-		if (existingIndex >= 0) {
-			concealedTexts[existingIndex] = normalizedItem;
-		} else {
-			concealedTexts.push(normalizedItem);
-		}
-		await this.saveConcealedTexts(bookId, concealedTexts);
-	}
-
-	async deleteConcealedText(bookId: string, concealedTextId: string): Promise<void> {
-		const concealedTexts = await this.loadConcealedTexts(bookId);
-		const filtered = concealedTexts.filter((item) => item.id !== concealedTextId);
-		await this.saveConcealedTexts(bookId, filtered);
-	}
-
-	async deleteConcealedTextByCfi(bookId: string, cfiRange: string): Promise<void> {
-		const concealedTexts = await this.loadConcealedTexts(bookId);
-		const filtered = concealedTexts.filter((item) => item.cfiRange !== cfiRange);
-		await this.saveConcealedTexts(bookId, filtered);
-	}
-
-	private normalizeConcealedTextMode(mode?: string): ConcealedText["mode"] {
-		return normalizeConcealedTextMode(mode);
-	}
-
-	private normalizeConcealedTexts(concealedTexts: unknown): ConcealedText[] {
-		return normalizeConcealedTexts(concealedTexts);
-	}
-
 	async loadLastOpenBookmark(bookId: string): Promise<EpubLastOpenBookmark | null> {
 		bookId = await this.resolveCanonicalBookId(bookId);
 		await this.hydrateBookState(bookId);
@@ -3387,66 +3232,6 @@ export class EpubStorageService {
 				readingReferencePoint: this.normalizeReadingReferencePoint(point),
 			};
 		});
-	}
-
-	async getTocChapterMarks(bookId: string): Promise<EpubTocChapterMarkMap> {
-		bookId = await this.resolveCanonicalBookId(bookId);
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		const bookRecord = unifiedData.books?.[bookId];
-		if (!bookRecord?.tocChapterMarks) {
-			return {};
-		}
-		return { ...bookRecord.tocChapterMarks };
-	}
-
-	async setTocChapterMark(
-		bookId: string,
-		href: string,
-		mark: EpubTocChapterMark | null
-	): Promise<EpubTocChapterMarkMap> {
-		bookId = await this.resolveCanonicalBookId(bookId);
-		const hrefKey = normalizeTocChapterMarkKey(href);
-		if (!hrefKey) {
-			return this.getTocChapterMarks(bookId);
-		}
-
-		let nextMarks: EpubTocChapterMarkMap = {};
-		await this.updateUnifiedLocalReaderData((localData) => {
-			localData.books = localData.books || {};
-			const current = localData.books[bookId] || {};
-			const existing = normalizeTocChapterMarkMap(current.tocChapterMarks);
-			nextMarks = { ...existing };
-			if (mark) {
-				nextMarks[hrefKey] = mark;
-			} else {
-				delete nextMarks[hrefKey];
-			}
-			localData.books[bookId] = {
-				...current,
-				tocChapterMarks: Object.keys(nextMarks).length > 0 ? nextMarks : undefined,
-			};
-		});
-		return nextMarks;
-	}
-
-	async loadTocChapterMarkSettings(): Promise<EpubTocChapterMarkSettings> {
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		if (Object.prototype.hasOwnProperty.call(unifiedData, "tocChapterMarkSettings")) {
-			return normalizeTocChapterMarkSettings(unifiedData.tocChapterMarkSettings);
-		}
-		return {};
-	}
-
-	async saveTocChapterMarkSettings(settings: EpubTocChapterMarkSettings): Promise<EpubTocChapterMarkSettings> {
-		const normalizedSettings = normalizeTocChapterMarkSettings(settings);
-		await this.updateUnifiedLocalReaderData((localData) => {
-			if (Object.keys(normalizedSettings).length > 0) {
-				localData.tocChapterMarkSettings = normalizedSettings;
-				return;
-			}
-			delete localData.tocChapterMarkSettings;
-		});
-		return normalizedSettings;
 	}
 
 	private parseParagraphModePositionsMarkdown(markdown: string): Record<string, EpubParagraphModeReadingPosition> {
@@ -3556,146 +3341,6 @@ export class EpubStorageService {
 				readingReferencePoint: null,
 			};
 		});
-	}
-
-	async removeLegacyHighlights(bookId: string): Promise<void> {
-		const highlightsPath = `${this.basePath}/${bookId}/highlights.json`;
-		const adapter = this.app.vault.adapter as typeof this.app.vault.adapter & {
-			remove?: (path: string) => Promise<void>;
-		};
-		if (typeof adapter.remove !== "function") {
-			return;
-		}
-		if (await adapter.exists(highlightsPath)) {
-			await adapter.remove(highlightsPath);
-		}
-	}
-
-	async removeLegacyNotes(bookId: string): Promise<void> {
-		const notesPath = `${this.basePath}/${bookId}/notes.json`;
-		const adapter = this.app.vault.adapter as typeof this.app.vault.adapter & {
-			remove?: (path: string) => Promise<void>;
-		};
-		if (typeof adapter.remove !== "function") {
-			return;
-		}
-		if (await adapter.exists(notesPath)) {
-			await adapter.remove(notesPath);
-		}
-	}
-
-	async getCanvasBinding(bookId: string): Promise<string | null> {
-		bookId = await this.resolveCanonicalBookId(bookId);
-		const bindings = await this.loadCanvasBindings();
-		return bindings[bookId] || null;
-	}
-
-	async setCanvasBinding(bookId: string, canvasPath: string): Promise<void> {
-		bookId = await this.resolveCanonicalBookId(bookId);
-		const bindings = await this.loadCanvasBindings();
-		bindings[bookId] = canvasPath;
-		await this.saveCanvasBindings(bindings);
-	}
-
-	async updateCanvasBindingReferences(oldPath: string, newPath: string): Promise<number> {
-		const normalizedOldPath = normalizePath(oldPath || "");
-		const normalizedNewPath = normalizePath(newPath || "");
-		if (!normalizedOldPath || !normalizedNewPath || normalizedOldPath === normalizedNewPath) {
-			return 0;
-		}
-
-		const bindings = await this.loadCanvasBindings();
-		let updated = 0;
-		let changed = false;
-
-		for (const [bookId, canvasPath] of Object.entries(bindings)) {
-			const remapped = this.remapPath(canvasPath, normalizedOldPath, normalizedNewPath);
-			if (!remapped || remapped === canvasPath) {
-				continue;
-			}
-
-			bindings[bookId] = remapped;
-			updated += 1;
-			changed = true;
-		}
-
-		if (changed) {
-			await this.saveCanvasBindings(bindings);
-		}
-
-		await this.remapCanvasExcerptAnchorPath(normalizedOldPath, normalizedNewPath);
-
-		return updated;
-	}
-
-	async getCanvasExcerptAnchor(canvasPath: string): Promise<CanvasExcerptAnchorRecord> {
-		const normalizedPath = normalizePath(String(canvasPath || "").trim());
-		if (!normalizedPath) {
-			return { lockedNodeId: null, lastCreatedNodeId: null };
-		}
-		const anchors = await this.loadCanvasExcerptAnchors();
-		const record = anchors[normalizedPath];
-		return {
-			lockedNodeId: record?.lockedNodeId ?? null,
-			lastCreatedNodeId: record?.lastCreatedNodeId ?? null,
-			layoutDirection: record?.layoutDirection,
-		};
-	}
-
-	async setCanvasExcerptAnchor(
-		canvasPath: string,
-		record: CanvasExcerptAnchorRecord
-	): Promise<void> {
-		const normalizedPath = normalizePath(String(canvasPath || "").trim());
-		if (!normalizedPath) {
-			return;
-		}
-		const anchors = await this.loadCanvasExcerptAnchors();
-		const nextRecord: CanvasExcerptAnchorRecord = {
-			lockedNodeId: String(record.lockedNodeId || "").trim() || null,
-			lastCreatedNodeId: String(record.lastCreatedNodeId || "").trim() || null,
-			layoutDirection: record.layoutDirection,
-		};
-		if (!nextRecord.lockedNodeId && !nextRecord.lastCreatedNodeId && !nextRecord.layoutDirection) {
-			if (Object.prototype.hasOwnProperty.call(anchors, normalizedPath)) {
-				delete anchors[normalizedPath];
-				await this.saveCanvasExcerptAnchors(anchors);
-			}
-			return;
-		}
-		anchors[normalizedPath] = nextRecord;
-		await this.saveCanvasExcerptAnchors(anchors);
-	}
-
-	async remapCanvasExcerptAnchorPath(oldPath: string, newPath: string): Promise<boolean> {
-		const normalizedOldPath = normalizePath(String(oldPath || "").trim());
-		const normalizedNewPath = normalizePath(String(newPath || "").trim());
-		if (
-			!normalizedOldPath ||
-			!normalizedNewPath ||
-			normalizedOldPath === normalizedNewPath
-		) {
-			return false;
-		}
-		const anchors = await this.loadCanvasExcerptAnchors();
-		const existing = anchors[normalizedOldPath];
-		if (!existing) {
-			return false;
-		}
-		delete anchors[normalizedOldPath];
-		anchors[normalizedNewPath] = existing;
-		await this.saveCanvasExcerptAnchors(anchors);
-		return true;
-	}
-
-	async removeCanvasBinding(bookId: string): Promise<void> {
-		bookId = await this.resolveCanonicalBookId(bookId);
-		const bindings = await this.loadCanvasBindings();
-		if (!Object.prototype.hasOwnProperty.call(bindings, bookId)) {
-			return;
-		}
-		delete bindings[bookId];
-		await this.saveCanvasBindings(bindings);
 	}
 
 	async loadPluginUiMemory(): Promise<EpubPluginUiMemory> {
@@ -3976,46 +3621,6 @@ export class EpubStorageService {
 				logger.warn(`[EpubStorageService] Failed to remove legacy file ${legacyPath}:`, error);
 			}
 		}
-	}
-
-	private async loadCanvasBindings(): Promise<Record<string, string>> {
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		if (unifiedData.canvasBindings && typeof unifiedData.canvasBindings === "object") {
-			return { ...unifiedData.canvasBindings };
-		}
-
-		return {};
-	}
-
-	private async saveCanvasBindings(bindings: Record<string, string>): Promise<void> {
-		const normalizedBindings = Object.fromEntries(
-			Object.entries(bindings || {})
-				.map(
-					([bookId, canvasPath]) =>
-						[String(bookId || "").trim(), normalizePath(unknownPlainText(canvasPath).trim())] as const
-				)
-				.filter(([bookId, canvasPath]) => Boolean(bookId) && Boolean(canvasPath))
-		);
-		await this.updateUnifiedLocalReaderData((localData) => {
-			localData.canvasBindings = normalizedBindings;
-		});
-	}
-
-	private async loadCanvasExcerptAnchors(): Promise<Record<string, CanvasExcerptAnchorRecord>> {
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		if (unifiedData.canvasExcerptAnchors && typeof unifiedData.canvasExcerptAnchors === "object") {
-			return { ...unifiedData.canvasExcerptAnchors };
-		}
-		return {};
-	}
-
-	private async saveCanvasExcerptAnchors(
-		anchors: Record<string, CanvasExcerptAnchorRecord>
-	): Promise<void> {
-		const normalizedAnchors = normalizeCanvasExcerptAnchorsMap(anchors);
-		await this.updateUnifiedLocalReaderData((localData) => {
-			localData.canvasExcerptAnchors = normalizedAnchors;
-		});
 	}
 
 	private remapPath(filePath: string, oldPath: string, newPath: string): string | null {

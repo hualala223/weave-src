@@ -7,12 +7,11 @@
 	import BottomNav from './BottomNav.svelte';
 	import EpubLoadingState from './EpubLoadingState.svelte';
 	import SelectionToolbar from './SelectionToolbar.svelte';
-	import ParagraphReadingOverlay from './ParagraphReadingOverlay.svelte';
-	import ScreenshotOverlay from './ScreenshotOverlay.svelte';
 	import EpubHighlightToolbar from './EpubHighlightToolbar.svelte';
 	import EpubCommentEditorPopover from './EpubCommentEditorPopover.svelte';
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
-	import { canUseEpubCanvasExcerpts, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, createTapBurstTracker, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, TAP_FLIP_GRACE_MS, TAP_TRIPLE_WINDOW_MS } from '../../services/epub';
+	import { canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, createTapBurstTracker, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, TAP_FLIP_GRACE_MS, TAP_TRIPLE_WINDOW_MS } from '../../services/epub';
+	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderTapEvent, ReadingPosition } from '../../services/epub';
 	import { EpubBookmarkService } from '../../services/epub/EpubBookmarkService';
 	import {
 		getDefaultEpubReaderSettings,
@@ -20,17 +19,6 @@
 		type EpubReaderSettingsDeviceKind,
 	} from '../../services/epub/reader-settings';
 	import { vaultStorage } from '../../utils/vault-local-storage';
-	import { EpubScreenshotService } from '../../services/epub/EpubScreenshotService';
-	import { EpubCanvasService } from '../../services/epub/EpubCanvasService';
-	import {
-		WEAVE_EPUB_CANVAS_LAYOUT_DIRECTION_EVENT,
-		type WeaveEpubCanvasLayoutDirectionPayload,
-	} from '../../services/epub/canvas-excerpt-anchor';
-	import type { EpubVisibleFrameLike, ScreenshotRect } from '../../services/epub/EpubScreenshotService';
-	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubParagraphModeReadingPosition, EpubParagraphModeTransitionStyle, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, FlashStyle, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderParagraph, ReaderTapEvent, ReadingPosition, TocItem } from '../../services/epub';
-	import { getBookFormatDisplayLabel, isSupportedBookFile } from '../../services/epub/book-format';
-	import type { EpubTocChapterMark, EpubTocChapterMarkMap } from '../../services/epub/epub-toc-chapter-mark';
-	import type { EpubTocChapterMarkSettings } from '../../services/epub/epub-toc-chapter-mark-settings';
 	import {
 		BookLoadCancelledError,
 		buildBookLoadSlowWarningMessage,
@@ -99,38 +87,28 @@
 		onCancelBookLoad?: () => void | Promise<void>;
 		onActionsReady?: (actions: {
 			setAutoInsert: (enabled: boolean) => void;
-			setScreenshotMode: (active: boolean) => void;
 			setLayoutMode: (mode: EpubLayoutMode) => void;
 			setFlowMode: (mode: EpubFlowMode) => void;
-			toggleParagraphMode: () => void;
 			openTypographyPanel: () => void;
 			getReaderSettings: () => EpubReaderSettings;
 			updateReaderSettings: (patch: Partial<EpubReaderSettings>) => Promise<void>;
-			setScreenshotSaveMode: (saveAsImage: boolean) => void;
 			navigateToCfi: (cfi: string, linkTextHint?: string) => void;
 				addBookmark: () => Promise<void>;
 			canUseReadingProgress?: () => boolean;
 			canUseReadingReference?: () => boolean;
-			canUseParagraphMode?: () => boolean;
 			canUseExcerptNotes?: () => boolean;
 			canUseStyledExcerpts?: () => boolean;
-			canUseCanvasExcerpts?: () => boolean;
 			canUseFootnotePreview?: () => boolean;
 			saveReadingReferencePoint?: () => Promise<void>;
 			openReadingPositionMenu?: (event: MouseEvent | KeyboardEvent) => void;
 			getReadingPositionAutoSaveEnabled?: () => boolean;
 			setReadingPositionAutoSaveEnabled?: (enabled: boolean) => Promise<boolean>;
-			bindCanvasPath: (canvasPath: string) => void;
-			unbindCanvas: () => void;
-			getCanvasService: () => EpubCanvasService;
 			getExcerptSettings: () => EpubExcerptSettings;
 			updateExcerptSettings: (patch: Partial<EpubExcerptSettings>) => Promise<void>;
 			prevPage: () => void | Promise<void>;
 			nextPage: () => void | Promise<void>;
 		}) => void;
 		onSwitchBook?: (filePath: string) => void;
-		onCanvasStateChange?: (active: boolean, canvasPath: string | null) => void;
-		onCanvasLayoutDirectionChange?: (direction: import('../../services/epub/canvas-types').CanvasLayoutDirection) => void;
 	}
 
 	let { 
@@ -149,9 +127,7 @@
 		onBackFromBookshelf,
 		onCancelBookLoad,
 		onActionsReady, 
-		onSwitchBook, 
-		onCanvasStateChange,
-		onCanvasLayoutDirectionChange
+		onSwitchBook
 	}: Props = $props();
 	function getDefaultReaderLineHeight(): number {
 		return getDefaultReaderSettings().lineHeight;
@@ -186,12 +162,9 @@
 	let readerService: EpubReaderEngine = untrack(() => createEpubReaderEngine(app));
 	let storageService = untrack(() => getEpubStorageService(app));
 	let bookmarkService = untrack(() => new EpubBookmarkService(app));
-	let annotationService = untrack(() => new EpubAnnotationService(storageService));
 	let highlightViewSnapshotService = untrack(() => getEpubHighlightViewSnapshotService(app));
 	let locationMigrationService = untrack(() => new EpubLocationMigrationService(app, storageService, readerService));
 	let linkService = untrack(() => new EpubLinkService(app));
-	let screenshotService = untrack(() => new EpubScreenshotService(app));
-	let canvasService = untrack(() => new EpubCanvasService(app));
 
 	let book = $state<EpubBook | null>(null);
 	let loading = $state(true);
@@ -207,43 +180,16 @@
 	let showScrolledChapterNavActions = $state(false);
 	let readerVersion = $state(0);
 	let autoInsert = $state(untrack(() => initialAutoInsert));
-	let screenshotMode = $state(false);
-	let screenshotSaveAsImage = $state(true);
 
-	let canvasMode = $state(false);
 	let transientStatusText = $state('');
 	let readingReferencePoint = $state<EpubReadingReferencePoint | null>(null);
 	let sessionReadingStartPercent = $state<number | null>(null);
 	let bookCompletionPromptOpen = false;
 	let bookCompletionPromptDismissedBookId = '';
-	let paragraphModeSelection = $state<{
-		text: string;
-		cfiRange: string;
-		rect: DOMRect;
-		rects: DOMRect[];
-		clear: () => void;
-	} | null>(null);
-	let paragraphModeLocation = $state<{ paragraphs: ReaderParagraph[]; currentIndex: number } | null>(null);
-	let paragraphModeBusy = $state(false);
-	let paragraphModeImmersive = $state(false);
-	let paragraphModeAnchorParagraphId = '';
-	let paragraphModeSuppressReactiveRefresh = 0;
-	let paragraphModeLastNavigationAt = 0;
-	let paragraphModePersistTimer: ReturnType<typeof setTimeout> | null = null;
-	let paragraphModeDetachedSession = $state(false);
-	let paragraphModeDetachedSnapshot = $state<{
-		readingPosition: ReadingPosition;
-		paragraphId?: string;
-		paragraphIndex?: number;
-		paragraphTextPreview?: string;
-	} | null>(null);
-	const PARAGRAPH_MODE_PERSIST_DEBOUNCE_MS = 1400;
-	const PARAGRAPH_MODE_REACTIVE_REFRESH_COOLDOWN_MS = 450;
 	let rootEl = $state<HTMLDivElement | null>(null);
 	let viewportEl = $state<HTMLDivElement | null>(null);
 	let readingViewportLockEl = $derived(resolveReadingViewportLockTarget(rootEl));
 	let typographyPopoverOpen = $state(false);
-	let paragraphModeNavBottomOffset = $state(0);
 	let readerReady = $state(false);
 	let scrolledNavSyncFrame = 0;
 	let scrolledNavResizeObserver: ResizeObserver | null = null;
@@ -268,10 +214,6 @@
 	let highlightReloading = $state(false);
 	let annotationRevision = $state(0);
 	let bookmarkRevision = $state(0);
-	let tocChapterMarks = $state<EpubTocChapterMarkMap>({});
-	let tocChapterMarkSettings = $state<EpubTocChapterMarkSettings>({});
-	let tocChapterMarkRevision = $state(0);
-	let tocChapterMarkSettingsRevision = $state(0);
 	let migratedLocationBookIds = new Set<string>();
 	let migratingLocationBookId: string | null = null;
 	let scrolledChapterEndCleanup: (() => void) | null = null;
@@ -319,21 +261,8 @@
 		showScrolledSideNav: true,
 		footnoteClickAction: 'preview',
 		paragraphModeEnabled: false,
-		paragraphModeFontSize: 'medium',
-		paragraphModeFontScale: 100,
-		paragraphModeSurfaceStyle: 'spotlight',
-		paragraphModeTransitionStyle: 'settle',
 	});
 
-	const paragraphTransitionStyleOptions: Array<{
-		value: EpubParagraphModeTransitionStyle;
-		labelKey: string;
-	}> = [
-		{ value: 'steady', labelKey: 'epub.reader.paragraphMode.transitionStyleSteady' },
-		{ value: 'fade', labelKey: 'epub.reader.paragraphMode.transitionStyleFade' },
-		{ value: 'settle', labelKey: 'epub.reader.paragraphMode.transitionStyleSettle' },
-		{ value: 'slide', labelKey: 'epub.reader.paragraphMode.transitionStyleSlide' },
-	];
 	let hostTheme = $state<'light' | 'dark'>(
 		untrack(() => (UnifiedThemeManager.getInstance().isDarkMode() ? 'dark' : 'light'))
 	);
@@ -358,10 +287,6 @@
 		return canUseEpubReadingReference(app);
 	}
 
-	function hasParagraphModeCapability(): boolean {
-		return canUseEpubParagraphMode(app);
-	}
-
 	function hasExcerptNotesCapability(): boolean {
 		return canUseEpubExcerptNotes(app);
 	}
@@ -372,10 +297,6 @@
 
 	function hasSourceLocationCapability(): boolean {
 		return canUseEpubSourceLocation(app);
-	}
-
-	function hasCanvasExcerptCapability(): boolean {
-		return canUseEpubCanvasExcerpts(app);
 	}
 
 	function hasFootnotePreviewCapability(): boolean {
@@ -392,10 +313,6 @@
 
 
 
-
-	function requestParagraphModeFeatureAccess(): boolean {
-		return hasParagraphModeCapability();
-	}
 
 	function normalizeFootnoteClickActionForAccess(
 		action: EpubReaderSettings['footnoteClickAction'] | undefined
@@ -454,697 +371,6 @@
 
 	function closeTypographyPanel() {
 		typographyPopoverOpen = false;
-	}
-
-	function clearParagraphModeSelection(): void {
-		paragraphModeSelection?.clear?.();
-		paragraphModeSelection = null;
-	}
-
-	function updateParagraphModeAnchorParagraphId(location: { paragraphs: ReaderParagraph[]; currentIndex: number } | null): void {
-		const paragraph = location?.paragraphs?.[location.currentIndex];
-		paragraphModeAnchorParagraphId = paragraph?.id || '';
-	}
-
-	async function persistParagraphModeReadingPositionFromLocation(
-		location: { paragraphs: ReaderParagraph[]; currentIndex: number } | null = paragraphModeLocation
-	): Promise<void> {
-		const currentBook = book;
-		if (!currentBook || !location || location.paragraphs.length === 0) {
-			return;
-		}
-		const activeIndex = Math.max(0, Math.min(location.currentIndex, location.paragraphs.length - 1));
-		const paragraph = location.paragraphs[activeIndex];
-		if (!paragraph?.id || !paragraph.cfiRange) {
-			return;
-		}
-		const currentPosition = readerService.getCurrentPosition();
-		const payload: EpubParagraphModeReadingPosition = {
-			bookId: currentBook.id,
-			filePath: currentBook.filePath,
-			bookTitle: currentBook.metadata.title || '',
-			chapterTitle: paragraph.chapterTitle || readerService.getCurrentChapterTitle() || '',
-			chapterHref: paragraph.chapterHref || readerService.getCurrentChapterHref?.() || '',
-			chapterIndex: paragraph.chapterIndex,
-			cfi: paragraph.cfiRange,
-			percent: Number.isFinite(currentPosition.percent) ? currentPosition.percent : 0,
-			paragraphId: paragraph.id,
-			paragraphIndex: activeIndex,
-			paragraphTextPreview: paragraph.text.slice(0, 160),
-			savedAt: Date.now(),
-		};
-		await storageService.saveParagraphModeReadingPosition(payload);
-	}
-
-	async function persistParagraphModeReadingProgress(
-		location: { paragraphs: ReaderParagraph[]; currentIndex: number } | null = paragraphModeLocation
-	): Promise<void> {
-		if (paragraphModeDetachedSession) {
-			return;
-		}
-		await persistParagraphModeReadingPositionFromLocation(location);
-		const currentBook = book;
-		if (!currentBook?.id || !hasReadingProgressCapability()) {
-			return;
-		}
-		const currentPosition = readerService.getCurrentPosition();
-		if (!currentPosition?.cfi) {
-			return;
-		}
-		readerService.flushReadingPace?.();
-		const readingStats = readerService.getReadingStats?.() ?? currentBook.readingStats;
-		if (readingStats) {
-			currentBook.readingStats = readingStats;
-		}
-		currentBook.currentPosition = currentPosition;
-		await storageService.saveProgress(currentBook.id, currentPosition, readingStats);
-		await flushEpubPendingProgress(storageService);
-		await syncReadingReferencePointFromAutoSave(currentPosition);
-		notifyBookshelfProgressChanged(currentBook.filePath);
-	}
-
-	async function showParagraphExitAnchor(paragraph: ReaderParagraph): Promise<void> {
-		if (!paragraph.cfiRange || typeof readerService.navigateAndHighlight !== 'function') {
-			return;
-		}
-		const anchorText = paragraph.text.slice(0, 120);
-		try {
-			await readerService.navigateAndHighlight({
-				cfi: paragraph.cfiRange,
-				text: anchorText,
-				flashStyle: 'highlight',
-			});
-			window.setTimeout(() => {
-				const rect = readerService.getNavigationTargetRect?.({
-					cfi: paragraph.cfiRange,
-					text: anchorText,
-				});
-				if (rect) {
-					sourceLocateOverlay.showAtRect(rect, {
-						label: '段落阅读位置',
-						icon: 'bookmark',
-						durationMs: 3200,
-					});
-				}
-			}, 80);
-		} catch (error) {
-			logger.warn('[EpubReaderApp] Failed to show paragraph mode exit anchor:', error);
-		}
-	}
-
-	function clearParagraphModeDetachedSession(): void {
-		paragraphModeDetachedSession = false;
-		paragraphModeDetachedSnapshot = null;
-	}
-
-	async function beginParagraphModeDetachedSession(): Promise<void> {
-		const currentBook = book;
-		if (!currentBook || paragraphModeDetachedSession) {
-			return;
-		}
-		if (paragraphModePersistTimer) {
-			clearTimeout(paragraphModePersistTimer);
-			paragraphModePersistTimer = null;
-			await persistParagraphModeReadingProgress();
-		}
-		const activeLocation = paragraphModeLocation;
-		const activeIndex = activeLocation?.currentIndex ?? 0;
-		const activeParagraph = activeLocation?.paragraphs?.[activeIndex];
-		const livePosition = readerReady ? readerService.getCurrentPosition() : currentBook.currentPosition;
-		const readingPosition: ReadingPosition = {
-			chapterIndex:
-				typeof livePosition?.chapterIndex === 'number'
-					? livePosition.chapterIndex
-					: currentBook.currentPosition?.chapterIndex || 0,
-			cfi: String(livePosition?.cfi || currentBook.currentPosition?.cfi || '').trim(),
-			percent:
-				typeof livePosition?.percent === 'number' && Number.isFinite(livePosition.percent)
-					? livePosition.percent
-					: currentBook.currentPosition?.percent || 0,
-		};
-		if (!readingPosition.cfi) {
-			return;
-		}
-		paragraphModeDetachedSnapshot = {
-			readingPosition,
-			paragraphId: activeParagraph?.id,
-			paragraphIndex: activeIndex,
-			paragraphTextPreview: activeParagraph?.text.slice(0, 120),
-		};
-		paragraphModeDetachedSession = true;
-	}
-
-	async function restoreParagraphModeDetachedSnapshot(
-		snapshot: {
-			readingPosition: ReadingPosition;
-			paragraphId?: string;
-			paragraphIndex?: number;
-			paragraphTextPreview?: string;
-		} | null = paragraphModeDetachedSnapshot
-	): Promise<void> {
-		if (!snapshot?.readingPosition?.cfi) {
-			return;
-		}
-		try {
-			await readerService.goToLocation(snapshot.readingPosition.cfi);
-		} catch (error) {
-			logger.warn('[EpubReaderApp] Failed to restore reading position after detached paragraph session:', error);
-		}
-	}
-
-	async function showParagraphModeDetachedExitAnchor(
-		snapshot: {
-			readingPosition: ReadingPosition;
-			paragraphTextPreview?: string;
-		}
-	): Promise<void> {
-		if (!snapshot.readingPosition?.cfi || typeof readerService.navigateAndHighlight !== 'function') {
-			return;
-		}
-		const anchorText = String(snapshot.paragraphTextPreview || '').trim();
-		try {
-			await readerService.navigateAndHighlight({
-				cfi: snapshot.readingPosition.cfi,
-				text: anchorText || undefined,
-				flashStyle: 'highlight',
-			});
-			window.setTimeout(() => {
-				const rect = readerService.getNavigationTargetRect?.({
-					cfi: snapshot.readingPosition.cfi,
-					text: anchorText || undefined,
-				});
-				if (rect) {
-					sourceLocateOverlay.showAtRect(rect, {
-						label: '段落阅读位置',
-						icon: 'bookmark',
-						durationMs: 3200,
-					});
-				}
-			}, 80);
-		} catch (error) {
-			logger.warn('[EpubReaderApp] Failed to show detached paragraph mode exit anchor:', error);
-		}
-	}
-
-	async function exitParagraphModeToMainReader(options?: {
-		persist?: boolean;
-		disableSetting?: boolean;
-		showExitAnchor?: boolean;
-		notifySaved?: boolean;
-	}): Promise<void> {
-		const activeLocation = paragraphModeLocation;
-		const activeIndex = activeLocation?.currentIndex ?? 0;
-		const activeParagraph = activeLocation?.paragraphs?.[activeIndex];
-		const detachedSnapshot = paragraphModeDetachedSnapshot;
-		const wasDetachedSession = paragraphModeDetachedSession;
-		const shouldPersist = options?.persist !== false && Boolean(activeParagraph) && !wasDetachedSession;
-		const shouldDisableSetting = options?.disableSetting !== false;
-		const shouldShowExitAnchor = options?.showExitAnchor !== false;
-		const shouldNotifySaved = options?.notifySaved !== false;
-
-		// Disable paragraph mode before async persistence so reactive refresh cannot reopen the overlay.
-		if (shouldDisableSetting && settings.paragraphModeEnabled) {
-			applyAndPersistReaderSettings({
-				...settings,
-				paragraphModeEnabled: false,
-			});
-		}
-		clearParagraphModeSelection();
-		paragraphModeLocation = null;
-		paragraphModeAnchorParagraphId = '';
-		clearParagraphModeDetachedSession();
-		await setParagraphModeImmersive(false);
-
-		if (!shouldPersist && !shouldShowExitAnchor && !wasDetachedSession) {
-			return;
-		}
-
-		void (async () => {
-			if (wasDetachedSession && detachedSnapshot) {
-				try {
-					if (paragraphModePersistTimer) {
-						clearTimeout(paragraphModePersistTimer);
-						paragraphModePersistTimer = null;
-					}
-					await restoreParagraphModeDetachedSnapshot(detachedSnapshot);
-					if (shouldShowExitAnchor) {
-						await showParagraphModeDetachedExitAnchor(detachedSnapshot);
-					}
-				} catch (error) {
-					logger.warn('[EpubReaderApp] Failed to restore detached paragraph mode reading position on exit:', error);
-				}
-				return;
-			}
-			if (shouldPersist && activeLocation) {
-				try {
-					if (paragraphModePersistTimer) {
-						clearTimeout(paragraphModePersistTimer);
-						paragraphModePersistTimer = null;
-					}
-					await persistParagraphModeReadingProgress(activeLocation);
-					if (shouldNotifySaved) {
-						showTransientStatus('已记录段落阅读位置并定位正文', 2200);
-						new Notice('已记录段落阅读位置并定位正文');
-					}
-				} catch (error) {
-					logger.warn('[EpubReaderApp] Failed to persist paragraph mode reading progress on exit:', error);
-				}
-			}
-			if (shouldShowExitAnchor && activeParagraph?.cfiRange) {
-				try {
-					await showParagraphExitAnchor(activeParagraph);
-				} catch (error) {
-					logger.warn('[EpubReaderApp] Failed to show paragraph mode exit anchor:', error);
-				}
-			}
-		})();
-	}
-
-	function setParagraphModeImmersiveClass(active: boolean): void {
-		document.body.classList.toggle('weave-epub-immersive-paragraph-mode', active);
-		document.documentElement.classList.toggle('weave-epub-immersive-paragraph-mode', active);
-	}
-
-	async function setParagraphModeImmersive(active: boolean): Promise<void> {
-		if (paragraphModeImmersive === active) {
-			return;
-		}
-		paragraphModeImmersive = active;
-		setParagraphModeImmersiveClass(active);
-		if (active) {
-			try {
-				const fullscreenHost = document.documentElement;
-				if (document.fullscreenElement !== fullscreenHost) {
-					await fullscreenHost.requestFullscreen?.();
-				}
-			} catch (error) {
-				logger.warn('[EpubReaderApp] Failed to enter immersive fullscreen paragraph mode:', error);
-			}
-			return;
-		}
-		try {
-			if (document.fullscreenElement) {
-				await document.exitFullscreen?.();
-			}
-		} catch (error) {
-			logger.warn('[EpubReaderApp] Failed to exit immersive fullscreen paragraph mode:', error);
-		}
-	}
-
-	function toggleParagraphModeImmersive(): void {
-		void setParagraphModeImmersive(!paragraphModeImmersive);
-	}
-
-	function handleFullscreenChange(): void {
-		const active = Boolean(document.fullscreenElement);
-		if (!active && paragraphModeImmersive) {
-			paragraphModeImmersive = false;
-			setParagraphModeImmersiveClass(false);
-		}
-	}
-
-	async function closeParagraphMode(options?: { persist?: boolean }): Promise<void> {
-		try {
-			await exitParagraphModeToMainReader({
-				persist: options?.persist,
-				disableSetting: options?.persist !== false,
-				showExitAnchor: true,
-				notifySaved: options?.persist !== false,
-			});
-		} catch (error) {
-			logger.warn('[EpubReaderApp] Failed to close paragraph mode:', error);
-			if (settings.paragraphModeEnabled) {
-				applyAndPersistReaderSettings({
-					...settings,
-					paragraphModeEnabled: false,
-				});
-			}
-			clearParagraphModeSelection();
-			paragraphModeLocation = null;
-			paragraphModeAnchorParagraphId = '';
-			await setParagraphModeImmersive(false);
-		}
-	}
-
-	function scheduleParagraphModePersist(): void {
-		if (paragraphModeDetachedSession) {
-			return;
-		}
-		if (paragraphModePersistTimer) {
-			clearTimeout(paragraphModePersistTimer);
-		}
-		paragraphModePersistTimer = setTimeout(() => {
-			paragraphModePersistTimer = null;
-			void persistParagraphModeReadingProgress();
-		}, PARAGRAPH_MODE_PERSIST_DEBOUNCE_MS);
-	}
-
-	function applyParagraphModeIndex(
-		location: { paragraphs: ReaderParagraph[]; currentIndex: number },
-		targetIndex: number
-	): void {
-		const boundedIndex = Math.max(0, Math.min(targetIndex, location.paragraphs.length - 1));
-		paragraphModeLocation = {
-			paragraphs: location.paragraphs,
-			currentIndex: boundedIndex,
-		};
-		updateParagraphModeAnchorParagraphId(paragraphModeLocation);
-	}
-
-	async function hydrateParagraphModeActiveParagraph(targetIndex: number): Promise<void> {
-		const location = paragraphModeLocation;
-		const paragraph = location?.paragraphs?.[targetIndex];
-		if (!paragraph?.id || typeof readerService.hydrateReaderParagraph !== 'function') {
-			return;
-		}
-		if (paragraph.html) {
-			return;
-		}
-		const hydrated = await readerService.hydrateReaderParagraph(paragraph.id);
-		if (!hydrated || paragraphModeLocation?.paragraphs?.[targetIndex]?.id !== paragraph.id) {
-			return;
-		}
-		const paragraphs = [...paragraphModeLocation.paragraphs];
-		paragraphs[targetIndex] = hydrated;
-		paragraphModeLocation = {
-			paragraphs,
-			currentIndex: paragraphModeLocation.currentIndex,
-		};
-	}
-
-	async function syncParagraphModeAnchor(cfi: string): Promise<void> {
-		if (typeof readerService.syncParagraphAnchor === 'function') {
-			await readerService.syncParagraphAnchor(cfi);
-			return;
-		}
-		await readerService.goToLocation(cfi);
-	}
-
-	async function refreshParagraphModeLocation(
-		preferredIndex?: number,
-		preferredParagraphId?: string,
-		options?: { persist?: boolean }
-	): Promise<void> {
-		if (!settings.paragraphModeEnabled || !readerReady || typeof readerService.getCurrentParagraphLocation !== 'function') {
-			paragraphModeLocation = null;
-			return;
-		}
-		paragraphModeBusy = true;
-		try {
-			const location = await readerService.getCurrentParagraphLocation({
-				preferredIndex,
-				preferredParagraphId,
-			});
-			if (!location || location.paragraphs.length === 0) {
-				paragraphModeLocation = null;
-				paragraphModeAnchorParagraphId = '';
-				return;
-			}
-			paragraphModeLocation = location;
-			updateParagraphModeAnchorParagraphId(location);
-			if (options?.persist !== false && !paragraphModeDetachedSession) {
-				scheduleParagraphModePersist();
-			}
-		} finally {
-			paragraphModeBusy = false;
-		}
-	}
-
-	async function setParagraphModeEnabled(enabled: boolean): Promise<void> {
-		if (enabled && !requestParagraphModeFeatureAccess()) {
-			return;
-		}
-		if (enabled === settings.paragraphModeEnabled) {
-			if (enabled) {
-				await refreshParagraphModeLocation(undefined, paragraphModeAnchorParagraphId || undefined);
-			}
-			return;
-		}
-		clearParagraphModeSelection();
-		highlightToolbarInfo = null;
-		closeCommentEditor();
-		footnotePreviewInfo = null;
-		screenshotMode = false;
-		if (!enabled) {
-			await exitParagraphModeToMainReader({
-				persist: true,
-				disableSetting: true,
-				showExitAnchor: true,
-				notifySaved: false,
-			});
-			return;
-		}
-		applyAndPersistReaderSettings({
-			...settings,
-			paragraphModeEnabled: true,
-		});
-		const savedParagraphPosition = book
-			? await storageService.loadParagraphModeReadingPosition(book.id)
-			: null;
-		if (savedParagraphPosition?.cfi) {
-			try {
-				await readerService.goToLocation(savedParagraphPosition.cfi);
-			} catch (error) {
-				logger.warn('[EpubReaderApp] Failed to restore paragraph mode reading position:', error);
-			}
-		}
-		await refreshParagraphModeLocation();
-		if (savedParagraphPosition?.paragraphId && paragraphModeLocation?.paragraphs?.length) {
-			const restoredIndex = paragraphModeLocation.paragraphs.findIndex(
-				(item) => item.id === savedParagraphPosition.paragraphId
-			);
-			if (restoredIndex >= 0) {
-				await refreshParagraphModeLocation(restoredIndex);
-			}
-		}
-	}
-
-	function toggleParagraphMode(): void {
-		void setParagraphModeEnabled(!settings.paragraphModeEnabled);
-	}
-
-	async function setParagraphModeTransitionStyle(nextStyle: EpubParagraphModeTransitionStyle): Promise<void> {
-		if (nextStyle === settings.paragraphModeTransitionStyle) {
-			return;
-		}
-		await updateReaderSettings({
-			paragraphModeTransitionStyle: nextStyle,
-		});
-	}
-
-	async function navigateToRandomParagraph(): Promise<void> {
-		if (!settings.paragraphModeEnabled || paragraphModeBusy || !readerReady) {
-			return;
-		}
-		if (typeof readerService.pickRandomParagraph !== 'function') {
-			return;
-		}
-		const shouldStartDetachedSession = !paragraphModeDetachedSession;
-		if (shouldStartDetachedSession) {
-			await beginParagraphModeDetachedSession();
-			if (!paragraphModeDetachedSession) {
-				return;
-			}
-		}
-		const currentParagraph = paragraphModeLocation?.paragraphs?.[paragraphModeLocation.currentIndex];
-		const pick = await readerService.pickRandomParagraph({
-			excludeParagraphId: currentParagraph?.id,
-		});
-		if (!pick?.paragraph?.cfiRange) {
-			if (shouldStartDetachedSession) {
-				clearParagraphModeDetachedSession();
-			}
-			showTransientStatus('没有可跳转的段落', 2200);
-			return;
-		}
-
-		paragraphModeBusy = true;
-		paragraphModeSuppressReactiveRefresh += 1;
-		try {
-			clearParagraphModeSelection();
-			applyParagraphModeIndex(
-				{ paragraphs: pick.chapterParagraphs, currentIndex: pick.paragraphIndex },
-				pick.paragraphIndex
-			);
-			void hydrateParagraphModeActiveParagraph(pick.paragraphIndex);
-			try {
-				await syncParagraphModeAnchor(pick.paragraph.cfiRange);
-			} catch (error) {
-				logger.warn('[EpubReaderApp] Failed to navigate to random paragraph:', error);
-				return;
-			}
-			await refreshParagraphModeLocation(pick.paragraphIndex, pick.paragraph.id, { persist: false });
-		} finally {
-			paragraphModeLastNavigationAt = Date.now();
-			paragraphModeSuppressReactiveRefresh = Math.max(0, paragraphModeSuppressReactiveRefresh - 1);
-			paragraphModeBusy = false;
-		}
-	}
-
-	async function navigateParagraphRelative(direction: -1 | 1): Promise<void> {
-		const currentLocation = paragraphModeLocation;
-		if (!currentLocation || currentLocation.paragraphs.length === 0 || paragraphModeBusy) {
-			return;
-		}
-		paragraphModeBusy = true;
-		paragraphModeSuppressReactiveRefresh += 1;
-		try {
-			const targetIndex = currentLocation.currentIndex + direction;
-			if (targetIndex < 0 || targetIndex >= currentLocation.paragraphs.length) {
-				const targetChapterIndex = readerService.getCurrentChapterIndex() + direction;
-				if (typeof readerService.getParagraphsForChapter !== 'function' || targetChapterIndex < 0) {
-					return;
-				}
-				const nextChapterParagraphs = await readerService.getParagraphsForChapter(targetChapterIndex, {
-					includeHtml: false,
-				});
-				if (nextChapterParagraphs.length === 0) {
-					return;
-				}
-				const crossChapterIndex = direction > 0 ? 0 : nextChapterParagraphs.length - 1;
-				const paragraph = nextChapterParagraphs[crossChapterIndex];
-				clearParagraphModeSelection();
-				applyParagraphModeIndex(
-					{ paragraphs: nextChapterParagraphs, currentIndex: crossChapterIndex },
-					crossChapterIndex
-				);
-				void hydrateParagraphModeActiveParagraph(crossChapterIndex);
-				try {
-					await syncParagraphModeAnchor(paragraph.cfiRange);
-				} catch (error) {
-					logger.warn('[EpubReaderApp] Failed to navigate paragraph across chapters:', error);
-				}
-				await refreshParagraphModeLocation(crossChapterIndex, paragraph.id, { persist: false });
-				scheduleParagraphModePersist();
-				return;
-			}
-
-			const paragraph = currentLocation.paragraphs[targetIndex];
-			if (!paragraph?.cfiRange) {
-				return;
-			}
-			clearParagraphModeSelection();
-			applyParagraphModeIndex(currentLocation, targetIndex);
-			void hydrateParagraphModeActiveParagraph(targetIndex);
-			try {
-				await syncParagraphModeAnchor(paragraph.cfiRange);
-			} catch (error) {
-				logger.warn('[EpubReaderApp] Failed to navigate paragraph within chapter:', error);
-			}
-			scheduleParagraphModePersist();
-		} finally {
-			paragraphModeLastNavigationAt = Date.now();
-			paragraphModeSuppressReactiveRefresh = Math.max(0, paragraphModeSuppressReactiveRefresh - 1);
-			paragraphModeBusy = false;
-		}
-	}
-
-	async function handleParagraphOverlaySelectionChange(selection: {
-		text: string;
-		startOffset: number;
-		endOffset: number;
-		rect: DOMRect;
-		rects: DOMRect[];
-		clear: () => void;
-	} | null): Promise<void> {
-		if (!selection || !paragraphModeLocation || typeof readerService.resolveParagraphSelection !== 'function') {
-			paragraphModeSelection = null;
-			return;
-		}
-
-		const paragraph = paragraphModeLocation.paragraphs[paragraphModeLocation.currentIndex];
-		if (!paragraph) {
-			paragraphModeSelection = null;
-			return;
-		}
-
-		const resolved = await readerService.resolveParagraphSelection(
-			paragraph.id,
-			selection.startOffset,
-			selection.endOffset
-		);
-		if (!resolved?.cfiRange) {
-			paragraphModeSelection = null;
-			return;
-		}
-
-		paragraphModeSelection = {
-			text: resolved.text || selection.text,
-			cfiRange: resolved.cfiRange,
-			rect: selection.rect,
-			rects: selection.rects,
-			clear: selection.clear,
-		};
-	}
-
-	async function handleParagraphFootnoteActivate(info: {
-		href: string;
-		label?: string;
-		pinned?: boolean;
-		rect?: DOMRect;
-	}): Promise<void> {
-		if (typeof readerService.openParagraphFootnotePreview !== 'function' || !paragraphModeLocation) {
-			return;
-		}
-		const paragraph = paragraphModeLocation.paragraphs[paragraphModeLocation.currentIndex];
-		if (!paragraph?.id || !info?.href) {
-			return;
-		}
-		try {
-			await readerService.openParagraphFootnotePreview(paragraph.id, info.href, info.label, {
-				pinned: info.pinned === true,
-				rect: info.rect
-					? {
-							top: info.rect.top,
-							left: info.rect.left,
-							bottom: info.rect.bottom,
-							right: info.rect.right,
-							width: info.rect.width,
-							height: info.rect.height,
-						}
-					: undefined,
-			});
-		} catch (error) {
-			logger.warn('[EpubReaderApp] Failed to open paragraph footnote preview:', error);
-		}
-	}
-
-	function dismissParagraphFootnotePreview(options?: { unpin?: boolean }): void {
-		readerService.dismissParagraphFootnotePreview?.(options);
-	}
-
-	function handleParagraphHighlightActivate(info: {
-		cfiRange: string;
-		rect: DOMRect;
-		rects: DOMRect[];
-	}): void {
-		if (!hasExcerptNotesCapability() || !readerService.getHighlightClickInfo) {
-			return;
-		}
-		footnotePreviewInfo = null;
-		closeCommentEditor();
-		highlightToolbarInfo = readerService.getHighlightClickInfo(info.cfiRange, 'highlight', {
-			rect: {
-				top: info.rect.top,
-				left: info.rect.left,
-				bottom: info.rect.bottom,
-				right: info.rect.right,
-				width: info.rect.width,
-				height: info.rect.height,
-			},
-			rects: info.rects.map((rect) => ({
-				top: rect.top,
-				left: rect.left,
-				bottom: rect.bottom,
-				right: rect.right,
-				width: rect.width,
-				height: rect.height,
-			})),
-			anchorPoint: {
-				x: info.rect.left + info.rect.width / 2,
-				y: info.rect.top + info.rect.height / 2,
-			},
-		});
 	}
 
 	function applyReaderSettingsState(nextSettings: EpubReaderSettings, persist: boolean) {
@@ -1219,10 +445,6 @@
 			widthMode: settings.layoutMode === 'double' ? 'fit' : getDefaultReaderWidthMode(),
 			showScrolledSideNav: true,
 			footnoteClickAction: 'preview',
-			paragraphModeFontSize: 'medium',
-			paragraphModeFontScale: 100,
-			paragraphModeSurfaceStyle: 'spotlight',
-			paragraphModeTransitionStyle: 'settle',
 		});
 	}
 
@@ -1314,11 +536,6 @@
 	function collectTrackedHighlightSourceFiles(_highlights: ReaderHighlight[]): Set<string> {
 		// 已断开：不再收集摘录源文件集合。
 		return new Set<string>();
-	}
-
-	function getBoundCanvasPath(): string | null {
-		const canvasPath = normalizeTrackedVaultPath(canvasService.getCanvasPath());
-		return canvasPath || null;
 	}
 
 	type HighlightReloadOptions = {
@@ -1745,16 +962,6 @@
 				return;
 			}
 
-			await initCanvasBinding();
-			if (isStaleBookLoad(loadToken)) {
-				return;
-			}
-
-			await refreshTocChapterMarksForBook(loadedBook.id);
-			if (isStaleBookLoad(loadToken)) {
-				return;
-			}
-
 			void reloadHighlights();
 			prefetchAnnotationIndexForBook(loadedBook, targetFilePath, { priority: 'immediate' });
 		} catch (error) {
@@ -1898,8 +1105,6 @@
 			updateSessionReadingStartPercent(readingProgress);
 			showScrolledChapterNavActions = false;
 			bookmarkRevision = 0;
-			tocChapterMarks = {};
-			tocChapterMarkRevision = 0;
 			onTitleChange?.(loadedBook.metadata.title);
 			if (isActiveEpubReaderInstance()) {
 				epubActiveDocumentStore.setSharedState({ filePath: targetFilePath, book: loadedBook });
@@ -1923,69 +1128,6 @@
 			if (!isStaleBookLoad(loadToken)) {
 				loading = false;
 			}
-		}
-	}
-
-	async function refreshTocChapterMarksForBook(bookId: string): Promise<void> {
-		const normalizedBookId = String(bookId || '').trim();
-		if (!normalizedBookId) {
-			tocChapterMarks = {};
-			return;
-		}
-
-		try {
-			tocChapterMarks = await storageService.getTocChapterMarks(normalizedBookId);
-			tocChapterMarkRevision += 1;
-			if (isActiveEpubReaderInstance()) {
-				epubActiveDocumentStore.setSharedState({
-					tocChapterMarks,
-					tocChapterMarkRevision,
-				});
-			}
-		} catch (error) {
-			logger.warn('[EpubReaderApp] Failed to load TOC chapter marks:', error);
-			tocChapterMarks = {};
-		}
-	}
-
-	async function handleSetTocChapterMark(item: TocItem, mark: EpubTocChapterMark | null): Promise<void> {
-		if (!book) {
-			new Notice('未加载书籍');
-			return;
-		}
-		const href = String(item.href || '').trim();
-		if (!href) {
-			return;
-		}
-
-		try {
-			tocChapterMarks = await storageService.setTocChapterMark(book.id, href, mark);
-			tocChapterMarkRevision += 1;
-			epubActiveDocumentStore.setSharedState({
-				tocChapterMarks,
-				tocChapterMarkRevision,
-			});
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to update TOC chapter mark:', error);
-			new Notice('章节标记保存失败，请重试');
-			throw error;
-		}
-	}
-
-	async function handleSaveTocChapterMarkSettings(
-		nextSettings: EpubTocChapterMarkSettings
-	): Promise<void> {
-		try {
-			tocChapterMarkSettings = await storageService.saveTocChapterMarkSettings(nextSettings);
-			tocChapterMarkSettingsRevision += 1;
-			epubActiveDocumentStore.setSharedState({
-				tocChapterMarkSettings,
-				tocChapterMarkSettingsRevision,
-			});
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to save TOC chapter mark settings:', error);
-			new Notice('圆点语义设置保存失败，请重试');
-			throw error;
 		}
 	}
 
@@ -2593,7 +1735,7 @@
 	}
 
 	function handleReaderTap(event: ReaderTapEvent): void {
-		if (!readerReady || settings.paragraphModeEnabled) {
+		if (!readerReady) {
 			return;
 		}
 		const count = tapBurstTracker.push({ time: performance.now() });
@@ -2738,94 +1880,12 @@
 
 	function outputNote(text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) {
 		/* Always allow output */ 
-		if (canvasMode && canvasService.isActive() && hasCanvasExcerptCapability()) {
-			addToCanvas(text, cfiRange, color, style);
-			return;
-		}
-
 		const content = buildNoteContent(text, cfiRange, color, style, autoInsert);
 		if (autoInsert) {
 			insertToEditorAndTrack(content);
 		} else {
 			copyTextToClipboard(content);
 		}
-	}
-
-	function showCanvasAddedNotice(
-		anchorMode: ReturnType<EpubCanvasService['getLastInsertAnchorMode']>
-	): void {
-		const noticeText =
-			anchorMode === 'locked'
-				? '已添加到 Canvas（从固定锚点延伸）'
-				: anchorMode === 'selection'
-					? '已添加到 Canvas（从选中节点延伸）'
-					: anchorMode === 'chain'
-						? '已添加到 Canvas（续写上一节点）'
-						: '已添加到 Canvas';
-		new Notice(noticeText);
-	}
-
-	async function addToCanvas(
-		text: string,
-		cfiRange: string,
-		color?: string,
-		style?: EpubHighlightStyle
-	) {
-		const chapterIndex = readerService.getCurrentChapterIndex();
-		const chapterTitle = resolveExcerptChapterTitle();
-
-		const timestamp = excerptSettings.addCreationTime ? formatTimestamp(new Date()) : undefined;
-		const node = await canvasService.addExcerptNode(
-			text,
-			cfiRange,
-			filePath,
-			chapterIndex,
-			chapterTitle,
-			color,
-			timestamp,
-			book?.sourceId,
-			style,
-			resolveExcerptChapterLabelMaxLength()
-		);
-		if (node) {
-			showCanvasAddedNotice(canvasService.getLastInsertAnchorMode());
-		}
-	}
-
-	async function initCanvasBinding() {
-		if (!book || !hasCanvasExcerptCapability()) {
-			canvasService.setCanvasPath(null);
-			canvasService.setAnchor(null);
-			canvasMode = false;
-			onCanvasStateChange?.(false, null);
-			return;
-		}
-		const savedPath = await storageService.getCanvasBinding(book.id);
-		if (savedPath) {
-			const exists = await app.vault.adapter.exists(savedPath);
-			if (exists) {
-				canvasService.setCanvasPath(savedPath);
-				canvasMode = true;
-				onCanvasStateChange?.(true, savedPath);
-			}
-		}
-	}
-
-	async function bindCanvas(canvasPath: string) {
-		if (!book) return;
-		canvasService.setCanvasPath(canvasPath);
-		await storageService.setCanvasBinding(book.id, canvasPath);
-		canvasMode = true;
-		onCanvasStateChange?.(true, canvasPath);
-	}
-
-	async function unbindCanvas() {
-		if (!book) return;
-		canvasService.setCanvasPath(null);
-		canvasService.setAnchor(null);
-		await storageService.removeCanvasBinding(book.id);
-		canvasMode = false;
-		onCanvasStateChange?.(false, null);
 	}
 
 	function handleInsertToNote(
@@ -2879,10 +1939,6 @@
 
 
 	function getHighlightStyleLabel(highlight: ReaderHighlight): string | null {
-		if (highlight.presentation === 'conceal') {
-			return '隐藏';
-		}
-
 		switch (highlight.style) {
 			case 'underline':
 				return '下划线';
@@ -2929,32 +1985,6 @@
 		persistInlineHighlight(cfiRange, text, color, style);
 	}
 
-	async function handleConcealSelection(text: string, cfiRange: string) {
-// Always allow (gate removed)
-		if (!book) {
-			new Notice('当前书籍尚未加载完成');
-			return;
-		}
-
-		try {
-			const canonicalCfi = typeof readerService.canonicalizeLocation === 'function'
-				? await readerService.canonicalizeLocation(cfiRange, text)
-				: cfiRange;
-			await annotationService.createConcealedText(
-				book.id,
-				text,
-				readerService.getCurrentChapterIndex(),
-				canonicalCfi || cfiRange,
-				'mask'
-			);
-			new Notice('已隐藏所选文本');
-			void reloadHighlights();
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to conceal selection:', error);
-			new Notice('隐藏文本失败，请重试');
-		}
-	}
-
 	function requestSourceBookLocate(nav: BookLocateIntent): boolean {
 		if (!ensureBookSourceLocationAccess(app, '双向链接定位是高级功能，请激活许可证后使用')) {
 			return false;
@@ -2981,93 +2011,6 @@
 			text: linkTextHint,
 			flashStyle: 'highlight',
 			showLocateOverlay: true,
-		});
-	}
-
-	function getVisibleReaderFrames(): EpubVisibleFrameLike[] {
-		return readerService.getVisibleFrames() as EpubVisibleFrameLike[];
-	}
-
-	async function handleScreenshotCapture(blob: Blob, rect: ScreenshotRect) {
-		const currentCfi = readerService.getCurrentCFI();
-		const chapterIndex = readerService.getCurrentChapterIndex();
-		const chapterTitle = resolveExcerptChapterTitle();
-		const targetNotePath = (getLastActiveMarkdownLeaf?.()?.view as MarkdownView | undefined)?.file?.path;
-
-		let canvasContent: string | null = null;
-
-		if (autoInsert) {
-			if (screenshotSaveAsImage) {
-				const bookTitle = book?.metadata.title || 'epub';
-				const imagePath = await screenshotService.saveAsJpeg(blob, bookTitle);
-				const insertText = screenshotService.buildJpegInsert(
-					imagePath,
-					filePath,
-					currentCfi,
-					chapterIndex,
-					chapterTitle,
-					targetNotePath
-				);
-				insertToEditorAndTrack(insertText);
-				canvasContent = insertText;
-			} else {
-				const extractedText = screenshotService.extractTextFromRect(viewportEl!, rect, getVisibleReaderFrames());
-				const insertText = screenshotService.buildSnapshotEmbed(
-					filePath,
-					currentCfi,
-					extractedText,
-					chapterIndex,
-					chapterTitle,
-					targetNotePath
-				);
-				insertToEditorAndTrack(insertText);
-				canvasContent = insertText;
-			}
-		} else {
-			if (screenshotSaveAsImage) {
-				const pngBlob = await convertToClipboardImage(blob);
-				await copyImageToClipboard(pngBlob);
-			} else {
-				const extractedText = screenshotService.extractTextFromRect(viewportEl!, rect, getVisibleReaderFrames());
-				const content = screenshotService.buildSnapshotEmbed(
-					filePath,
-					currentCfi,
-					extractedText,
-					chapterIndex,
-					chapterTitle,
-					targetNotePath
-				);
-				await copyTextToClipboard(content);
-				canvasContent = content;
-			}
-		}
-
-		if (canvasMode && canvasService.isActive() && canvasContent) {
-			const node = await canvasService.addRawTextNode(canvasContent);
-			if (node) {
-				showCanvasAddedNotice(canvasService.getLastInsertAnchorMode());
-			}
-		}
-	}
-
-	async function convertToClipboardImage(blob: Blob): Promise<Blob> {
-		const img = new Image();
-		const url = URL.createObjectURL(blob);
-		return new Promise((resolve) => {
-			img.onload = () => {
-				const canvas = activeWindow.createEl('canvas');
-				canvas.width = img.naturalWidth;
-				canvas.height = img.naturalHeight;
-				const ctx = canvas.getContext('2d')!;
-				ctx.drawImage(img, 0, 0);
-				URL.revokeObjectURL(url);
-				canvas.toBlob((b) => resolve(b || blob), 'image/png');
-			};
-			img.onerror = () => {
-				URL.revokeObjectURL(url);
-				resolve(blob);
-			};
-			img.src = url;
 		});
 	}
 
@@ -3207,7 +2150,6 @@
 		epubActiveDocumentStore.setSharedState({
 			filePath: activeFilePath,
 			readerService,
-			annotationService: canUseExcerptNotes ? annotationService : null,
 			highlightViewSnapshotService: canUseExcerptNotes ? highlightViewSnapshotService : null,
 			book,
 			canUseReadingProgress,
@@ -3215,10 +2157,6 @@
 			excerptSettings,
 			annotationRevision,
 			bookmarkRevision,
-			tocChapterMarks,
-			tocChapterMarkSettings,
-			tocChapterMarkRevision,
-			tocChapterMarkSettingsRevision,
 			progress: canUseReadingProgress ? readingProgress : 0,
 			chapterTitle: readerService.getCurrentChapterTitle(),
 			chapterHref: readerService.getCurrentChapterHref?.() || '',
@@ -3228,8 +2166,6 @@
 			onNavigate: requestBookLocate,
 			onSettingsClick: showSettingsMenu,
 			onSwitchBook,
-			onSetTocChapterMark: handleSetTocChapterMark,
-			onSaveTocChapterMarkSettings: handleSaveTocChapterMarkSettings,
 		});
 	}
 
@@ -3293,22 +2229,6 @@
 	): Promise<boolean> {
 		const quiet = options?.quiet === true;
 		/* Always allow */ 
-		if (info.presentation === 'conceal') {
-			readerService.removeHighlight(info.cfiRange);
-			if (!book) {
-				if (!quiet) {
-					new Notice('当前书籍尚未加载完成');
-				}
-				return false;
-			}
-			await annotationService.deleteConcealedTextByCfi(book.id, info.cfiRange);
-			if (!quiet) {
-				new Notice('已恢复隐藏文本');
-			}
-			highlightToolbarInfo = null;
-			void reloadHighlights();
-			return true;
-		}
 	const inline = findInlineHighlight(info.cfiRange);
 	if (inline) {
 		updateInlineHighlight(inline.key, inline.arr.filter((_, i) => i !== inline.idx));
@@ -3325,16 +2245,6 @@
 	async function deleteDisplayHighlight(highlight: EpubDisplayHighlight, quiet = false): Promise<boolean> {
 		return handleHighlightDelete(buildHighlightClickInfoFromDisplay(highlight), { quiet });
 	}
-
-        function handleTemporarilyRevealConcealed(info: HighlightClickInfo) {
-                if (info.presentation !== 'conceal') {
-                        return;
-                }
-
-                readerService.temporarilyRevealConcealedText?.(info.cfiRange, 3000);
-                highlightToolbarInfo = null;
-                new Notice('已暂时显示隐藏内容 3 秒');
-        }
 
 	async function handleHighlightChangeColor(info: HighlightClickInfo, newColor: string) {
 		if (!hasExcerptNotesCapability()) {
@@ -3533,22 +2443,6 @@
 		} catch (_e) {
 			// ignore malformed inline highlight storage
 		}
-		try {
-			if (book?.id) {
-				const concealedTexts = await annotationService.getConcealedTexts(book.id);
-				for (const concealedText of concealedTexts) {
-					allHighlights.push({
-						cfiRange: concealedText.cfiRange,
-						color: 'mask',
-						text: concealedText.text,
-						createdTime: concealedText.createdTime,
-						presentation: 'conceal',
-					});
-				}
-			}
-		} catch (_e) {
-			// ignore concealed text load failures
-		}
 		return allHighlights;
 	}
 
@@ -3592,7 +2486,6 @@
 	}
 
 	onMount(() => {
-		document.addEventListener('fullscreenchange', handleFullscreenChange);
 		const handleBookDisplayTitleChanged = (event: Event) => {
 			const detail = (event as CustomEvent<{ filePath?: string; title?: string }>).detail;
 			const changedPath = normalizePath(String(detail?.filePath || "").trim());
@@ -3617,34 +2510,19 @@
 			EPUB_RUNTIME.events.bookDisplayTitleChanged,
 			handleBookDisplayTitleChanged
 		);
-		const canvasDirectionRef = app.workspace.on(
-			WEAVE_EPUB_CANVAS_LAYOUT_DIRECTION_EVENT,
-			(payload: WeaveEpubCanvasLayoutDirectionPayload) => {
-				const activePath = normalizePath(String(canvasService.getCanvasPath() || '').trim());
-				const eventPath = normalizePath(String(payload?.canvasPath || '').trim());
-				if (!activePath || activePath !== eventPath || !payload?.direction) {
-					return;
-				}
-				canvasService.applyLayoutDirection(payload.direction);
-				onCanvasLayoutDirectionChange?.(payload.direction);
-			}
-		);
 		componentDisposed = false;
 		setupScrolledNavMetricsObserver();
 		window.addEventListener('resize', scheduleScrolledNavLayoutSync);
 		const loadReaderPreferences = async (): Promise<void> => {
 			try {
-				const [savedExcerptSettings, savedReaderSettings, savedTocChapterMarkSettings] = await Promise.all([
+				const [savedExcerptSettings, savedReaderSettings] = await Promise.all([
 					storageService.loadExcerptSettings(),
 					storageService.loadReaderSettings(),
-					storageService.loadTocChapterMarkSettings(),
 				]);
 				excerptSettings = savedExcerptSettings;
 				excerptSettingsLoaded = true;
-				tocChapterMarkSettings = savedTocChapterMarkSettings;
 				epubActiveDocumentStore.setSharedState({
 					excerptSettings: savedExcerptSettings,
-					tocChapterMarkSettings: savedTocChapterMarkSettings,
 				});
 				const normalizedSettings = normalizeReaderSettings(savedReaderSettings);
 				settings = normalizedSettings;
@@ -3655,7 +2533,6 @@
 					|| normalizedSettings.layoutMode !== savedReaderSettings.layoutMode
 					|| normalizedSettings.flowMode !== savedReaderSettings.flowMode
 					|| normalizedSettings.footnoteClickAction !== savedReaderSettings.footnoteClickAction
-					|| normalizedSettings.paragraphModeEnabled !== savedReaderSettings.paragraphModeEnabled
 				) {
 					await storageService.saveReaderSettings(normalizedSettings);
 				}
@@ -3723,22 +2600,17 @@
 
 		onActionsReady?.({
 			setAutoInsert: (enabled: boolean) => { autoInsert = enabled; },
-			setScreenshotMode: (active: boolean) => { screenshotMode = active; },
 			setLayoutMode: handleLayoutModeChange,
 			setFlowMode: handleFlowModeChange,
-			toggleParagraphMode,
 			openTypographyPanel,
 			getReaderSettings: () => settings,
 			updateReaderSettings,
-			setScreenshotSaveMode: (saveAsImage: boolean) => { screenshotSaveAsImage = saveAsImage; },
 			navigateToCfi,
 			addBookmark,
 			canUseReadingProgress: hasReadingProgressCapability,
 			canUseReadingReference: hasReadingReferenceCapability,
-			canUseParagraphMode: hasParagraphModeCapability,
 			canUseExcerptNotes: hasExcerptNotesCapability,
 			canUseStyledExcerpts: hasStyledExcerptCapability,
-			canUseCanvasExcerpts: hasCanvasExcerptCapability,
 			canUseFootnotePreview: hasFootnotePreviewCapability,
 			saveReadingReferencePoint: hasReadingReferenceCapability() ? saveReadingReferencePoint : undefined,
 			openReadingPositionMenu: openReadingReferencePointMenu,
@@ -3748,9 +2620,6 @@
 			setReadingPositionAutoSaveEnabled: hasReadingProgressCapability()
 				? setContinuousReadingPositionAutoSaveEnabled
 				: undefined,
-			bindCanvasPath: (canvasPath: string) => { bindCanvas(canvasPath); },
-			unbindCanvas: () => { unbindCanvas(); },
-			getCanvasService: () => canvasService,
 			getExcerptSettings: () => excerptSettings,
 			updateExcerptSettings: applyAndPersistExcerptSettings,
 			prevPage: handlePrevPage,
@@ -3758,9 +2627,6 @@
 		});
 		return () => {
 			app.workspace.offref(activeLeafChangeRef);
-			app.workspace.offref(canvasDirectionRef);
-		document.removeEventListener('fullscreenchange', handleFullscreenChange);
-		setParagraphModeImmersiveClass(false);
 
 			window.removeEventListener(
 				EPUB_RUNTIME.events.bookDisplayTitleChanged,
@@ -3768,7 +2634,6 @@
 			);
 			componentDisposed = true;
 			getBookSessionManager(app).releaseIfNoOpenLeaves(app, filePath);
-			clearParagraphModeSelection();
 			window.removeEventListener('resize', scheduleScrolledNavLayoutSync);
 			if (scrolledNavSyncFrame) {
 				cancelAnimationFrame(scrolledNavSyncFrame);
@@ -3821,7 +2686,7 @@
 
 	$effect(() => {
 		const service = readerService;
-		const enabled = isMobileReader() && settings.flowMode === 'paginated' && !settings.paragraphModeEnabled;
+		const enabled = isMobileReader() && settings.flowMode === 'paginated';
 		const offTap = untrack(() => {
 			service.setTapZonesEnabled?.(enabled);
 			return service.onReaderTap?.((event) => handleReaderTap(event));
@@ -3840,8 +2705,7 @@
 		const _viewport = viewportEl;
 		const _readingReferencePoint = readingReferencePoint?.cfi;
 		void _flowMode;
-		void _showScrolledSideNav;
-		void _widthMode;
+		void _showScrolledSideNav;		void _widthMode;
 		void _layoutMode;
 		void _viewport;
 		void _readingReferencePoint;
@@ -3851,38 +2715,6 @@
 		});
 	});
 
-	$effect(() => {
-		const paragraphModeEnabled = settings.paragraphModeEnabled;
-		const ready = readerReady;
-		const chapterIndex = currentChapterIndex;
-		const currentPage = paginationInfo.currentPage;
-		const version = readerVersion;
-		const revision = annotationRevision;
-		void chapterIndex;
-		void currentPage;
-		void version;
-		void revision;
-		if (!paragraphModeEnabled || !ready) {
-			untrack(() => {
-				paragraphModeLocation = null;
-				paragraphModeAnchorParagraphId = '';
-				paragraphModeSelection = null;
-			});
-			return;
-		}
-
-		if (untrack(() => paragraphModeSuppressReactiveRefresh) > 0) {
-			return;
-		}
-		if (Date.now() - untrack(() => paragraphModeLastNavigationAt) < PARAGRAPH_MODE_REACTIVE_REFRESH_COOLDOWN_MS) {
-			return;
-		}
-
-		const preferredAnchorParagraphId = untrack(() => paragraphModeAnchorParagraphId || undefined);
-		untrack(() => {
-			void refreshParagraphModeLocation(undefined, preferredAnchorParagraphId);
-		});
-	});
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -3893,7 +2725,6 @@
 	data-flow={settings.flowMode}
 	data-layout={settings.layoutMode}
 	data-width={settings.widthMode}
-	data-paragraph-mode={settings.paragraphModeEnabled ? 'active' : 'inactive'}
 	data-scrolled-side-nav={isDesktopScrolledSideNavVisible() ? 'visible' : 'hidden'}
 	style={getReaderRootStyle()}
 	bind:this={rootEl}
@@ -3952,25 +2783,11 @@
 					{book}
 					{readerService}
 					{storageService}
-					{annotationService}
 					{settings}
 					{excerptSettings}
 					canUseReadingProgress={hasReadingProgressCapability()}
 					canUseExcerptNotes={hasExcerptNotesCapability()}
 					getReadingPositionAutoSaveConfig={getContinuousReadingPositionAutoSaveConfig}
-					isParagraphModeActive={() => settings.paragraphModeEnabled}
-					isParagraphModeProgressDetached={() => paragraphModeDetachedSession}
-					shouldSkipReadingProgressPersistOnRelocate={() =>
-						paragraphModeDetachedSession
-						|| (
-							settings.paragraphModeEnabled
-							&& (
-								paragraphModeBusy
-								|| paragraphModeSuppressReactiveRefresh > 0
-								|| readerService.isParagraphAnchorSyncInFlight?.() === true
-							)
-						)
-					}
 					onAutoReadingPositionSaved={handleAutoReadingPositionSaved}
 					hasPendingNavigation={hasPendingBookLocate}
 					onProgressChange={(p) => {
@@ -4030,7 +2847,7 @@
 				/>
 			</div>
 
-		{#if !settings.paragraphModeEnabled && showBottomNav() && useVerticalNav()}
+		{#if showBottomNav() && useVerticalNav()}
 				<BottomNav
 					onPrev={handlePrevPage}
 					onNext={handleNextPage}
@@ -4043,7 +2860,7 @@
 				/>
 			{/if}
 
-			{#if !settings.paragraphModeEnabled && useVerticalNav() && showScrolledChapterNavActions}
+			{#if useVerticalNav() && showScrolledChapterNavActions}
 				<div class="epub-scrolled-chapter-action-slot">
 					<div class="epub-scrolled-chapter-action-start">
 						{#if hasPrevChapter()}
@@ -4076,40 +2893,11 @@
 				</div>
 			{/if}
 
-			<ParagraphReadingOverlay
-				active={settings.paragraphModeEnabled}
-				paragraph={paragraphModeLocation?.paragraphs?.[paragraphModeLocation.currentIndex] || null}
-				fontScale={settings.paragraphModeFontScale}
-				surfaceStyle={settings.paragraphModeSurfaceStyle}
-				transitionStyle={settings.paragraphModeTransitionStyle}
-				immersive={paragraphModeImmersive}
-				randomReadingActive={paragraphModeDetachedSession}
-				currentIndex={paragraphModeLocation?.currentIndex || 0}
-				totalCount={paragraphModeLocation?.paragraphs?.length || 0}
-				onFontScaleChange={(fontScale) => void updateReaderSettings({ paragraphModeFontScale: fontScale })}
-				onSurfaceStyleChange={(surfaceStyle) => void updateReaderSettings({ paragraphModeSurfaceStyle: surfaceStyle })}
-				onTransitionStyleChange={setParagraphModeTransitionStyle}
-				onRandomParagraph={() => navigateToRandomParagraph()}
-				onPrev={() => navigateParagraphRelative(-1)}
-				onNext={() => navigateParagraphRelative(1)}
-				onFootnoteActivate={handleParagraphFootnoteActivate}
-				onHighlightActivate={handleParagraphHighlightActivate}
-				onFootnoteDismiss={dismissParagraphFootnotePreview}
-				onToggleImmersive={toggleParagraphModeImmersive}
-				onClose={() => void closeParagraphMode()}
-				onSelectionChange={handleParagraphOverlaySelectionChange}
-				onNavMetricsChange={({ bottomDockOffset }) => {
-					paragraphModeNavBottomOffset = bottomDockOffset;
-				}}
-			/>
-
 			<EpubHighlightToolbar
 				readerService={readerService}
-				mobileDockBottomOffset={settings.paragraphModeEnabled ? paragraphModeNavBottomOffset : 0}
 				info={hasExcerptNotesCapability() ? highlightToolbarInfo : null}
 				deleting={highlightDeleting}
 				onDelete={handleHighlightDelete}
-				onTemporarilyReveal={handleTemporarilyRevealConcealed}
 				onChangeColor={handleHighlightChangeColor}
 				onChangeStyle={handleHighlightChangeStyle}
 				onCopyText={handleHighlightCopyText}
@@ -4141,22 +2929,8 @@
 				{book}
 				{readerVersion}
 				boundsEl={viewportEl}
-				mobileDockBottomOffset={settings.paragraphModeEnabled ? paragraphModeNavBottomOffset : 0}
-				externalSelection={settings.paragraphModeEnabled ? paragraphModeSelection : null}
 				{autoInsert}
-				{canvasMode}
 				onInsertToNote={handleInsertToNote}
-			/>
-
-
-
-			<ScreenshotOverlay
-				active={screenshotMode}
-				sourceEl={viewportEl}
-				{screenshotService}
-				getVisibleFrames={getVisibleReaderFrames}
-				onCapture={handleScreenshotCapture}
-				onCancel={() => screenshotMode = false}
 			/>
 
 			{#if typographyPopoverOpen}

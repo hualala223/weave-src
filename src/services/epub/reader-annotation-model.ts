@@ -1,6 +1,6 @@
 import { getReaderHighlightIdentityKey } from "./highlight/highlight-identity";
 import type { ReaderColorScheme } from "./reader-theme-tokens";
-import type { ReaderHighlight, ReaderHighlightInput } from "./reader-engine-types";
+import type { ReaderHighlight } from "./reader-engine-types";
 import type { EpubStrikethroughDisplayMode } from "./types";
 
 export type ReaderFoliateAnnotation = ReaderHighlight & {
@@ -45,39 +45,10 @@ export function composeVisibleAnnotationHighlight(
 	throw new Error("Cannot compose annotation without a highlight");
 }
 
-export function shouldRenderAnnotationAsConceal(
-	annotation: Pick<ReaderFoliateAnnotation, "cfiRange" | "presentation" | "style">,
-	currentStrikethroughPresentation: EpubStrikethroughDisplayMode
-): boolean {
-	if (annotation.presentation === "conceal") {
-		return true;
-	}
-	return (
-		annotation.style === "strikethrough" && currentStrikethroughPresentation === "conceal"
-	);
-}
-
-/** Highlights treated as concealed for bookmark analytics and concealedCount. */
-export function isHighlightCountedAsConcealed(
-	highlight: Pick<ReaderHighlightInput, "presentation" | "color" | "style">,
-	strikethroughDisplayMode: EpubStrikethroughDisplayMode
-): boolean {
-	if (highlight.presentation === "conceal" || highlight.color === "mask") {
-		return true;
-	}
-	return (
-		highlight.style === "strikethrough" && strikethroughDisplayMode === "conceal"
-	);
-}
-
-/** Sidebar snapshot visibility — matches notes panel strikethrough toggle. */
 export function shouldIncludeHighlightInSidebarSnapshot(
-	highlight: Pick<ReaderHighlight, "style" | "presentation">,
+	highlight: Pick<ReaderHighlight, "style">,
 	showStrikethroughHighlights: boolean
 ): boolean {
-	if (highlight.presentation === "conceal") {
-		return showStrikethroughHighlights;
-	}
 	return highlight.style !== "strikethrough" || showStrikethroughHighlights;
 }
 
@@ -107,12 +78,8 @@ export function buildAnnotationRenderSignature(input: {
 	annotation: ReaderFoliateAnnotation;
 	currentStrikethroughPresentation: EpubStrikethroughDisplayMode;
 	colorScheme: ReaderColorScheme;
-	temporarilyRevealedConcealmentKeys: ReadonlySet<string>;
 }): string {
 	const key = getReaderHighlightIdentityKey(input.annotation);
-	const isTemporarilyRevealed =
-		shouldRenderAnnotationAsConceal(input.annotation, input.currentStrikethroughPresentation) &&
-		input.temporarilyRevealedConcealmentKeys.has(key);
 
 	return [
 		`presentation:${input.annotation.presentation || "highlight"}`,
@@ -124,7 +91,7 @@ export function buildAnnotationRenderSignature(input: {
 		`focus:${input.annotation.focusColor || ""}`,
 		`strikethrough:${input.currentStrikethroughPresentation}`,
 		`scheme:${input.colorScheme}`,
-		`concealment:${isTemporarilyRevealed ? "revealed" : "concealed"}`,
+		`identity:${key}`,
 	].join("|");
 }
 
@@ -133,7 +100,6 @@ export function createRenderedFoliateAnnotation(input: {
 	temporaryHighlight?: ReaderHighlight;
 	currentStrikethroughPresentation: EpubStrikethroughDisplayMode;
 	colorScheme: ReaderColorScheme;
-	temporarilyRevealedConcealmentKeys: ReadonlySet<string>;
 }): RenderedReaderFoliateAnnotation {
 	const annotation = composeVisibleAnnotationHighlight(
 		input.persistentHighlight,
@@ -145,7 +111,6 @@ export function createRenderedFoliateAnnotation(input: {
 			annotation,
 			currentStrikethroughPresentation: input.currentStrikethroughPresentation,
 			colorScheme: input.colorScheme,
-			temporarilyRevealedConcealmentKeys: input.temporarilyRevealedConcealmentKeys,
 		}),
 	};
 }

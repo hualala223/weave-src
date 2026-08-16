@@ -8,7 +8,6 @@ import type {
 	EpubBookmarkExcerptIndexRow,
 } from "./epub-bookmark-page-types";
 import {
-	isHighlightCountedAsConcealed,
 	shouldIncludeHighlightInSidebarSnapshot,
 } from "./reader-annotation-model";
 import { unknownPlainText } from "../../utils/unknown-plain-text";
@@ -82,7 +81,6 @@ export function parseEpubBookmarkAnalytics(
 			highlightsByColor: fallback?.highlightsByColor ?? {},
 			excerptNoteCount: flatCounts.excerptNoteCount ?? fallback?.excerptNoteCount ?? 0,
 			commentCount: fallback?.commentCount ?? 0,
-			concealedCount: fallback?.concealedCount ?? 0,
 			referenceHeatMax: fallback?.referenceHeatMax,
 			topChaptersByHighlights: fallback?.topChaptersByHighlights ?? [],
 			linkedNotePaths: fallback?.linkedNotePaths ?? [],
@@ -168,10 +166,6 @@ export function parseEpubBookmarkAnalytics(
 			typeof record.commentCount === "number"
 				? Math.max(0, record.commentCount)
 				: fallback?.commentCount ?? 0,
-		concealedCount:
-			typeof record.concealedCount === "number"
-				? Math.max(0, record.concealedCount)
-				: fallback?.concealedCount ?? 0,
 		referenceHeatMax:
 			typeof record.referenceHeatMax === "number" && record.referenceHeatMax > 0
 				? record.referenceHeatMax
@@ -218,21 +212,11 @@ function resolveAnalyticsBuildOptions(
 function shouldSkipHighlightForAnalytics(
 	highlight: ReaderHighlightInput,
 	options: EpubBookmarkAnalyticsBuildOptions
-): "concealed" | "hidden" | null {
-	if (
-		isHighlightCountedAsConcealed(highlight, options.strikethroughDisplayMode)
-	) {
-		return "concealed";
-	}
-	if (
-		!shouldIncludeHighlightInSidebarSnapshot(
-			highlight,
-			options.showStrikethroughInSidebar
-		)
-	) {
-		return "hidden";
-	}
-	return null;
+): boolean {
+	return !shouldIncludeHighlightInSidebarSnapshot(
+		highlight,
+		options.showStrikethroughInSidebar
+	);
 }
 
 export function buildEpubBookmarkAnalytics(
@@ -246,16 +230,10 @@ export function buildEpubBookmarkAnalytics(
 	const linkedNotePaths = new Set<string>();
 	let highlightCount = 0;
 	let commentCount = 0;
-	let concealedCount = 0;
 	let referenceHeatMax = 0;
 
 	for (const highlight of highlights) {
-		const skipReason = shouldSkipHighlightForAnalytics(highlight, analyticsOptions);
-		if (skipReason === "concealed") {
-			concealedCount += 1;
-			continue;
-		}
-		if (skipReason === "hidden") {
+		if (shouldSkipHighlightForAnalytics(highlight, analyticsOptions)) {
 			continue;
 		}
 
@@ -303,7 +281,6 @@ export function buildEpubBookmarkAnalytics(
 		highlightsByColor,
 		excerptNoteCount: linkedNotePaths.size,
 		commentCount,
-		concealedCount,
 		referenceHeatMax: referenceHeatMax > 0 ? referenceHeatMax : undefined,
 		topChaptersByHighlights,
 		linkedNotePaths: Array.from(linkedNotePaths)

@@ -24,7 +24,6 @@ export const WEAVE_DATA_SCHEMA_VERSION = 1;
 /** 领域分区键。 */
 export type WeaveDataSectionKey =
 	| "bookmarks"
-	| "progress"
 	| "highlights"
 	| "shelf"
 	| "traceability"
@@ -33,17 +32,13 @@ export type WeaveDataSectionKey =
 	| "bookshelfPlaylists"
 	| "readerSettings"
 	| "excerptSettings"
-	| "canvasBindings"
-	| "canvasExcerptAnchors"
-	| "uiMemory"
-	| "tocChapterMarkSettings";
+	| "uiMemory";
 
 /** weave-data.json 文档结构。领域分区由各迁移逐步填充类型。 */
 export interface WeaveDataDocument {
 	schemaVersion: number;
 	updatedAt?: number;
 	bookmarks?: unknown;
-	progress?: unknown;
 	highlights?: unknown;
 	shelf?: unknown;
 	traceability?: unknown;
@@ -52,10 +47,7 @@ export interface WeaveDataDocument {
 	bookshelfPlaylists?: unknown;
 	readerSettings?: unknown;
 	excerptSettings?: unknown;
-	canvasBindings?: unknown;
-	canvasExcerptAnchors?: unknown;
 	uiMemory?: unknown;
-	tocChapterMarkSettings?: unknown;
 	[key: string]: unknown;
 }
 

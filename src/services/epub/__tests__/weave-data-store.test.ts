@@ -88,7 +88,7 @@ describe("weave-data-store", () => {
 		const { app, writes } = createApp();
 		const store = new WeaveDataStore(app, () => DATA_PATH);
 
-		store.updateSection("progress", {});
+		store.updateSection("books", {});
 		await store.flush();
 
 		expect(writes).toContain("CONFIG/STORAGE/weave-data.json.tmp");
@@ -99,8 +99,8 @@ describe("weave-data-store", () => {
 		const { app, files, writes } = createApp();
 		const store = new WeaveDataStore(app, () => DATA_PATH);
 
-		store.updateSection("progress", { a: 1 });
-		store.updateSection("progress", { a: 2 });
+		store.updateSection("books", { a: 1 });
+		store.updateSection("books", { a: 2 });
 		store.updateSection("shelf", { books: [] });
 
 		// 未到节流窗口：不应写盘
@@ -110,10 +110,10 @@ describe("weave-data-store", () => {
 		expect(writes.length).toBeGreaterThan(0);
 
 		const parsed = JSON.parse(files.get("CONFIG/STORAGE/weave-data.json") as string) as {
-			progress: { a: number };
+			books: { a: number };
 			shelf: { books: unknown[] };
 		};
-		expect(parsed.progress).toEqual({ a: 2 });
+		expect(parsed.books).toEqual({ a: 2 });
 		expect(parsed.shelf).toEqual({ books: [] });
 	});
 

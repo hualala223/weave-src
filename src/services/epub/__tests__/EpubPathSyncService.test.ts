@@ -16,7 +16,6 @@ vi.mock('../../utils/logger', () => ({
 
 vi.mock('../EpubStorageService', () => ({
   EpubStorageService: class {
-    updateCanvasBindingReferences = vi.fn(async () => 0);
     updateBookFileReferences = vi.fn(async () => 0);
   },
 }));

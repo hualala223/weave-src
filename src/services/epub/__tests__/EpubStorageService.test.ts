@@ -54,10 +54,7 @@ function readLocalEpubData(files: Map<string, string>) {
     bookshelfPlaylists: parsed.bookshelfPlaylists,
     readerSettings: parsed.readerSettings,
     excerptSettings: parsed.excerptSettings,
-    canvasBindings: parsed.canvasBindings,
-    canvasExcerptAnchors: parsed.canvasExcerptAnchors,
     uiMemory: parsed.uiMemory,
-    tocChapterMarkSettings: parsed.tocChapterMarkSettings,
   };
 }
 
@@ -777,68 +774,6 @@ describe('EpubStorageService', () => {
     await expect(service.loadReadingReferencePoint('book-1')).resolves.toBeNull();
   });
 
-  it('stores concealed text fragments in the unified local epub data file', async () => {
-    const { app, files } = createMemoryApp();
-    const service = new EpubStorageService(app);
-
-    await service.saveConcealedTexts('book-1', [
-      {
-        id: 'conceal-1',
-        text: '低价值片段',
-        mode: 'mask',
-        chapterIndex: 1,
-        cfiRange: '/6/4',
-        createdTime: 123,
-      },
-    ]);
-
-    await flushWeaveDataStore(app);
-    expect(readLocalEpubData(files).books['book-1'].concealedTexts).toEqual([
-      {
-        id: 'conceal-1',
-        text: '低价值片段',
-        mode: 'mask',
-        chapterIndex: 1,
-        cfiRange: '/6/4',
-        createdTime: 123,
-      },
-    ]);
-  });
-
-  it('loads concealed text fragments from the unified weave-data store', async () => {
-    const { app } = createMemoryApp({
-      [WEAVE_DATA_FILE]: JSON.stringify({
-        schemaVersion: 1,
-        books: {
-          'book-1': {
-            concealedTexts: [
-              {
-                id: 'conceal-legacy',
-                text: 'legacy text',
-                mode: 'mask',
-                chapterIndex: 2,
-                cfiRange: '/6/8',
-                createdTime: 456,
-              },
-            ],
-          },
-        },
-      }),
-    });
-    const service = new EpubStorageService(app);
-
-    await expect(service.loadConcealedTexts('book-1')).resolves.toEqual([
-      {
-        id: 'conceal-legacy',
-        text: 'legacy text',
-        mode: 'mask',
-        chapterIndex: 2,
-        cfiRange: '/6/8',
-        createdTime: 456,
-      },
-    ]);
-  });
-
   it('retires legacy epub local data files into the unified weave-data store', async () => {
     const { app, files } = createMemoryApp({
       [`${SYNC_EPUB_ROOT}/books.json`]: JSON.stringify({
@@ -893,16 +828,6 @@ describe('EpubStorageService', () => {
           mtime: 1710000000000,
         },
       ]),
-      [`${LOCAL_EPUB_ARTIFACTS_ROOT}/book-1/concealed-texts.json`]: JSON.stringify([
-        {
-          id: 'conceal-1',
-          text: 'legacy conceal',
-          mode: 'mask',
-          chapterIndex: 1,
-          cfiRange: '/6/4',
-          createdTime: 333,
-        },
-      ]),
       [`${SYNC_EPUB_ROOT}/book-1/highlights.json`]: JSON.stringify([
         {
           id: 'highlight-legacy',
@@ -939,7 +864,6 @@ describe('EpubStorageService', () => {
     expect(files.has(`${SYNC_EPUB_ROOT}/canvas-bindings.json`)).toBe(false);
     expect(files.has(`${SYNC_EPUB_ROOT}/epub-source-registry.json`)).toBe(false);
     expect(files.has(`${SYNC_EPUB_ROOT}/epub-scan-index.json`)).toBe(false);
-    expect(files.has(`${LOCAL_EPUB_ARTIFACTS_ROOT}/book-1/concealed-texts.json`)).toBe(false);
     // 统一数据现在只存在于 weave-data.json（无 epub-local-state.json）。
     expect(files.has(LOCAL_EPUB_DATA_PATH)).toBe(false);
   });
@@ -1015,53 +939,6 @@ describe('EpubStorageService', () => {
         folder: 'Books',
         size: 1024,
         mtime: 1710000000000,
-      },
-    ]);
-  });
-
-  it('persists canvas bindings into unified local data without recreating legacy sync files', async () => {
-    const { app, files } = createMemoryApp();
-    const service = new EpubStorageService(app);
-
-    await service.setCanvasBinding('book-1', 'Canvas/demo.canvas');
-
-    expect(await service.getCanvasBinding('book-1')).toBe('Canvas/demo.canvas');
-    await flushWeaveDataStore(app);
-    expect(readLocalEpubData(files).canvasBindings).toEqual({
-      'book-1': 'Canvas/demo.canvas',
-    });
-    expect(files.has(`${SYNC_EPUB_ROOT}/canvas-bindings.json`)).toBe(false);
-  });
-
-  it('deduplicates concealed text fragments by cfi range when adding repeatedly', async () => {
-    const { app } = createMemoryApp();
-    const service = new EpubStorageService(app);
-
-    await service.addConcealedText('book-1', {
-      id: 'conceal-1',
-      text: '第一次',
-      mode: 'mask',
-      chapterIndex: 1,
-      cfiRange: '/6/4',
-      createdTime: 123,
-    });
-    await service.addConcealedText('book-1', {
-      id: 'conceal-2',
-      text: '第二次',
-      mode: 'mask',
-      chapterIndex: 1,
-      cfiRange: '/6/4',
-      createdTime: 456,
-    });
-
-    expect(await service.loadConcealedTexts('book-1')).toEqual([
-      {
-        id: 'conceal-2',
-        text: '第二次',
-        mode: 'mask',
-        chapterIndex: 1,
-        cfiRange: '/6/4',
-        createdTime: 456,
       },
     ]);
   });
@@ -1854,9 +1731,6 @@ describe('EpubStorageService', () => {
             },
           },
         },
-        canvasBindings: {
-          'epub-old-runtime': 'Canvas/demo.canvas',
-        },
         traceability: {
           sourceRegistry: [
             {
@@ -1886,9 +1760,6 @@ describe('EpubStorageService', () => {
     expect(localData.books?.[canonicalBookId]?.descriptor?.id).toBe(canonicalBookId);
     expect(localData.books?.[canonicalBookId]?.descriptor?.sourceId).toBe(canonicalSourceId);
     expect(localData.books?.['epub-old-runtime']).toBeUndefined();
-    expect(localData.canvasBindings).toEqual({
-      [canonicalBookId]: 'Canvas/demo.canvas',
-    });
     expect(readTraceabilityRegistry(files)).toEqual([
       expect.objectContaining({
         sourceId: canonicalSourceId,
@@ -1917,24 +1788,6 @@ describe('EpubStorageService', () => {
       readLocalEpubData(files).bookshelfMembership ||
       (await service.loadBookshelfMembership());
     expect(membership?.length).toBeGreaterThan(0);
-  });
-
-  it('persists bookshelf cover image in scan index', async () => {
-    const { app } = createMemoryApp(
-      {
-        'Books/demo.epub': 'demo-epub-binary',
-      },
-      ['Books/demo.epub']
-    );
-    const service = new EpubStorageService(app);
-
-    await service.addBooksToBookshelf(['Books/demo.epub']);
-    await service.cacheBookshelfCoverImage('Books/demo.epub', 'blob:cached-cover');
-
-    const scanEntries = await service.loadScanIndex();
-    expect(scanEntries.find((entry) => entry.path === 'Books/demo.epub')?.coverImage).toBe(
-      'blob:cached-cover'
-    );
   });
 
   it('persists bookshelf search query in plugin ui memory across reloads', async () => {

@@ -17,16 +17,9 @@ export type FoliateOverlayerModule = {
 	};
 };
 
-export type ConcealmentPalette = {
-	base: string;
-	stripe: string;
-	border: string;
-};
-
 export interface ReaderAnnotationOverlayPorts {
 	resolveHighlightTint(color?: string): string;
 	getObsidianCSSVar(varName: string, fallback: string): string;
-	getConcealmentPalette(): ConcealmentPalette;
 	onCommentMarkerClick(
 		cfiRange: string,
 		markerElement: Element,
@@ -127,37 +120,6 @@ export class ReaderAnnotationOverlayRenderer {
 
 		if (annotation.referenceCount && annotation.referenceCount > 1) {
 			group.appendChild(this.createReferenceBadgeOverlay(annotation, rects));
-		}
-
-		return group;
-	}
-
-	createConcealmentOverlay(rects: unknown[]): SVGElement {
-		const palette = this.ports.getConcealmentPalette();
-		const group = activeDocument.createElementNS(SVG_NS, "g");
-
-		for (const rect of rects as RawViewportRect[]) {
-			const background = activeDocument.createElementNS(SVG_NS, "rect");
-			background.setAttribute("x", String(rect.left));
-			background.setAttribute("y", String(rect.top));
-			background.setAttribute("width", String(rect.width));
-			background.setAttribute("height", String(rect.height));
-			background.setAttribute("rx", "4");
-			background.setAttribute("fill", palette.base);
-			background.setAttribute("stroke", palette.border);
-			group.appendChild(background);
-
-			const stripeWidth = 9;
-			for (let x = rect.left; x < rect.left + rect.width; x += stripeWidth * 2) {
-				const stripe = activeDocument.createElementNS(SVG_NS, "rect");
-				stripe.setAttribute("x", String(x));
-				stripe.setAttribute("y", String(rect.top));
-				stripe.setAttribute("width", String(Math.min(stripeWidth, rect.left + rect.width - x)));
-				stripe.setAttribute("height", String(rect.height));
-				stripe.setAttribute("fill", palette.stripe);
-				stripe.setAttribute("opacity", "0.92");
-				group.appendChild(stripe);
-			}
 		}
 
 		return group;

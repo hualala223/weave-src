@@ -106,22 +106,3 @@ export function readObsidianTextFontSize(styleSource: HTMLElement): string {
 	return rawSize || "16px";
 }
 
-export function readConcealmentPalette(colorScheme: ReaderColorScheme): {
-	base: string;
-	stripe: string;
-	border: string;
-} {
-	if (colorScheme === "dark") {
-		return {
-			base: "rgba(86, 92, 104, 0.96)",
-			stripe: "rgba(112, 119, 132, 0.98)",
-			border: "rgba(255, 255, 255, 0.12)",
-		};
-	}
-
-	return {
-		base: "rgba(247, 243, 239, 0.96)",
-		stripe: "rgba(232, 225, 216, 0.98)",
-		border: "rgba(89, 79, 69, 0.12)",
-	};
-}

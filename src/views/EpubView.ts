@@ -6,7 +6,6 @@ import {
 	Notice,
 	Platform,
 	Scope,
-	TFile,
 	WorkspaceLeaf,
 	normalizePath,
 	setIcon,
@@ -22,15 +21,12 @@ import type {
 } from "../services/epub";
 import { stripSupportedBookExtension } from "../services/epub/book-format";
 import { EPUB_RUNTIME } from "../services/epub";
-import type { EpubCanvasService } from "../services/epub/EpubCanvasService";
 import { reportEpubError } from "../services/epub/epub-error";
-import type { CanvasLayoutDirection } from "../services/epub/canvas-types";
 import { resolveRecentEpubPath } from "../utils/epub-leaf-utils";
 import {
 	pendingLocateFromLegacyState,
 	type PendingLocateState,
 } from "../services/navigation/navigation-intent";
-import type { CanvasViewLike, WorkspaceLeafWithGroup } from "../types/obsidian-extensions";
 import { getBookSessionManager } from "../services/epub/session/book-session-manager-access";
 import { logger } from "../utils/logger";
 import { getViewSurfaceTokens } from "../utils/view-location-utils";
@@ -55,15 +51,11 @@ export class EpubView extends ItemView {
 	private pendingText = "";
 	private pendingLocate: PendingLocateState | null = null;
 	private autoInsertEnabled = false;
-	private screenshotModeActive = false;
-	private screenshotSaveAsImage = true;
 	private layoutMode: EpubLayoutMode = "paginated";
 	private flowMode: EpubFlowMode = "paginated";
-	private paragraphModeEnabled = false;
 	private lastActiveMarkdownLeaf: WorkspaceLeaf | null = null;
 	private leafChangeHandler: unknown = null;
 	private layoutChangeHandler: unknown = null;
-	private linkedCanvasPath: string | null = null;
 	private mounting = false;
 	private pendingRemount = false;
 	private readerHostEl: HTMLDivElement | null = null;
@@ -75,22 +67,10 @@ export class EpubView extends ItemView {
 	private inlineSidebarBtn: HTMLButtonElement | null = null;
 	private autoInsertBtn: HTMLElement | null = null;
 	private inlineAutoInsertBtn: HTMLButtonElement | null = null;
-	private screenshotBtn: HTMLElement | null = null;
-	private inlineScreenshotBtn: HTMLButtonElement | null = null;
-	private saveAsImageBtn: HTMLElement | null = null;
-	private inlineSaveAsImageBtn: HTMLButtonElement | null = null;
 	private flowBtn: HTMLElement | null = null;
 	private inlineFlowBtn: HTMLButtonElement | null = null;
 	private layoutBtn: HTMLElement | null = null;
 	private inlineLayoutBtn: HTMLButtonElement | null = null;
-	private paragraphModeBtn: HTMLElement | null = null;
-	private inlineParagraphModeBtn: HTMLButtonElement | null = null;
-	private canvasBtn: HTMLElement | null = null;
-	private inlineCanvasBtn: HTMLButtonElement | null = null;
-	private canvasDirBtn: HTMLElement | null = null;
-	private inlineCanvasDirBtn: HTMLButtonElement | null = null;
-	private canvasModeActive = false;
-	private canvasDirection: CanvasLayoutDirection = "down";
 	private readingReferenceBtn: HTMLElement | null = null;
 	private inlineReadingReferenceBtn: HTMLButtonElement | null = null;
 	private hasReadingReferencePoint = false;
@@ -100,30 +80,22 @@ export class EpubView extends ItemView {
 	private readerKeymapHandlers: KeymapEventHandler[] = [];
 	private actionHandlers: {
 		setAutoInsert?: (enabled: boolean) => void;
-		setScreenshotMode?: (active: boolean) => void;
 		setLayoutMode?: (mode: EpubLayoutMode) => void;
 		setFlowMode?: (mode: EpubFlowMode) => void;
-		toggleParagraphMode?: () => void;
 		openTypographyPanel?: () => void;
 		getReaderSettings?: () => EpubReaderSettings;
 		updateReaderSettings?: (patch: Partial<EpubReaderSettings>) => Promise<void>;
-		setScreenshotSaveMode?: (saveAsImage: boolean) => void;
 		navigateToCfi?: (cfi: string, linkTextHint?: string) => void;
 		addBookmark?: () => Promise<void>;
 		canUseReadingProgress?: () => boolean;
 		canUseReadingReference?: () => boolean;
-		canUseParagraphMode?: () => boolean;
 		canUseExcerptNotes?: () => boolean;
 		canUseStyledExcerpts?: () => boolean;
-		canUseCanvasExcerpts?: () => boolean;
 		canUseFootnotePreview?: () => boolean;
 		saveReadingReferencePoint?: () => Promise<void>;
 		openReadingPositionMenu?: (event: MouseEvent | KeyboardEvent) => void;
 		getReadingPositionAutoSaveEnabled?: () => boolean;
 		setReadingPositionAutoSaveEnabled?: (enabled: boolean) => Promise<boolean>;
-		bindCanvasPath?: (canvasPath: string) => void;
-		unbindCanvas?: () => void;
-		getCanvasService?: () => EpubCanvasService;
 		getExcerptSettings?: () => EpubExcerptSettings;
 		updateExcerptSettings?: (patch: Partial<EpubExcerptSettings>) => Promise<void>;
 		prevPage?: () => void | Promise<void>;
@@ -133,16 +105,6 @@ export class EpubView extends ItemView {
 	constructor(leaf: WorkspaceLeaf, plugin: EpubViewHost) {
 		super(leaf);
 		this.plugin = plugin;
-	}
-
-	private getCanvasDirectionLabel(direction: CanvasLayoutDirection): string {
-		const directionLabels: Record<CanvasLayoutDirection, string> = {
-			down: "向下",
-			right: "向右",
-			up: "向上",
-			left: "向左",
-		};
-		return directionLabels[direction];
 	}
 
 	private canUseReadingProgress(): boolean {
@@ -157,8 +119,6 @@ export class EpubView extends ItemView {
 		return canHandleEpubPagedNavigation({
 			hasOpenBook: Boolean(this.filePath),
 			flowMode: this.flowMode,
-			paragraphModeEnabled: this.paragraphModeEnabled,
-			screenshotModeActive: this.screenshotModeActive,
 		});
 	}
 
@@ -203,20 +163,12 @@ export class EpubView extends ItemView {
 		];
 	}
 
-	private canUseParagraphMode(): boolean {
-		return Boolean(this.actionHandlers.canUseParagraphMode?.());
-	}
-
 	private canUseExcerptNotes(): boolean {
 		return Boolean(this.actionHandlers.canUseExcerptNotes?.());
 	}
 
 	private canUseStyledExcerpts(): boolean {
 		return Boolean(this.actionHandlers.canUseStyledExcerpts?.());
-	}
-
-	private canUseCanvasExcerpts(): boolean {
-		return Boolean(this.actionHandlers.canUseCanvasExcerpts?.());
 	}
 
 	private canUseFootnotePreview(): boolean {
@@ -233,16 +185,11 @@ export class EpubView extends ItemView {
 
 	private clearHeaderActionRefs(): void {
 		this.sidebarBtn = null;
-		this.saveAsImageBtn = null;
-		this.screenshotBtn = null;
 		this.autoInsertBtn = null;
 		this.bookmarkBtn = null;
 		this.readingReferenceBtn = null;
 		this.flowBtn = null;
 		this.layoutBtn = null;
-		this.paragraphModeBtn = null;
-		this.canvasDirBtn = null;
-		this.canvasBtn = null;
 	}
 
 	private registerReaderHeaderActions(): void {
@@ -264,24 +211,6 @@ export class EpubView extends ItemView {
 				this.updateAutoInsertBtn();
 				this.actionHandlers.setAutoInsert?.(this.autoInsertEnabled);
 			});
-			this.screenshotBtn = this.addAction(
-				"camera",
-				'截图工具',
-				() => {
-					this.screenshotModeActive = !this.screenshotModeActive;
-					this.updateScreenshotBtn();
-					this.actionHandlers.setScreenshotMode?.(this.screenshotModeActive);
-				}
-			);
-			this.saveAsImageBtn = this.addAction(
-				"image",
-				'截图保存为图片',
-				() => {
-					this.screenshotSaveAsImage = !this.screenshotSaveAsImage;
-					this.updateSaveAsImageBtn();
-					this.actionHandlers.setScreenshotSaveMode?.(this.screenshotSaveAsImage);
-				}
-			);
 		};
 
 		registerExcerptHeaderActions();
@@ -312,27 +241,6 @@ export class EpubView extends ItemView {
 				'单栏',
 				() => {
 					this.cycleLayoutMode();
-				}
-			);
-			this.paragraphModeBtn = this.addAction(
-				"pilcrow",
-				'段落模式（关）',
-				() => {
-					this.toggleParagraphMode();
-				}
-			);
-			this.canvasDirBtn = this.addAction(
-				"arrow-down",
-				`Canvas 方向：${this.getCanvasDirectionLabel("down")}`,
-				(evt) => {
-					this.showDirectionMenu(evt);
-				}
-			);
-			this.canvasBtn = this.addAction(
-				"layout-dashboard",
-				'Canvas 脑图（关）',
-				(evt) => {
-					this.showCanvasMenu(evt);
 				}
 			);
 
@@ -379,8 +287,6 @@ export class EpubView extends ItemView {
 			this.appendExcerptToolsPaneMenu(menu, excerptSettings);
 		}
 
-		this.appendCanvasPaneMenu(menu);
-
 	}
 
 	private addPaneMenuGroup(
@@ -403,13 +309,6 @@ export class EpubView extends ItemView {
 			return candidate.setSubmenu();
 		}
 		return fallbackMenu;
-	}
-
-	private dismissPaneMenu(menu: Menu): void {
-		menu.hide();
-		if (typeof menu.close === "function") {
-			menu.close();
-		}
 	}
 
 	private appendReadingFlowModeItems(subMenu: Menu): void {
@@ -473,17 +372,6 @@ export class EpubView extends ItemView {
 				});
 			});
 
-			if (this.actionHandlers.toggleParagraphMode) {
-				subMenu.addItem((item) => {
-					item.setTitle('段落模式');
-					item.setIcon("pilcrow");
-					item.setChecked(this.canUseParagraphMode() && this.paragraphModeEnabled);
-					item.onClick(() => {
-						this.toggleParagraphMode();
-					});
-				});
-			}
-
 			if (this.canUseFootnotePreview()) {
 				subMenu.addItem((item) => {
 					item.setTitle('点击脚注序号');
@@ -509,68 +397,6 @@ export class EpubView extends ItemView {
 							});
 						});
 					});
-				});
-			}
-
-			if (readerSettings.paragraphModeEnabled) {
-				subMenu.addItem((item) => {
-					item.setTitle('段落界面风格');
-					item.setIcon("panel-top-open");
-					const surfaceMenu = this.resolveMenuSubmenu(item, subMenu);
-
-					surfaceMenu.addItem((subItem) => {
-						subItem.setTitle('聚焦光晕');
-						subItem.setChecked(readerSettings.paragraphModeSurfaceStyle === "spotlight");
-						subItem.onClick(() => {
-							void this.actionHandlers.updateReaderSettings?.({
-								paragraphModeSurfaceStyle: "spotlight",
-							});
-						});
-					});
-
-					surfaceMenu.addItem((subItem) => {
-						subItem.setTitle('融入背景');
-						subItem.setChecked(readerSettings.paragraphModeSurfaceStyle === "blend");
-						subItem.onClick(() => {
-							void this.actionHandlers.updateReaderSettings?.({
-								paragraphModeSurfaceStyle: "blend",
-							});
-						});
-					});
-
-					surfaceMenu.addItem((subItem) => {
-						subItem.setTitle('虚线边框');
-						subItem.setChecked(readerSettings.paragraphModeSurfaceStyle === "dashed");
-						subItem.onClick(() => {
-							void this.actionHandlers.updateReaderSettings?.({
-								paragraphModeSurfaceStyle: "dashed",
-							});
-						});
-					});
-				});
-
-				subMenu.addItem((item) => {
-					item.setTitle('段落切换效果');
-					item.setIcon("refresh-cw");
-					const transitionMenu = this.resolveMenuSubmenu(item, subMenu);
-					const transitionOptions = [
-						["steady", '静稳'],
-						["fade", '淡隐'],
-						["settle", '轻落'],
-						["slide", '水平滑页'],
-					] as const;
-
-					for (const [value, label] of transitionOptions) {
-						transitionMenu.addItem((subItem) => {
-							subItem.setTitle(label);
-							subItem.setChecked(readerSettings.paragraphModeTransitionStyle === value);
-							subItem.onClick(() => {
-								void this.actionHandlers.updateReaderSettings?.({
-									paragraphModeTransitionStyle: value,
-								});
-							});
-						});
-					}
 				});
 			}
 		});
@@ -609,32 +435,6 @@ export class EpubView extends ItemView {
 				this.autoInsertEnabled = !this.autoInsertEnabled;
 				this.updateAutoInsertBtn();
 				this.actionHandlers.setAutoInsert?.(this.autoInsertEnabled);
-			});
-		});
-
-		excerptToolsMenu.addItem((subItem) => {
-			subItem.setTitle(
-				'截图工具'
-			);
-			subItem.setIcon("camera");
-			subItem.setChecked(this.canUseExcerptNotes() ? this.screenshotModeActive : false);
-			subItem.onClick(() => {
-				this.screenshotModeActive = !this.screenshotModeActive;
-				this.updateScreenshotBtn();
-				this.actionHandlers.setScreenshotMode?.(this.screenshotModeActive);
-			});
-		});
-
-		excerptToolsMenu.addItem((subItem) => {
-			subItem.setTitle(
-				'截图保存为图片'
-			);
-			subItem.setIcon(this.screenshotSaveAsImage ? "image" : "code");
-			subItem.setChecked(this.canUseExcerptNotes() ? this.screenshotSaveAsImage : false);
-			subItem.onClick(() => {
-				this.screenshotSaveAsImage = !this.screenshotSaveAsImage;
-				this.updateSaveAsImageBtn();
-				this.actionHandlers.setScreenshotSaveMode?.(this.screenshotSaveAsImage);
 			});
 		});
 	}
@@ -724,33 +524,6 @@ export class EpubView extends ItemView {
 				this.populateExcerptNotesSettings(excerptToolsMenu, excerptSettings);
 			}
 		});
-	}
-
-	private appendCanvasPaneMenu(menu: Menu): void {
-		if (!this.shouldShowToolbarFeature()) {
-			return;
-		}
-
-		if (this.canUseCanvasExcerpts()) {
-			menu.addItem((item) => {
-				item.setTitle(
-					this.canvasModeActive
-						? 'Canvas 脑图（开）'
-						: 'Canvas 脑图（关）'
-				);
-				item.setIcon("layout-dashboard");
-				item.setChecked(this.canvasModeActive);
-				item.onClick((evt) => {
-					this.dismissPaneMenu(menu);
-					window.setTimeout(() => {
-						this.showCanvasMenu(evt);
-					}, 0);
-				});
-			});
-			return;
-		}
-
-
 	}
 
 
@@ -923,24 +696,6 @@ export class EpubView extends ItemView {
 				void this.toggleGlobalSidebar();
 			}
 		);
-		this.inlineSaveAsImageBtn = this.appendInlineActionButton(
-			"image",
-			'保存为图片文件（开）',
-			() => {
-				this.screenshotSaveAsImage = !this.screenshotSaveAsImage;
-				this.updateSaveAsImageBtn();
-				this.actionHandlers.setScreenshotSaveMode?.(this.screenshotSaveAsImage);
-			}
-		);
-		this.inlineScreenshotBtn = this.appendInlineActionButton(
-			"camera",
-			'截图工具（关）',
-			() => {
-				this.screenshotModeActive = !this.screenshotModeActive;
-				this.updateScreenshotBtn();
-				this.actionHandlers.setScreenshotMode?.(this.screenshotModeActive);
-			}
-		);
 		this.inlineAutoInsertBtn = this.appendInlineActionButton(
 			"zap",
 			'自动模式（关：复制，开：插入）',
@@ -962,27 +717,6 @@ export class EpubView extends ItemView {
 			'单栏',
 			() => {
 				this.cycleLayoutMode();
-			}
-		);
-		this.inlineParagraphModeBtn = this.appendInlineActionButton(
-			"pilcrow",
-			'段落模式（关）',
-			() => {
-				this.toggleParagraphMode();
-			}
-		);
-		this.inlineCanvasDirBtn = this.appendInlineActionButton(
-			"arrow-down",
-			`Canvas 方向：${this.getCanvasDirectionLabel("down")}`,
-			(evt) => {
-				this.showDirectionMenu(evt);
-			}
-		);
-		this.inlineCanvasBtn = this.appendInlineActionButton(
-			"layout-dashboard",
-			'Canvas 脑图（关）',
-			(evt) => {
-				this.showCanvasMenu(evt);
 			}
 		);
 		this.inlineReadingReferenceBtn = this.appendInlineActionButton(
@@ -1052,15 +786,10 @@ export class EpubView extends ItemView {
 	}
 
 	private refreshAllActionButtons(): void {
-		this.updateSaveAsImageBtn();
-		this.updateScreenshotBtn();
 		this.updateAutoInsertBtn();
 		this.updateReadingReferencePointBtn();
 		this.updateFlowBtn();
 		this.updateLayoutBtn();
-		this.updateParagraphModeBtn();
-		this.updateCanvasBtn();
-		this.updateDirectionBtn();
 	}
 
 	private applyActionButtonState(
@@ -1273,14 +1002,11 @@ export class EpubView extends ItemView {
 			onReaderSettingsLoaded: (settings: {
 				layoutMode: EpubLayoutMode;
 				flowMode: EpubFlowMode;
-				paragraphModeEnabled?: boolean;
 			}) => {
 				this.layoutMode = settings.layoutMode;
 				this.flowMode = settings.flowMode;
-				this.paragraphModeEnabled = Boolean(settings.paragraphModeEnabled);
 				this.updateFlowBtn();
 				this.updateLayoutBtn();
-				this.updateParagraphModeBtn();
 			},
 			onReadingReferencePointChange: (point: EpubReadingReferencePoint | null) => {
 				this.hasReadingReferencePoint = Boolean(point);
@@ -1313,27 +1039,11 @@ export class EpubView extends ItemView {
 				if (readerSettings) {
 					this.layoutMode = readerSettings.layoutMode;
 					this.flowMode = readerSettings.flowMode;
-					this.paragraphModeEnabled = Boolean(readerSettings.paragraphModeEnabled);
 				}
 				this.syncToolbarAfterActionsReady();
 			},
 			onSwitchBook: async (newFilePath: string) => {
 				await this.switchBookInCurrentLeaf(newFilePath);
-			},
-			onCanvasStateChange: (active: boolean, _canvasPath: string | null) => {
-				this.canvasModeActive = active;
-				this.updateCanvasBtn();
-				if (active) {
-					const canvasService = this.actionHandlers.getCanvasService?.();
-					if (canvasService) {
-						this.canvasDirection = canvasService.getLayoutDirection();
-						this.updateDirectionBtn();
-					}
-				}
-			},
-			onCanvasLayoutDirectionChange: (direction: CanvasLayoutDirection) => {
-				this.canvasDirection = direction;
-				this.updateDirectionBtn();
 			},
 		};
 	}
@@ -1363,13 +1073,9 @@ export class EpubView extends ItemView {
 		this.inlineToolbarActionsEl = null;
 		this.inlineToolbarToggleBtn = null;
 		this.inlineSidebarBtn = null;
-		this.inlineSaveAsImageBtn = null;
-		this.inlineScreenshotBtn = null;
 		this.inlineAutoInsertBtn = null;
 		this.inlineFlowBtn = null;
 		this.inlineLayoutBtn = null;
-		this.inlineCanvasDirBtn = null;
-		this.inlineCanvasBtn = null;
 		this.inlineReadingReferenceBtn = null;
 		this.readingReferenceBtn = null;
 		this.readingPositionAutoSaveEnabled = false;
@@ -1385,65 +1091,11 @@ export class EpubView extends ItemView {
 	private setupLinkedTabTracking(): void {
 		this.layoutChangeHandler = () => {
 			this.applySurfaceContext();
-			this.checkLinkedCanvasTab();
 			if (this.toolbarHandlersReady) {
 				this.refreshAllActionButtons();
 			}
 		};
 		this.app.workspace.on("layout-change", this.layoutChangeHandler);
-	}
-
-	private checkLinkedCanvasTab(): void {
-		if (!this.canUseCanvasExcerpts()) {
-			if (this.linkedCanvasPath || this.canvasModeActive) {
-				this.linkedCanvasPath = null;
-				this.canvasModeActive = false;
-				this.actionHandlers.unbindCanvas?.();
-				this.updateCanvasBtn();
-			}
-			return;
-		}
-
-		const myGroup = (this.leaf as WorkspaceLeafWithGroup).group;
-
-		if (!myGroup) {
-			if (this.linkedCanvasPath) {
-				this.linkedCanvasPath = null;
-				this.canvasModeActive = false;
-				this.actionHandlers.unbindCanvas?.();
-				this.updateCanvasBtn();
-			}
-			return;
-		}
-
-		const canvasLeaves = this.app.workspace.getLeavesOfType("canvas");
-		let foundCanvasPath: string | null = null;
-
-		for (const leaf of canvasLeaves) {
-			if ((leaf as WorkspaceLeafWithGroup).group === myGroup) {
-				const file = (leaf.view as CanvasViewLike).file;
-				if (file?.path) {
-					foundCanvasPath = file.path;
-					break;
-				}
-			}
-		}
-
-		if (foundCanvasPath && foundCanvasPath !== this.linkedCanvasPath) {
-			this.linkedCanvasPath = foundCanvasPath;
-			this.canvasModeActive = true;
-			this.actionHandlers.bindCanvasPath?.(foundCanvasPath);
-			this.updateCanvasBtn();
-			new Notice(
-				`Canvas 已关联：${foundCanvasPath.split("/").pop() || foundCanvasPath}`
-			);
-		} else if (!foundCanvasPath && this.linkedCanvasPath) {
-			this.linkedCanvasPath = null;
-			this.canvasModeActive = false;
-			this.actionHandlers.unbindCanvas?.();
-			this.updateCanvasBtn();
-			new Notice('Canvas 已取消关联');
-		}
 	}
 
 	private setupLeafChangeTracking(): void {
@@ -1546,12 +1198,6 @@ export class EpubView extends ItemView {
 		this.actionHandlers.setLayoutMode?.(this.layoutMode);
 	}
 
-	private toggleParagraphMode(): void {
-		this.paragraphModeEnabled = !this.paragraphModeEnabled;
-		this.updateParagraphModeBtn();
-		this.actionHandlers.toggleParagraphMode?.();
-	}
-
 	private updateFlowBtn(): void {
 		const icon = this.flowMode === "scrolled" ? "scroll-text" : "arrow-up-down";
 		const label = `阅读模式：${this.flowMode === "scrolled" ? '连续滚动' : '翻页'}`;
@@ -1587,68 +1233,6 @@ export class EpubView extends ItemView {
 			icon,
 			label,
 			active: this.layoutMode === "double",
-		});
-	}
-
-	private updateParagraphModeBtn(): void {
-		const canUseParagraphMode = this.canUseParagraphMode();
-		const visible = this.shouldShowToolbarFeature();
-		const baseLabel = this.paragraphModeEnabled
-			? '段落模式（开）'
-			: '段落模式（关）';
-		const label = baseLabel;
-		this.applyActionButtonState(this.paragraphModeBtn, {
-			icon: "pilcrow",
-			label,
-			active: canUseParagraphMode ? this.paragraphModeEnabled : false,
-			visible,
-		});
-		this.applyActionButtonState(this.inlineParagraphModeBtn, {
-			icon: "pilcrow",
-			label,
-			active: canUseParagraphMode ? this.paragraphModeEnabled : false,
-			visible,
-		});
-	}
-
-	private updateSaveAsImageBtn(): void {
-		const icon = this.screenshotSaveAsImage ? "image" : "code";
-		const label = Platform.isMobile
-			? '截图保存为图片'
-			: this.screenshotSaveAsImage
-				? '保存为图片文件（开）'
-				: '保存为嵌入链接（关）';
-		const visible = this.shouldShowToolbarFeature();
-		this.applyActionButtonState(this.saveAsImageBtn, {
-			icon,
-			label,
-			active: this.canUseExcerptNotes() ? this.screenshotSaveAsImage : false,
-			visible,
-		});
-		this.applyActionButtonState(this.inlineSaveAsImageBtn, {
-			icon,
-			label,
-			active: this.canUseExcerptNotes() ? this.screenshotSaveAsImage : false,
-			visible,
-		});
-	}
-
-	private updateScreenshotBtn(): void {
-		const label = Platform.isMobile
-			? '截图工具'
-			: this.screenshotModeActive
-				? '截图工具（开）'
-				: '截图工具（关）';
-		const visible = this.shouldShowToolbarFeature();
-		this.applyActionButtonState(this.screenshotBtn, {
-			label,
-			active: this.canUseExcerptNotes() ? this.screenshotModeActive : false,
-			visible,
-		});
-		this.applyActionButtonState(this.inlineScreenshotBtn, {
-			label,
-			active: this.canUseExcerptNotes() ? this.screenshotModeActive : false,
-			visible,
 		});
 	}
 
@@ -1733,183 +1317,6 @@ export class EpubView extends ItemView {
 		});
 		if (this.inlineReadingReferenceBtn) {
 			this.inlineReadingReferenceBtn.setAttribute("aria-label", shortLabel);
-		}
-	}
-
-	private updateCanvasBtn(): void {
-		const label = this.canvasModeActive
-			? 'Canvas 脑图（开）'
-			: 'Canvas 脑图（关）';
-		const visible = this.shouldShowToolbarFeature();
-		this.applyActionButtonState(this.canvasBtn, {
-			icon: "layout-dashboard",
-			label,
-			active: this.canvasModeActive,
-			visible,
-		});
-		this.applyActionButtonState(this.inlineCanvasBtn, {
-			icon: "layout-dashboard",
-			label,
-			active: this.canvasModeActive,
-			visible,
-		});
-		this.applyActionButtonState(this.canvasDirBtn, {
-			visible: visible && this.canvasModeActive,
-		});
-		this.applyActionButtonState(this.inlineCanvasDirBtn, {
-			visible: visible && this.canvasModeActive,
-		});
-	}
-
-	private showDirectionMenu(evt: MouseEvent | Event): void {
-		const canvasService = this.actionHandlers.getCanvasService?.();
-		if (!canvasService) return;
-
-		const menu = new Menu();
-		const dirs: { dir: CanvasLayoutDirection; icon: string; label: string }[] = [
-			{ dir: "down", icon: "arrow-down", label: this.getCanvasDirectionLabel("down") },
-			{ dir: "right", icon: "arrow-right", label: this.getCanvasDirectionLabel("right") },
-			{ dir: "up", icon: "arrow-up", label: this.getCanvasDirectionLabel("up") },
-			{ dir: "left", icon: "arrow-left", label: this.getCanvasDirectionLabel("left") },
-		];
-
-		for (const { dir, icon, label } of dirs) {
-			menu.addItem((_item) => {
-				_item.setTitle(label);
-				_item.setIcon(icon);
-				_item.setChecked(this.canvasDirection === dir);
-				_item.onClick(() => {
-					this.canvasDirection = dir;
-					canvasService.setLayoutDirection(dir);
-					this.updateDirectionBtn();
-				});
-			});
-		}
-
-		menu.showAtMouseEvent(evt as MouseEvent);
-	}
-
-	private updateDirectionBtn(): void {
-		const iconMap: Record<CanvasLayoutDirection, string> = {
-			down: "arrow-down",
-			right: "arrow-right",
-			up: "arrow-up",
-			left: "arrow-left",
-		};
-		const label = `Canvas 方向：${this.getCanvasDirectionLabel(this.canvasDirection)}`;
-		const icon = iconMap[this.canvasDirection];
-		this.applyActionButtonState(this.canvasDirBtn, {
-			icon,
-			label,
-			visible: this.canvasModeActive,
-		});
-		this.applyActionButtonState(this.inlineCanvasDirBtn, {
-			icon,
-			label,
-			visible: this.canvasModeActive,
-		});
-	}
-
-	private showCanvasMenu(evt: MouseEvent | Event): void {
-		if (!this.canUseCanvasExcerpts()) {
-			return;
-		}
-
-		const canvasService = this.actionHandlers.getCanvasService?.();
-		if (!canvasService) return;
-
-		const menu = new Menu();
-
-		if (this.canvasModeActive) {
-			const currentPath = canvasService.getCanvasPath();
-			if (currentPath) {
-				menu.addItem((_item) => {
-					_item.setTitle(`当前：${currentPath}`);
-					_item.setIcon("file");
-					_item.setDisabled(true);
-				});
-				menu.addItem((_item) => {
-					_item.setTitle('打开 canvas');
-					_item.setIcon("external-link");
-					_item.onClick(() => this.openCanvasFile(currentPath));
-				});
-			}
-			menu.addSeparator();
-			menu.addItem((_item) => {
-				_item.setTitle('断开 canvas');
-				_item.setIcon("unlink");
-				_item.onClick(() => {
-					this.canvasModeActive = false;
-					this.actionHandlers.unbindCanvas?.();
-					this.updateCanvasBtn();
-				});
-			});
-		} else {
-			menu.addItem((_item) => {
-				_item.setTitle('新建 canvas');
-				_item.setIcon("plus");
-				_item.onClick(() => this.createAndBindCanvas(canvasService));
-			});
-
-			const canvasFiles = this.app.vault
-				.getFiles()
-				.filter((f) => f.extension === "canvas")
-				.sort((a, b) => b.stat.mtime - a.stat.mtime)
-				.slice(0, 15);
-
-			if (canvasFiles.length > 0) {
-				menu.addSeparator();
-				for (const file of canvasFiles) {
-					menu.addItem((_item) => {
-						_item.setTitle(file.path);
-						_item.setIcon("file");
-						_item.onClick(() => this.bindExistingCanvas(canvasService, file.path));
-					});
-				}
-			}
-		}
-
-		menu.showAtMouseEvent(evt as MouseEvent);
-	}
-
-	private async createAndBindCanvas(canvasService: EpubCanvasService): Promise<void> {
-		const title = this.bookTitle || "EPUB";
-		const safeName = title
-			.replace(/[\\/:*?"<>|]/g, "_")
-			.substring(0, 40)
-			.trim();
-		const canvasPath = `${safeName}-mindmap.canvas`;
-
-		try {
-			await canvasService.createCanvas(canvasPath);
-			this.canvasModeActive = true;
-			this.actionHandlers.bindCanvasPath?.(canvasPath);
-			this.updateCanvasBtn();
-			new Notice(`Canvas 已创建：${canvasPath}`);
-
-			this.openCanvasFile(canvasPath);
-		} catch (e) {
-			logger.error("[EpubView] Failed to create canvas:", e);
-			new Notice('Canvas 创建失败');
-		}
-	}
-
-	private async bindExistingCanvas(_canvasService: EpubCanvasService, path: string): Promise<void> {
-		try {
-			this.canvasModeActive = true;
-			this.actionHandlers.bindCanvasPath?.(path);
-			this.updateCanvasBtn();
-			new Notice(`Canvas 已连接：${path}`);
-		} catch (e) {
-			logger.error("[EpubView] Failed to bind canvas:", e);
-		}
-	}
-
-	private openCanvasFile(path: string): void {
-		const file = this.app.vault.getAbstractFileByPath(path);
-		if (file instanceof TFile) {
-			const leaf = this.app.workspace.getLeaf("split", "vertical");
-			void leaf.openFile(file);
 		}
 	}
 }

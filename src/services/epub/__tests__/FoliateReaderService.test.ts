@@ -7,7 +7,6 @@ import {
 	createReaderFoliateAnnotation,
 	createRenderedFoliateAnnotation,
 	isSameFoliateAnnotation,
-	shouldRenderAnnotationAsConceal,
 } from "../reader-annotation-model";
 import { FoliateReaderService } from "../FoliateReaderService";
 import {
@@ -818,48 +817,6 @@ describe("FoliateReaderService", () => {
 		}
 	});
 
-	it("switches strikethrough excerpt rendering between concealment and visible strike mode", async () => {
-		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any) as any;
-		try {
-			expect(
-				shouldRenderAnnotationAsConceal(
-					{
-						cfiRange: "readium:hidden",
-						presentation: "highlight",
-						style: "strikethrough",
-					},
-					service.currentStrikethroughPresentation
-				)
-			).toBe(true);
-
-			await service.applyReaderAppearance({ strikethroughPresentation: "strikethrough" });
-
-			expect(
-				shouldRenderAnnotationAsConceal(
-					{
-						cfiRange: "readium:hidden",
-						presentation: "highlight",
-						style: "strikethrough",
-					},
-					service.currentStrikethroughPresentation
-				)
-			).toBe(false);
-
-			expect(
-				shouldRenderAnnotationAsConceal(
-					{
-						cfiRange: "readium:legacy-conceal",
-						presentation: "conceal",
-						style: undefined,
-					},
-					service.currentStrikethroughPresentation
-				)
-			).toBe(true);
-		} finally {
-			service.destroy();
-		}
-	});
-
 	it("reads visible frames from renderer.getContents in modern foliate runtime", async () => {
 		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any);
 		try {
@@ -1497,52 +1454,6 @@ describe("FoliateReaderService", () => {
 		}
 	});
 
-	it("re-renders conceal annotations when temporary reveal state changes", async () => {
-		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
-		try {
-			const highlight = {
-				cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
-				color: "yellow",
-				text: "Selection text for testing",
-				presentation: "conceal" as const,
-			};
-			const key = getReaderHighlightIdentityKey(highlight);
-			const view = {
-				addAnnotation: vi.fn(async () => undefined),
-				deleteAnnotation: vi.fn(async () => undefined),
-				removeEventListener: vi.fn(),
-				close: vi.fn(),
-				remove: vi.fn(),
-			};
-
-			(service as any).foliateView = view;
-			(service as any).highlightDataMap.set(key, highlight);
-			vi.spyOn((service as any).parser, "getSectionIndexForCfi").mockReturnValue(0);
-			vi.spyOn(service as any, "getVisibleFramesWithIndex").mockReturnValue([
-				{ index: 0 },
-			]);
-
-			const concealedRendered = createRenderedFoliateAnnotation({
-				persistentHighlight: highlight,
-				currentStrikethroughPresentation: service.currentStrikethroughPresentation,
-				colorScheme: service.getCurrentColorScheme(),
-				temporarilyRevealedConcealmentKeys: (service as any).temporarilyRevealedConcealmentTimers,
-			});
-			(service as any).renderedAnnotations.set(key, concealedRendered);
-			(service as any).temporarilyRevealedConcealmentTimers.set(key, setTimeout(() => undefined, 1000));
-
-			await (service as any).syncAnnotationsWithView();
-
-			expect(view.deleteAnnotation).toHaveBeenCalledTimes(1);
-			expect(view.deleteAnnotation).toHaveBeenCalledWith(concealedRendered.annotation);
-			expect(view.addAnnotation).toHaveBeenCalledTimes(1);
-			const nextRendered = (service as any).renderedAnnotations.get(key);
-			expect(nextRendered?.renderSignature).toContain("concealment:revealed");
-		} finally {
-			service.destroy();
-		}
-	});
-
 	it("re-renders highlight annotations when color changes", async () => {
 		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
 		try {
@@ -1572,7 +1483,6 @@ describe("FoliateReaderService", () => {
 				persistentHighlight: initialHighlight,
 				currentStrikethroughPresentation: service.currentStrikethroughPresentation,
 				colorScheme: service.getCurrentColorScheme(),
-				temporarilyRevealedConcealmentKeys: (service as any).temporarilyRevealedConcealmentTimers,
 			});
 			(service as any).renderedAnnotations.set(key, initialRendered);
 			(service as any).highlightDataMap.set(key, {

@@ -12,6 +12,6 @@ export interface EpubExcerptSettings {
 export const DEFAULT_EPUB_EXCERPT_SETTINGS: EpubExcerptSettings = {
 	addCreationTime: false,
 	chapterLocationFormat: "leaf",
-	strikethroughDisplayMode: "conceal",
+	strikethroughDisplayMode: "strikethrough",
 	showStrikethroughInSidebar: false,
 };

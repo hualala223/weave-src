@@ -31,7 +31,7 @@ export interface BookMetadata {
 
 export type EpubHighlightStyle = "underline" | "strikethrough" | "wavy";
 
-export type EpubStrikethroughDisplayMode = "strikethrough" | "conceal";
+export type EpubStrikethroughDisplayMode = "strikethrough";
 
 export interface ReadingPosition {
 	chapterIndex: number;
@@ -89,17 +89,6 @@ export interface Highlight {
 }
 
 export type HighlightColor = "yellow" | "green" | "blue" | "red" | "purple";
-
-export type ConcealedTextMode = "mask";
-
-export interface ConcealedText {
-	id: string;
-	text: string;
-	mode: ConcealedTextMode;
-	chapterIndex: number;
-	cfiRange: string;
-	createdTime: number;
-}
 
 export interface Note {
 	id: string;

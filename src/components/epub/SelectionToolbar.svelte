@@ -34,7 +34,6 @@
 		book: EpubBook | null;
 		readerVersion?: number;
 		autoInsert?: boolean;
-		canvasMode?: boolean;
 		boundsEl?: HTMLElement | null;
 		mobileDockBottomOffset?: number;
 		externalSelection?: ExternalSelectionState | null;
@@ -47,7 +46,6 @@
 		book,
 		readerVersion = 0,
 		autoInsert = false,
-		canvasMode = false,
 		boundsEl = null,
 		mobileDockBottomOffset = 0,
 		externalSelection = null,

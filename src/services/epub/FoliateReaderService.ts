@@ -35,7 +35,6 @@ import {
 import { applyReaderThemeHostSurfaces } from "./reader-theme-host";
 import { buildReaderHostSurfaceCss } from "./reader-host-surface-css";
 import {
-	readConcealmentPalette,
 	readObsidianColorScheme,
 	readObsidianCssVar,
 } from "./reader-theme-tokens";
@@ -53,7 +52,6 @@ import {
 	createReaderFoliateAnnotation,
 	createRenderedFoliateAnnotation,
 	isSameFoliateAnnotation,
-	shouldRenderAnnotationAsConceal,
 	type ReaderFoliateAnnotation,
 	type RenderedReaderFoliateAnnotation,
 } from "./reader-annotation-model";
@@ -332,7 +330,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private currentLetterSpacing = 0;
 	private currentPageMargin = 48;
 	private currentWidthMode: EpubWidthMode = "standard";
-	private currentStrikethroughPresentation: EpubStrikethroughDisplayMode = "conceal";
+	private currentStrikethroughPresentation: EpubStrikethroughDisplayMode = "strikethrough";
 	private currentLayoutMode: EpubLayoutMode = "paginated";
 	private currentFlowMode: EpubFlowMode = "paginated";
 	private currentFootnoteClickAction: EpubFootnoteClickAction = "preview";
@@ -360,7 +358,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private temporaryHighlightTimers = new Map<string, ReturnType<typeof window.setTimeout>>();
 	private sourceLocateFocusByCfiKey = new Map<string, { color: string; cfiRange: string }>();
 	private sourceLocateFocusTimers = new Map<string, ReturnType<typeof window.setTimeout>>();
-	private temporarilyRevealedConcealmentTimers = new Map<string, ReturnType<typeof window.setTimeout>>();
 	private documentFootnoteCleanups = new Map<Document, () => void>();
 	private documentSelectionCleanups = new Map<Document, () => void>();
 	private documentHighlightClickCleanups = new Map<Document, () => void>();
@@ -428,7 +425,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.annotationOverlayRenderer = new ReaderAnnotationOverlayRenderer({
 			resolveHighlightTint: (color) => this.resolveHighlightTint(color),
 			getObsidianCSSVar: (varName, fallback) => this.getObsidianCSSVar(varName, fallback),
-			getConcealmentPalette: () => this.getConcealmentPalette(),
 			onCommentMarkerClick: (cfiRange, markerElement, anchorRect) =>
 				this.notifyCommentMarkerClick(cfiRange, markerElement, anchorRect),
 			onReferenceBadgeClick: (cfiRange, geometry) =>
@@ -1666,26 +1662,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 		void this.addResolvedHighlight({ ...highlight, temporary: true }, durationMs);
 	}
 
-	temporarilyRevealConcealedText(cfiRange: string, durationMs = 3000): void {
-		const highlight = this.findStoredHighlightByCfi(cfiRange, "conceal");
-		if (!highlight) {
-			return;
-		}
-		const key = getReaderHighlightIdentityKey(highlight);
-		const existingTimer = this.temporarilyRevealedConcealmentTimers.get(key);
-		if (existingTimer) {
-			window.clearTimeout(existingTimer);
-		}
-		this.temporarilyRevealedConcealmentTimers.set(
-			key,
-			window.setTimeout(() => {
-				this.temporarilyRevealedConcealmentTimers.delete(key);
-				void this.refreshHighlights();
-			}, Math.max(200, durationMs))
-		);
-		void this.refreshHighlights();
-	}
-
 	removeHighlight(cfiRange: string): void {
 		const cfiKey = this.normalizeLocationKey(cfiRange);
 		const keysToRemove = new Set<string>();
@@ -1730,11 +1706,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (timer) {
 			window.clearTimeout(timer);
 			this.temporaryHighlightTimers.delete(key);
-		}
-		const revealedTimer = this.temporarilyRevealedConcealmentTimers.get(key);
-		if (revealedTimer) {
-			window.clearTimeout(revealedTimer);
-			this.temporarilyRevealedConcealmentTimers.delete(key);
 		}
 	}
 
@@ -6004,16 +5975,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 		annotation: FoliateAnnotation,
 		draw: (draw: (rects: unknown[], options?: unknown) => SVGElement, options?: unknown) => void
 	): Promise<void> {
-		if (shouldRenderAnnotationAsConceal(annotation, this.currentStrikethroughPresentation)) {
-			const key = getReaderHighlightIdentityKey(annotation);
-			if (!this.temporarilyRevealedConcealmentTimers.has(key)) {
-				draw((rects) =>
-					this.createConcealmentOverlay(this.resolveAnnotationDrawRects(annotation, rects))
-				);
-				return;
-			}
-		}
-
 		const overlayer = await this.getOverlayerModule();
 		draw((rects) =>
 			this.createCompositeAnnotationOverlay(
@@ -6098,9 +6059,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 			overlayer
 		);
 	}
-
-	private createConcealmentOverlay = (rects: unknown[]): SVGElement =>
-		this.annotationOverlayRenderer.createConcealmentOverlay(rects);
 
 	private createCommentMarkerOverlay(annotation: FoliateAnnotation, rects: unknown[]): SVGElement {
 		return this.annotationOverlayRenderer.createCommentMarkerOverlay(annotation, rects);
@@ -6562,13 +6520,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 	private findStoredHighlightByCfi(
 		cfiRange: string,
-		presentation?: ReaderHighlight["presentation"] | "temporary"
+		presentation?: "temporary"
 	): ReaderHighlight | null {
 		const highlight = this.findHighlightForAnnotationValue(cfiRange);
 		if (!highlight) {
-			return null;
-		}
-		if (presentation === "conceal" && highlight.presentation !== "conceal") {
 			return null;
 		}
 		if (presentation === "temporary" && !this.temporaryHighlightDataMap.has(
@@ -6862,7 +6817,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 			temporaryHighlight: input.temporaryHighlight,
 			currentStrikethroughPresentation: this.currentStrikethroughPresentation,
 			colorScheme: this.getCurrentColorScheme(),
-			temporarilyRevealedConcealmentKeys: this.temporarilyRevealedConcealmentTimers,
 		});
 		if (!input.sourceLocateFocusColor) {
 			return rendered;
@@ -6877,7 +6831,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 				annotation,
 				currentStrikethroughPresentation: this.currentStrikethroughPresentation,
 				colorScheme: this.getCurrentColorScheme(),
-				temporarilyRevealedConcealmentKeys: this.temporarilyRevealedConcealmentTimers,
 			}),
 		};
 	}
@@ -6896,10 +6849,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.resetTemporaryHighlightTimers();
 		this.resetSourceLocateFocusTimers();
 		this.sourceLocateFocusByCfiKey.clear();
-		for (const timer of this.temporarilyRevealedConcealmentTimers.values()) {
-			window.clearTimeout(timer);
-		}
-		this.temporarilyRevealedConcealmentTimers.clear();
 		this.highlightDataMap.clear();
 		this.temporaryHighlightDataMap.clear();
 		this.highlightAnchorResolutionByKey.clear();
@@ -7119,14 +7068,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 			totalPositions,
 			Math.max(1, Math.round((this.currentPosition.percent / 100) * totalPositions))
 		);
-	}
-
-	private getConcealmentPalette(): {
-		base: string;
-		stripe: string;
-		border: string;
-	} {
-		return readConcealmentPalette(this.getCurrentColorScheme());
 	}
 
 	private getObsidianStyleSource(): HTMLElement {

@@ -64,7 +64,6 @@ export {
 	isLegacyEpubProtocolName,
 	isSupportedEpubProtocolName,
 } from "./epub-runtime";
-export { EpubAnnotationService } from "./EpubAnnotationService";
 export { getEpubHighlightViewSnapshotService } from "./epub-highlight-view-snapshot-access";
 export { EpubHighlightViewSnapshotService } from "./EpubHighlightViewSnapshotService";
 export type {
@@ -81,8 +80,6 @@ export {
 } from "./EpubBookmarkService";
 export { EpubLinkService } from "./EpubLinkService";
 export { EpubLocationMigrationService } from "./EpubLocationMigrationService";
-export { EpubScreenshotService } from "./EpubScreenshotService";
-export { EpubCanvasService } from "./EpubCanvasService";
 export {
 	canOpenBookWithCurrentLicense,
 	canUseEpubCanvasExcerpts,
@@ -104,7 +101,6 @@ export {
 	PREMIUM_FEATURES,
 } from "./epub-premium";
 export * from "./types";
-export * from "./canvas-types";
 export {
 	createReaderTapZoneController,
 	createTapBurstTracker,

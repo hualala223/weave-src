@@ -14,7 +14,6 @@ export interface EpubBookmarkPersistedAnalytics {
 	updatedAt: number;
 	highlightsByColor: Partial<Record<string, number>>;
 	commentCount: number;
-	concealedCount: number;
 	referenceHeatMax?: number;
 	topChaptersByHighlights: EpubBookmarkChapterHighlightCount[];
 }
@@ -46,7 +45,6 @@ export interface EpubBookmarkAnalytics {
 	highlightsByColor: Partial<Record<string, number>>;
 	excerptNoteCount: number;
 	commentCount: number;
-	concealedCount: number;
 	referenceHeatMax?: number;
 	topChaptersByHighlights: EpubBookmarkChapterHighlightCount[];
 	linkedNotePaths: string[];

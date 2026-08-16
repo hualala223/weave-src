@@ -55,17 +55,10 @@ export function isEventWithinElement(event: Event, element: HTMLElement | null |
 export type EpubPagedNavigationContext = {
 	hasOpenBook: boolean;
 	flowMode: "paginated" | "scrolled";
-	paragraphModeEnabled: boolean;
-	screenshotModeActive: boolean;
 };
 
 export function canHandleEpubPagedNavigation(ctx: EpubPagedNavigationContext): boolean {
-	return (
-		ctx.hasOpenBook &&
-		ctx.flowMode === "paginated" &&
-		!ctx.paragraphModeEnabled &&
-		!ctx.screenshotModeActive
-	);
+	return ctx.hasOpenBook && ctx.flowMode === "paginated";
 }
 
 export function shouldIgnoreEpubReaderShortcut(

@@ -6,15 +6,11 @@
  */
 
 import type {
-	EpubAnnotationService,
 	EpubBook,
 	EpubExcerptSettings,
 	EpubHighlightViewSnapshotService,
 	EpubReaderEngine,
-	TocItem,
 } from "../services/epub";
-import type { EpubTocChapterMark, EpubTocChapterMarkMap } from "../services/epub/epub-toc-chapter-mark";
-import type { EpubTocChapterMarkSettings } from "../services/epub/epub-toc-chapter-mark-settings";
 import type { EpubDisplayHighlight } from "../services/epub/EpubHighlightViewSnapshotService";
 import type { FlashStyle, PaginationInfo } from "../services/epub";
 
@@ -30,7 +26,6 @@ export interface EpubNavigationRequest {
 export interface EpubSharedState {
 	filePath: string | null;
 	readerService: EpubReaderEngine | null;
-	annotationService: EpubAnnotationService | null;
 	highlightViewSnapshotService: EpubHighlightViewSnapshotService | null;
 	book: EpubBook | null;
 	canUseReadingProgress: boolean;
@@ -38,10 +33,6 @@ export interface EpubSharedState {
 	excerptSettings: EpubExcerptSettings | null;
 	annotationRevision: number;
 	bookmarkRevision: number;
-	tocChapterMarkRevision: number;
-	tocChapterMarkSettingsRevision: number;
-	tocChapterMarks: EpubTocChapterMarkMap;
-	tocChapterMarkSettings: EpubTocChapterMarkSettings;
 	progress: number;
 	chapterTitle: string;
 	chapterHref: string;
@@ -54,8 +45,6 @@ export interface EpubSharedState {
 	onDeleteHighlight: ((highlight: EpubDisplayHighlight) => Promise<boolean>) | null;
 	onSettingsClick: ((evt: MouseEvent) => void) | null;
 	onSwitchBook: ((filePath: string) => void) | null;
-	onSetTocChapterMark: ((item: TocItem, mark: EpubTocChapterMark | null) => Promise<void>) | null;
-	onSaveTocChapterMarkSettings: ((settings: EpubTocChapterMarkSettings) => Promise<void>) | null;
 	onNavigate: ((request: EpubNavigationRequest) => void) | null;
 }
 
@@ -65,7 +54,6 @@ type FilePathSubscriber = (filePath: string | null) => void;
 const EMPTY_STATE: EpubSharedState = {
 	filePath: null,
 	readerService: null,
-	annotationService: null,
 	highlightViewSnapshotService: null,
 	book: null,
 	canUseReadingProgress: false,
@@ -73,10 +61,6 @@ const EMPTY_STATE: EpubSharedState = {
 	excerptSettings: null,
 	annotationRevision: 0,
 	bookmarkRevision: 0,
-	tocChapterMarkRevision: 0,
-	tocChapterMarkSettingsRevision: 0,
-	tocChapterMarks: {},
-	tocChapterMarkSettings: {},
 	progress: 0,
 	chapterTitle: "",
 	chapterHref: "",
@@ -89,8 +73,6 @@ const EMPTY_STATE: EpubSharedState = {
 	onDeleteHighlight: null,
 	onSettingsClick: null,
 	onSwitchBook: null,
-	onSetTocChapterMark: null,
-	onSaveTocChapterMarkSettings: null,
 	onNavigate: null,
 };
 

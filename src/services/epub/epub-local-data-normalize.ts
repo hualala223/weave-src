@@ -1,7 +1,5 @@
 import { normalizePath } from "obsidian";
 import { normalizeChapterLocationFormat } from "../../utils/epub-chapter-location-label";
-import { unknownPlainText } from "../../utils/unknown-plain-text";
-import { normalizeCanvasExcerptAnchorsMap } from "./canvas-excerpt-anchor";
 import {
 	DEFAULT_EPUB_EXCERPT_SETTINGS,
 	type EpubExcerptSettings,
@@ -22,8 +20,6 @@ import type {
 	EpubSourceRegistryEntry,
 	EpubStoredBookDescriptor,
 } from "./epub-local-data-types";
-import { normalizeTocChapterMarkMap } from "./epub-toc-chapter-mark";
-import { normalizeTocChapterMarkSettings } from "./epub-toc-chapter-mark-settings";
 import {
 	DEFAULT_READER_SETTINGS,
 	getDefaultEpubReaderSettings,
@@ -33,7 +29,6 @@ import {
 import { normalizeReadingPaceStats } from "./reading-pace";
 import type {
 	BookMetadata,
-	ConcealedText,
 	EpubBook,
 	EpubLastOpenBookmark,
 	EpubReadingReferencePoint,
@@ -75,7 +70,6 @@ function normalizeRememberedFolderPath(folderPath?: string | null): string {
 export function normalizePluginUiMemory(value: unknown): EpubPluginUiMemory {
 	const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 	return {
-		lastSelectedIRDeckId: unknownPlainText(record.lastSelectedIRDeckId).trim(),
 		selectionQuickCreateLastFolder: normalizeRememberedFolderPath(
 			typeof record.selectionQuickCreateLastFolder === "string"
 				? record.selectionQuickCreateLastFolder
@@ -271,7 +265,6 @@ export function normalizeBookMetadata(value: unknown): BookMetadata | null {
 		series: typeof metadata.series === "string" ? metadata.series : undefined,
 		rights: typeof metadata.rights === "string" ? metadata.rights : undefined,
 		price: typeof metadata.price === "string" ? metadata.price : undefined,
-		coverImage: typeof metadata.coverImage === "string" ? metadata.coverImage : undefined,
 		wordCount: typeof metadata.wordCount === "number" ? metadata.wordCount : undefined,
 		chapterCount: typeof metadata.chapterCount === "number" ? metadata.chapterCount : 0,
 	};
@@ -302,26 +295,6 @@ export function normalizeStoredBookDescriptor(value: unknown): EpubStoredBookDes
 	};
 }
 
-export function normalizeConcealedTextMode(mode?: string): ConcealedText["mode"] {
-	switch (mode) {
-		default:
-			return "mask";
-	}
-}
-
-export function normalizeConcealedTexts(concealedTexts: unknown): ConcealedText[] {
-	if (!Array.isArray(concealedTexts)) {
-		return [];
-	}
-
-	return concealedTexts
-		.filter((item): item is ConcealedText => Boolean(item && typeof item === "object"))
-		.map((item) => ({
-			...item,
-			mode: normalizeConcealedTextMode(item.mode),
-		}));
-}
-
 export function normalizeLocalBookRecord(value: unknown): EpubReaderLocalBookRecord {
 	if (!value || typeof value !== "object") {
 		return {};
@@ -342,12 +315,6 @@ export function normalizeLocalBookRecord(value: unknown): EpubReaderLocalBookRec
 		normalized.readingReferencePoint = normalizeReadingReferencePoint(
 			record.readingReferencePoint
 		);
-	}
-	if (Object.prototype.hasOwnProperty.call(record, "concealedTexts")) {
-		normalized.concealedTexts = normalizeConcealedTexts(record.concealedTexts);
-	}
-	if (Object.prototype.hasOwnProperty.call(record, "tocChapterMarks")) {
-		normalized.tocChapterMarks = normalizeTocChapterMarkMap(record.tocChapterMarks);
 	}
 	return normalized;
 }
@@ -375,10 +342,7 @@ export function normalizeExcerptSettings(value: unknown): EpubExcerptSettings {
 				? settings.addCreationTime
 				: DEFAULT_EPUB_EXCERPT_SETTINGS.addCreationTime,
 		chapterLocationFormat: normalizeChapterLocationFormat(settings.chapterLocationFormat),
-		strikethroughDisplayMode:
-			settings.strikethroughDisplayMode === "conceal"
-				? "conceal"
-				: DEFAULT_EPUB_EXCERPT_SETTINGS.strikethroughDisplayMode,
+		strikethroughDisplayMode: DEFAULT_EPUB_EXCERPT_SETTINGS.strikethroughDisplayMode,
 		showStrikethroughInSidebar:
 			typeof settings.showStrikethroughInSidebar === "boolean"
 				? settings.showStrikethroughInSidebar
@@ -469,26 +433,6 @@ export function normalizeLocalReaderData(value: unknown): EpubReaderLocalDataFil
 	if (Object.prototype.hasOwnProperty.call(record, "sourceRegistry")) {
 		normalized.sourceRegistry = normalizeSourceRegistryEntries(record.sourceRegistry);
 	}
-	if (
-		record.canvasBindings &&
-		typeof record.canvasBindings === "object" &&
-		!Array.isArray(record.canvasBindings)
-	) {
-		normalized.canvasBindings = Object.fromEntries(
-			Object.entries(record.canvasBindings as Record<string, unknown>)
-				.map(
-					([bookId, canvasPath]) =>
-						[String(bookId || "").trim(), normalizePath(unknownPlainText(canvasPath).trim())] as const
-				)
-				.filter(([bookId, canvasPath]) => Boolean(bookId) && Boolean(canvasPath))
-		);
-	}
-	if (Object.prototype.hasOwnProperty.call(record, "canvasExcerptAnchors")) {
-		normalized.canvasExcerptAnchors = normalizeCanvasExcerptAnchorsMap(record.canvasExcerptAnchors);
-	}
-	if (Object.prototype.hasOwnProperty.call(record, "tocChapterMarkSettings")) {
-		normalized.tocChapterMarkSettings = normalizeTocChapterMarkSettings(record.tocChapterMarkSettings);
-	}
 
 	return normalized;
 }
@@ -497,9 +441,7 @@ export function hasRetainedLocalBookData(record: EpubReaderLocalBookRecord): boo
 	return Boolean(
 		record.state ||
 			Object.prototype.hasOwnProperty.call(record, "lastOpenBookmark") ||
-			Object.prototype.hasOwnProperty.call(record, "readingReferencePoint") ||
-			Object.prototype.hasOwnProperty.call(record, "concealedTexts") ||
-			(record.tocChapterMarks && Object.keys(record.tocChapterMarks).length > 0)
+			Object.prototype.hasOwnProperty.call(record, "readingReferencePoint")
 	);
 }
 

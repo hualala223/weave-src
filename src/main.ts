@@ -2,7 +2,6 @@ import "./utils/group-by-compat";
 import "./utils/blob-url-registry";
 import { Plugin, TAbstractFile, TFile, normalizePath } from "obsidian";
 
-import { EpubDataManagementModalObsidian } from "./components/epub/EpubDataManagementModalObsidian";
 import { DEFAULT_EPUB_BOOKMARK_FOLDER } from "./config/epub-user-vault-folders";
 import { isSupportedBookFile, isSupportedBookPath } from "./services/epub/book-format";
 import {
@@ -42,9 +41,6 @@ import {
 	registerEpubProtocolHandler,
 	registerEpubWorkspaceViews,
 } from "./services/epub/epub-plugin-support";
-import { registerCanvasExcerptAnchorCacheWarmup } from "./services/epub/canvas-excerpt-anchor";
-import { registerCanvasDirectionMenu } from "./services/epub/register-canvas-direction-menu";
-import { registerCanvasExcerptAnchorMenu } from "./services/epub/register-canvas-excerpt-anchor-menu";
 import { logger } from "./utils/logger";
 import { vaultStorage } from "./utils/vault-local-storage";
 import {
@@ -65,7 +61,6 @@ interface StandaloneEpubPluginSettings {
 	dataPath: string;
 	continuousReadingPositionAutoSaveEnabled: boolean;
 	continuousReadingPositionAutoSavePages: number;
-	lastSelectedIRDeckId: string;
 	selectionQuickCreateLastFolder: string;
 	sourceNavigationOpenInNewTab: boolean;
 }
@@ -81,14 +76,13 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 	continuousReadingPositionAutoSaveEnabled:
 		DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_ENABLED,
 	continuousReadingPositionAutoSavePages: DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
-	lastSelectedIRDeckId: "",
 	selectionQuickCreateLastFolder: "",
 	sourceNavigationOpenInNewTab: true,
 };
 
 type PersistedStandaloneEpubPluginSettings = Omit<
 	StandaloneEpubPluginSettings,
-	"lastSelectedIRDeckId" | "selectionQuickCreateLastFolder"
+	"selectionQuickCreateLastFolder"
 >;
 
 export type WeavePlugin = StandaloneEpubPlugin & Record<string, unknown>;
@@ -99,13 +93,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 	private epubStorageService: EpubStorageService | null = null;
 	private epubOfficialApiService: EpubExcerptOfficialApiService | null = null;
 	settings: StandaloneEpubPluginSettings = DEFAULT_STANDALONE_EPUB_SETTINGS;
-
-	/** Weave 宿主可通过 `app.plugins.getPlugin("weave-epub-reader")` 调用 */
-	openDataManagementModal(): void {
-		new EpubDataManagementModalObsidian(this.app, {
-			plugin: this,
-		}).open();
-	}
 
 	private syncDebugSettings(): void {
 		this.settings.enableDebugMode = this.settings.enableDebugMode === true;
@@ -151,18 +138,15 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 
 	private getPersistedSettings(): PersistedStandaloneEpubPluginSettings {
 		const {
-			lastSelectedIRDeckId,
 			selectionQuickCreateLastFolder,
 			...persistedSettings
 		} = this.settings;
-		void lastSelectedIRDeckId;
 		void selectionQuickCreateLastFolder;
 		return persistedSettings;
 	}
 
 	private getRememberedUiMemory() {
 		return {
-			lastSelectedIRDeckId: String(this.settings.lastSelectedIRDeckId || "").trim(),
 			selectionQuickCreateLastFolder: this.normalizeRememberedFolder(
 				this.settings.selectionQuickCreateLastFolder
 			),
@@ -173,7 +157,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		if (!value || typeof value !== "object") {
 			return false;
 		}
-		return ["lastSelectedIRDeckId", "selectionQuickCreateLastFolder"].some((key) => key in value);
+		return ["selectionQuickCreateLastFolder"].some((key) => key in value);
 	}
 
 	private normalizeLoadedSettings(raw: unknown): Partial<PersistedStandaloneEpubPluginSettings> {
@@ -200,7 +184,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.settings.selectionQuickCreateLastFolder = this.normalizeRememberedFolder(
 			this.settings.selectionQuickCreateLastFolder
 		);
-		this.settings.lastSelectedIRDeckId = String(this.settings.lastSelectedIRDeckId || "").trim();
 		const hasLocalUiMemory = await this.getEpubStorageService().hasPluginUiMemory();
 		const localUiMemory = await this.getEpubStorageService().loadPluginUiMemory();
 		this.settings.selectionQuickCreateLastFolder = this.normalizeRememberedFolder(
@@ -208,12 +191,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 				? localUiMemory.selectionQuickCreateLastFolder
 				: localUiMemory.selectionQuickCreateLastFolder || this.settings.selectionQuickCreateLastFolder
 		);
-		this.settings.lastSelectedIRDeckId =
-			String(
-				hasLocalUiMemory
-					? localUiMemory.lastSelectedIRDeckId
-					: localUiMemory.lastSelectedIRDeckId || this.settings.lastSelectedIRDeckId || ""
-			).trim();
 		this.syncDebugSettings();
 		this.syncBookshelfDisplaySettings();
 		this.syncReadingPositionAutoSaveSettings();
@@ -235,7 +212,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.settings.selectionQuickCreateLastFolder = this.normalizeRememberedFolder(
 			this.settings.selectionQuickCreateLastFolder
 		);
-		this.settings.lastSelectedIRDeckId = String(this.settings.lastSelectedIRDeckId || "").trim();
 		await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
 		await this.persistSettingsData();
 	}
@@ -255,7 +231,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.settings.selectionQuickCreateLastFolder = this.normalizeRememberedFolder(
 			this.settings.selectionQuickCreateLastFolder
 		);
-		this.settings.lastSelectedIRDeckId = String(this.settings.lastSelectedIRDeckId || "").trim();
 		await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
 		await this.persistSettingsData();
 	}
@@ -336,9 +311,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		});
 			const { EpubSettingsTab } = await import("./components/settings/EpubSettingsTab");
 		this.addSettingTab(new EpubSettingsTab(this.app, this));
-		registerCanvasExcerptAnchorMenu(this);
-		registerCanvasDirectionMenu(this);
-		registerCanvasExcerptAnchorCacheWarmup(this);
 		this.registerWorkspaceViews();
 		registerEpubMarkdownPostProcessor(this, this.app);
 		registerEpubProtocolHandler(this, this.app, "[Standalone EPUB Protocol]");

@@ -1,23 +1,10 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { Menu, Platform, setIcon } from 'obsidian';
+	import { setIcon } from 'obsidian';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
-	import { showWeaveMenuAtMouseEvent } from '../../utils/weave-owned-menu';
 	import type { TocItem } from '../../services/epub';
-	import type { EpubTocChapterMark, EpubTocChapterMarkMap } from '../../services/epub/epub-toc-chapter-mark';
-	import type { EpubTocChapterMarkSettings } from '../../services/epub/epub-toc-chapter-mark-settings';
-	import {
-		EPUB_TOC_CHAPTER_MARK_ORDER,
-		getExplicitTocChapterMark,
-		resolveTocChapterMarkDisplay,
-	} from '../../services/epub/epub-toc-chapter-mark';
-	import {
-		buildTocChapterMarkDefaultLabels,
-		resolveTocChapterMarkDefinitionMap,
-	} from '../../services/epub/epub-toc-chapter-mark-settings';
 import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/epub-toc-reading-position';
 	import EpubLoadingState from './EpubLoadingState.svelte';
-	import EpubTocMarkSettingsPopover from './EpubTocMarkSettingsPopover.svelte';
 
 	interface Props {
 		items: TocItem[];
@@ -25,12 +12,8 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 		loadFailed?: boolean;
 		activeHref?: string | null;
 		lastReadHref?: string | null;
-		chapterMarks?: EpubTocChapterMarkMap;
-		tocChapterMarkSettings?: EpubTocChapterMarkSettings;
 		autoScrollToActive?: boolean;
 		onNavigate: (href: string) => void;
-		onSetChapterMark?: (item: TocItem, mark: EpubTocChapterMark | null) => void | Promise<void>;
-		onSaveTocChapterMarkSettings?: (settings: EpubTocChapterMarkSettings) => void | Promise<void>;
 	}
 
 	let {
@@ -39,57 +22,12 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 		loadFailed = false,
 		activeHref = null,
 		lastReadHref = null,
-		chapterMarks = {},
-		tocChapterMarkSettings = {},
 		autoScrollToActive = true,
 		onNavigate,
-		onSetChapterMark,
-		onSaveTocChapterMarkSettings,
 	}: Props = $props();
-	let defaultMarkLabels = $derived(buildTocChapterMarkDefaultLabels(t));
-
-	let markDefinitionMap = $derived.by(() => {
-		void tocChapterMarkSettings;
-		void defaultMarkLabels;
-		return resolveTocChapterMarkDefinitionMap(tocChapterMarkSettings, defaultMarkLabels);
-	});
 
 	let tocListEl: HTMLDivElement | undefined = $state(undefined);
 	let lastAutoScrolledActiveHref = '';
-	let markSettingsOpen = $state(false);
-	let markSettingsAnchor = $state<{ x: number; y: number } | null>(null);
-
-	function resolvePopoverAnchor(event: MouseEvent | KeyboardEvent): { x: number; y: number } {
-		if (Platform.isMobile) {
-			const viewport = window.visualViewport;
-			const width = viewport?.width ?? window.innerWidth;
-			const height = viewport?.height ?? window.innerHeight;
-			const offsetLeft = viewport?.offsetLeft ?? 0;
-			const offsetTop = viewport?.offsetTop ?? 0;
-			return {
-				x: offsetLeft + width / 2,
-				y: offsetTop + Math.min(height * 0.22, 120),
-			};
-		}
-
-		const x = 'clientX' in event && Number.isFinite(event.clientX)
-			? event.clientX
-			: Math.round(window.innerWidth / 2);
-		const y = 'clientY' in event && Number.isFinite(event.clientY)
-			? event.clientY
-			: Math.round(window.innerHeight / 2);
-		return { x, y };
-	}
-
-	function openMarkSettingsPopover(event: MouseEvent | KeyboardEvent) {
-		markSettingsAnchor = resolvePopoverAnchor(event);
-		markSettingsOpen = true;
-	}
-
-	function closeMarkSettingsPopover() {
-		markSettingsOpen = false;
-		markSettingsAnchor = null;
-	}
 
 	function handleClick(item: TocItem) {
 		onNavigate(item.href);
@@ -100,58 +38,6 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 			event.preventDefault();
 			handleClick(item);
 		}
-	}
-
-	function showContextMenu(event: MouseEvent, item: FlatTocItem, itemIndex: number) {
-		if (!onSetChapterMark) {
-			return;
-		}
-
-		event.preventDefault();
-		const menu = new Menu();
-		const explicitMark = getExplicitTocChapterMark(item.href, chapterMarks);
-		const displayMark = resolveTocChapterMarkDisplay(flatItems, itemIndex, chapterMarks);
-
-		if (onSetChapterMark) {
-			menu.addItem((menuItem) => {
-				menuItem.setTitle('标记章节');
-				menuItem.setIcon('tag');
-				const markSubmenu = menuItem.setSubmenu();
-
-				for (const mark of EPUB_TOC_CHAPTER_MARK_ORDER) {
-					markSubmenu.addItem((subItem) => {
-						subItem.setTitle(markDefinitionMap.get(mark)?.label ?? mark);
-						subItem.setChecked(displayMark === mark);
-						subItem.onClick(() => {
-							void onSetChapterMark?.(item, mark);
-						});
-					});
-				}
-
-				markSubmenu.addItem((subItem) => {
-					subItem.setTitle('清除标记');
-					subItem.setIcon('x');
-					subItem.setDisabled(!explicitMark);
-					subItem.onClick(() => {
-						void onSetChapterMark?.(item, null);
-					});
-				});
-
-				markSubmenu.addSeparator();
-				if (onSaveTocChapterMarkSettings) {
-					markSubmenu.addItem((subItem) => {
-						subItem.setTitle('圆点语义设置');
-						subItem.setIcon('settings-2');
-						subItem.onClick((evt) => {
-							openMarkSettingsPopover(evt);
-						});
-					});
-				}
-			});
-		}
-
-
-		showWeaveMenuAtMouseEvent(menu, event);
 	}
 
 	function isLastReadItem(item: FlatTocItem): boolean {
@@ -188,20 +74,6 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 			return `上次阅读：${item.label}`;
 		}
 		return undefined;
-	}
-
-	function resolveMarkTitle(mark: EpubTocChapterMark | null): string | undefined {
-		if (!mark) {
-			return undefined;
-		}
-		return markDefinitionMap.get(mark)?.label;
-	}
-
-	function resolveMarkColor(mark: EpubTocChapterMark | null): string | undefined {
-		if (!mark) {
-			return undefined;
-		}
-		return markDefinitionMap.get(mark)?.color;
 	}
 
 	let flatItems = $derived(flattenTocItems(items));
@@ -247,19 +119,12 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 			{#each flatItems as item, itemIndex (item.id)}
 				{@const isActive = isActiveItem(item)}
 				{@const isLastRead = isLastReadItem(item)}
-				{@const chapterMark = resolveTocChapterMarkDisplay(flatItems, itemIndex, chapterMarks)}
-				{@const markColor = resolveMarkColor(chapterMark)}
 				<div
 					class="epub-toc-item"
 					class:active={isActive}
 					class:is-last-read={isLastRead}
-					class:toc-mark-important={chapterMark === 'important'}
-					class:toc-mark-question={chapterMark === 'question'}
-					class:toc-mark-mastered={chapterMark === 'mastered'}
-					class:toc-mark-incremental={chapterMark === 'incremental'}
 					style={`--toc-depth:${item.depth};`}
 					onclick={() => handleClick(item)}
-					oncontextmenu={(event) => showContextMenu(event, item, itemIndex)}
 					onkeydown={(event) => handleKeydown(event, item)}
 					role="button"
 					tabindex="0"
@@ -268,13 +133,7 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 					data-last-read={isLastRead ? 'true' : undefined}
 					data-item-id={item.id}
 				>
-					<span
-						class="toc-bullet"
-						class:toc-mark-custom={Boolean(chapterMark && markColor)}
-						style={markColor ? `--toc-mark-color:${markColor};` : undefined}
-						title={resolveMarkTitle(chapterMark)}
-						aria-hidden="true"
-					></span>
+					<span class="toc-bullet" aria-hidden="true"></span>
 					<span class="toc-title">{item.label}</span>
 					<span class="toc-trailing">
 						{#if isActive}
@@ -305,16 +164,6 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 		</div>
 	{/if}
 </div>
-
-<EpubTocMarkSettingsPopover
-	open={markSettingsOpen}
-	anchor={markSettingsAnchor}
-	settings={tocChapterMarkSettings}
-	onClose={closeMarkSettingsPopover}
-	onSave={async (nextSettings) => {
-		await onSaveTocChapterMarkSettings?.(nextSettings);
-	}}
-/>
 
 <style>
 	.epub-toc-panel {
@@ -375,15 +224,7 @@ import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/
 		background: color-mix(in srgb, var(--text-faint) 72%, transparent);
 	}
 
-	.toc-bullet.toc-mark-custom {
-		background: var(--toc-mark-color);
-	}
-
-	.epub-toc-item.active:not(.toc-mark-important):not(.toc-mark-question):not(.toc-mark-mastered):not(.toc-mark-incremental) .toc-bullet {
-		background: var(--interactive-accent);
-	}
-
-	.epub-toc-item.is-last-read:not(.toc-mark-important):not(.toc-mark-question):not(.toc-mark-mastered):not(.toc-mark-incremental) .toc-bullet {
+	.epub-toc-item.active .toc-bullet {
 		background: var(--interactive-accent);
 	}
 

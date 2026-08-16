@@ -23,13 +23,6 @@ describe("buildEpubBookmarkAnalytics", () => {
 					commentText: "重点",
 					createdTime: 30,
 				},
-				{
-					cfiRange: "epubcfi(/6/6)",
-					color: "mask",
-					text: "隐藏片段",
-					presentation: "conceal",
-					createdTime: 10,
-				},
 			],
 			1000
 		);
@@ -38,20 +31,19 @@ describe("buildEpubBookmarkAnalytics", () => {
 		expect(analytics.highlightsByColor).toEqual({ yellow: 1, green: 1 });
 		expect(analytics.excerptNoteCount).toBe(2);
 		expect(analytics.commentCount).toBe(1);
-		expect(analytics.concealedCount).toBe(1);
 		expect(analytics.referenceHeatMax).toBe(3);
 		expect(analytics.topChaptersByHighlights).toHaveLength(2);
 		expect(analytics.recentExcerpts?.[0]?.preview).toContain("睡眠巩固记忆");
 	});
 
-	it("treats strikethrough-in-conceal-mode like concealed highlights", () => {
+	it("skips strikethrough highlights hidden in sidebar by default", () => {
 		const analytics = buildEpubBookmarkAnalytics(
 			[
 				{
 					cfiRange: "epubcfi(/6/2)",
 					color: "yellow",
 					style: "strikethrough",
-					text: "应计入 concealed",
+					text: "删除线内容",
 				},
 				{
 					cfiRange: "epubcfi(/6/4)",
@@ -60,11 +52,10 @@ describe("buildEpubBookmarkAnalytics", () => {
 				},
 			],
 			1000,
-			{ strikethroughDisplayMode: "conceal", showStrikethroughInSidebar: false }
+			{ showStrikethroughInSidebar: false }
 		);
 
 		expect(analytics.highlightCount).toBe(1);
-		expect(analytics.concealedCount).toBe(1);
 		expect(analytics.highlightsByColor).toEqual({ green: 1 });
 	});
 });
@@ -77,7 +68,6 @@ describe("parseEpubBookmarkAnalytics", () => {
 				highlightsByColor: { yellow: 1 },
 				excerptNoteCount: 0,
 				commentCount: 0,
-				concealedCount: 0,
 				topChaptersByHighlights: [],
 				linkedNotePaths: [],
 			},
@@ -104,7 +94,6 @@ describe("parseEpubBookmarkAnalytics", () => {
 			highlightsByColor: {},
 			excerptNoteCount: 1,
 			commentCount: 0,
-			concealedCount: 0,
 			topChaptersByHighlights: [],
 			linkedNotePaths: [],
 			recentExcerpts: undefined,
@@ -123,7 +112,6 @@ describe("readEpubBookmarkAnalyticsFromFrontmatter", () => {
 				highlightsByColor: { yellow: 1 },
 				excerptNoteCount: 0,
 				commentCount: 0,
-				concealedCount: 0,
 				topChaptersByHighlights: [],
 				linkedNotePaths: [],
 			},

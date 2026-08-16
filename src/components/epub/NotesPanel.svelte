@@ -11,7 +11,6 @@
 		type EpubDisplayHighlight,
 		type EpubHighlightRenderSnapshot,
 	} from '../../services/epub/EpubHighlightViewSnapshotService';
-	import type { EpubAnnotationService } from '../../services/epub';
 	import EpubAnnotationCard from './EpubAnnotationCard.svelte';
 	import EpubLoadingState from './EpubLoadingState.svelte';
 
@@ -30,7 +29,6 @@
 		app: App;
 		book: EpubBook | null;
 		readerService?: EpubReaderEngine | null;
-		annotationService: EpubAnnotationService;
 		snapshotService?: EpubHighlightViewSnapshotService | null;
 		filePath?: string;
 		highlightRevision?: number;
@@ -56,7 +54,6 @@
 		app,
 		book,
 		readerService = null,
-		annotationService,
 		snapshotService = null,
 		filePath,
 		highlightRevision = 0,
@@ -614,7 +611,6 @@
 				bookId: expectedBook.id,
 				filePath: expectedFilePath ?? '',
 				showStrikethroughHighlights: showStrikethrough,
-				annotationService,
 				readerService,
 				highlightRevision,
 			});
@@ -649,7 +645,6 @@
 				bookId: expectedBook.id,
 				filePath: expectedFilePath ?? '',
 				showStrikethroughHighlights: showStrikethrough,
-				annotationService,
 				readerService,
 				highlightRevision,
 			});
@@ -758,7 +753,6 @@
 			const revalidatedSnapshot = snapshotService
 				? await snapshotService.revalidateSnapshot({
 					...snapshotContext,
-					annotationService,
 					readerService,
 					highlightRevision,
 				})
@@ -792,7 +786,7 @@
 
 	$effect(() => {
 		const contextKey = [book?.id ?? '', filePath ?? '', String(highlightRevision), showStrikethroughHighlights ? '1' : '0'].join('::');
-		if (book && annotationService) {
+		if (book) {
 			if (contextKey === lastLoadContextKey) {
 				return;
 			}

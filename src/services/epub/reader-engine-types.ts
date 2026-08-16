@@ -17,7 +17,7 @@ import type { ReaderTapEvent } from "./reader-tap-zones";
 export type EpubReaderEngineType = "foliate";
 
 export type FlashStyle = "pulse" | "highlight" | "none";
-export type ReaderHighlightPresentation = "highlight" | "conceal";
+export type ReaderHighlightPresentation = "highlight";
 
 export interface HighlightSourceLocator {
 	sourceFile: string;
@@ -311,7 +311,6 @@ export interface EpubReaderEngine {
 	refreshHighlights?(): Promise<void>;
 	addHighlight(highlight: ReaderHighlight): void;
 	addTemporaryHighlight(highlight: ReaderHighlightInput, durationMs?: number): void;
-	temporarilyRevealConcealedText?(cfiRange: string, durationMs?: number): void;
 	removeHighlight(cfiRange: string): void;
 	removeHighlightByIdentityKey(identityKey: string): void;
 	destroy(): void;

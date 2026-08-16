@@ -5,7 +5,6 @@
  	import { logger } from '../../utils/logger';
 	import { findOpenEpubLeaf } from '../../utils/epub-leaf-utils';
 	import { EPUB_RUNTIME, type EpubBook, type TocItem } from '../../services/epub';
-	import type { EpubTocChapterMark } from '../../services/epub/epub-toc-chapter-mark';
 	import { EpubBookmarkService, type EpubBookmarkRecord } from '../../services/epub/EpubBookmarkService';
   	import { epubActiveDocumentStore } from '../../stores/epub-active-document-store';
   	import type { EpubNavigationRequest, EpubSharedState } from '../../stores/epub-active-document-store';
@@ -392,7 +391,6 @@
 
 	async function loadHighlightCount(
 		book: EpubBook,
-		annotationService: NonNullable<EpubSharedState['annotationService']>,
 		highlightViewSnapshotService: EpubSharedState['highlightViewSnapshotService'] | undefined,
 		filePath?: string | null
 	) {
@@ -416,7 +414,6 @@
 					bookId: book.id,
 					filePath: filePath ?? '',
 					showStrikethroughHighlights: Boolean(sharedState?.excerptSettings?.showStrikethroughInSidebar),
-					annotationService,
 					readerService: sharedState?.readerService ?? undefined,
 					highlightRevision: sharedState?.annotationRevision ?? 0,
 				})
@@ -528,34 +525,6 @@
 		}
 	}
 
-	async function handleTocSetChapterMark(item: TocItem, mark: EpubTocChapterMark | null) {
-		if (!sharedState?.onSetTocChapterMark) {
-			return;
-		}
-
-		try {
-			await ensureEpubLeafActive();
-			await sharedState.onSetTocChapterMark(item, mark);
-		} catch (error) {
-			logger.error('[EpubGlobalSidebar] Failed to update toc chapter mark:', error);
-			new Notice('章节标记保存失败，请重试');
-		}
-	}
-
-	async function handleTocSaveChapterMarkSettings(settings: EpubTocChapterMarkSettings) {
-		if (!sharedState?.onSaveTocChapterMarkSettings) {
-			return;
-		}
-
-		try {
-			await ensureEpubLeafActive();
-			await sharedState.onSaveTocChapterMarkSettings(settings);
-		} catch (error) {
-			logger.error('[EpubGlobalSidebar] Failed to save toc chapter mark settings:', error);
-			new Notice('圆点语义设置保存失败，请重试');
-		}
-	}
-
 	async function handleHighlightNavigate(
 		cfi: string,
 		text?: string,
@@ -640,7 +609,6 @@
 
 	$effect(() => {
 		const book = sharedState?.book;
-		const annotationService = sharedState?.annotationService;
 		const highlightViewSnapshotService = sharedState?.highlightViewSnapshotService;
 		const filePath = sharedState?.filePath;
 		const canUseExcerptNotes = sharedState?.canUseExcerptNotes ?? false;
@@ -650,7 +618,7 @@
 
 		highlightRevision;
 
-		if (!canUseExcerptNotes || !book || !annotationService) {
+		if (!canUseExcerptNotes || !book) {
 			highlightCountLoadToken += 1;
 			highlightCount = 0;
 			lastHighlightCountContextKey = '';
@@ -659,7 +627,7 @@
 
 		if (highlightContextKey !== lastHighlightCountContextKey) {
 			lastHighlightCountContextKey = highlightContextKey;
-			void loadHighlightCount(book, annotationService, highlightViewSnapshotService, filePath);
+			void loadHighlightCount(book, highlightViewSnapshotService, filePath);
 		}
 	});
 
@@ -939,12 +907,8 @@
 						loadFailed={tocLoadFailed && !tocLoading}
 						activeHref={activeTocHref}
 						lastReadHref={lastReadTocHref}
-						chapterMarks={sharedState?.tocChapterMarks ?? {}}
-						tocChapterMarkSettings={sharedState?.tocChapterMarkSettings ?? {}}
 						autoScrollToActive={activeTab === 'toc' && !isSearchActive}
 						onNavigate={handleTocNavigate}
-						onSetChapterMark={sharedState?.onSetTocChapterMark ? handleTocSetChapterMark : undefined}
-						onSaveTocChapterMarkSettings={sharedState?.onSaveTocChapterMarkSettings ? handleTocSaveChapterMarkSettings : undefined}
 					/>
 				{:else if activeTab === 'bookmarks'}
 					<EpubBookmarksPanel
@@ -955,12 +919,10 @@
 						onNavigate={handleHighlightNavigate}
 					/>
 				{:else if activeTab === 'highlights'}
-					{#if sharedState.annotationService}
-						<NotesPanel
-							{app}
+					<NotesPanel
+						{app}
 							book={sharedState.book}
 							readerService={sharedState.readerService ?? undefined}
-							annotationService={sharedState.annotationService}
 							snapshotService={sharedState.highlightViewSnapshotService ?? undefined}
 							filePath={sharedState.filePath ?? undefined}
 							highlightRevision={sharedState.annotationRevision}
@@ -972,7 +934,6 @@
 							bind:searchMeta={highlightSearchMeta}
 							onNavigate={handleHighlightNavigate}
 						/>
-					{/if}
 				{/if}
 			</div>
 		{/if}

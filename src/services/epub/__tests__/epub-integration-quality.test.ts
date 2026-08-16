@@ -32,11 +32,9 @@ import {
 import { matchesBookshelfSearchQuery } from "../bookshelf-search-match";
 import { parseSearchQuery } from "../../../utils/search-parser";
 import {
-	buildAnnotationRenderSignature,
 	composeVisibleAnnotationHighlight,
 	createRenderedFoliateAnnotation,
 	isSameFoliateAnnotation,
-	shouldRenderAnnotationAsConceal,
 } from "../reader-annotation-model";
 import {
 	buildHighlightClickInfo,
@@ -47,7 +45,6 @@ import {
 	hasUsableOverlayRects,
 } from "../reader-highlight-geometry";
 import { resolveHighlightOverlayRects } from "../reader-highlight-overlay-rects";
-import { getReaderHighlightIdentityKey } from "../highlight/highlight-identity";
 import {
 	orderVisibleHighlightFrames,
 	resolveHighlightSectionIndexForView,
@@ -141,7 +138,6 @@ describe("reader-annotation-model", () => {
 			temporaryHighlight: { ...persistent, color: "blue", temporary: true },
 			currentStrikethroughPresentation: "highlight",
 			colorScheme: "light",
-			temporarilyRevealedConcealmentKeys: new Set(),
 		});
 		expect(rendered.annotation.color).toBe("blue");
 		expect(rendered.annotation.focusColor).toBeUndefined();
@@ -155,34 +151,6 @@ describe("reader-annotation-model", () => {
 					color: "blue",
 					temporary: true,
 				})
-			)
-		).toBe(true);
-	});
-
-	it("tracks concealment and temporary reveal in render signatures", () => {
-		const concealed = composeVisibleAnnotationHighlight({
-			...persistent,
-			presentation: "conceal",
-		});
-		const concealedKey = getReaderHighlightIdentityKey(concealed);
-		const hiddenSignature = buildAnnotationRenderSignature({
-			annotation: concealed,
-			currentStrikethroughPresentation: "highlight",
-			colorScheme: "dark",
-			temporarilyRevealedConcealmentKeys: new Set(),
-		});
-		const revealedSignature = buildAnnotationRenderSignature({
-			annotation: concealed,
-			currentStrikethroughPresentation: "highlight",
-			colorScheme: "dark",
-			temporarilyRevealedConcealmentKeys: new Set([concealedKey]),
-		});
-		expect(hiddenSignature).toContain("concealment:concealed");
-		expect(revealedSignature).toContain("concealment:revealed");
-		expect(
-			shouldRenderAnnotationAsConceal(
-				{ ...persistent, style: "strikethrough" },
-				"conceal"
 			)
 		).toBe(true);
 	});
@@ -232,15 +200,12 @@ describe("reader-annotation-overlayer", () => {
 		const renderer = new ReaderAnnotationOverlayRenderer({
 			resolveHighlightTint: () => "rgb(37, 99, 235)",
 			getObsidianCSSVar: (_name, fallback) => fallback,
-			getConcealmentPalette: () => ({ base: "#111", stripe: "#222", border: "#333" }),
 			onCommentMarkerClick,
 			onReferenceBadgeClick: vi.fn(),
 		});
 		const rects = [{ left: 10, top: 12, width: 24, height: 10 }];
 		const styled = renderer.createStyledAnnotationOverlay(rects, "underline", "blue");
 		expect(styled.tagName.toLowerCase()).toBe("g");
-		const concealed = renderer.createConcealmentOverlay(rects);
-		expect(concealed.querySelectorAll("rect").length).toBeGreaterThan(1);
 		const marker = renderer.createCommentMarkerOverlay(
 			{
 				cfiRange: "cfi",

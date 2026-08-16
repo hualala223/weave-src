@@ -35,8 +35,6 @@ describe("epub-reader-keyboard-guards", () => {
 			canHandleEpubPagedNavigation({
 				hasOpenBook: true,
 				flowMode: "paginated",
-				paragraphModeEnabled: false,
-				screenshotModeActive: false,
 			})
 		).toBe(true);
 
@@ -44,17 +42,13 @@ describe("epub-reader-keyboard-guards", () => {
 			canHandleEpubPagedNavigation({
 				hasOpenBook: true,
 				flowMode: "scrolled",
-				paragraphModeEnabled: false,
-				screenshotModeActive: false,
 			})
 		).toBe(false);
 
 		expect(
 			canHandleEpubPagedNavigation({
-				hasOpenBook: true,
+				hasOpenBook: false,
 				flowMode: "paginated",
-				paragraphModeEnabled: true,
-				screenshotModeActive: false,
 			})
 		).toBe(false);
 	});

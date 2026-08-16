@@ -5,7 +5,6 @@ export interface EpubLocalReaderDataSkeleton {
 	updatedAt: number;
 	bookCatalogStoredLocally?: boolean;
 	readerSettings?: Record<string, unknown>;
-	canvasBindings?: Record<string, string>;
 	books?: Record<string, unknown>;
 }
 
@@ -15,7 +14,6 @@ export function createEmptyEpubLocalReaderData(): EpubLocalReaderDataSkeleton {
 		updatedAt: 0,
 		bookCatalogStoredLocally: false,
 		readerSettings: {},
-		canvasBindings: {},
 		books: {},
 	};
 }

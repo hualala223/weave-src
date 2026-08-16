@@ -21,7 +21,6 @@ type PluginSettingsOwner = {
 export type CompatiblePluginSettings = {
 	weaveParentFolder?: string;
 	selectionQuickCreateLastFolder?: string;
-	lastSelectedIRDeckId?: string;
 	bookmarkFolder?: string;
 	license?: Partial<LicenseInfo>;
 	licenseState?: Partial<LicenseStore>;

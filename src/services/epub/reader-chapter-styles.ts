@@ -2,7 +2,6 @@ import type { EpubWidthMode } from "./types";
 import {
 	READER_HIGHLIGHT_BLEND_MODE_MAP,
 	READER_HIGHLIGHT_OPACITY_MAP,
-	readConcealmentPalette,
 	readObsidianColorScheme,
 	readObsidianCssVar,
 	readObsidianFontStack,
@@ -34,7 +33,6 @@ export function buildReaderChapterStyles(input: ReaderChapterStylesInput): strin
 	const fontFamily = readObsidianFontStack(input.styleSource);
 	const monospaceFontFamily = readObsidianMonospaceFontStack(input.styleSource);
 	const fontSize = readObsidianTextFontSize(input.styleSource);
-	const concealment = readConcealmentPalette(colorScheme);
 	const highlightOpacity = READER_HIGHLIGHT_OPACITY_MAP[colorScheme];
 	const highlightBlendMode = READER_HIGHLIGHT_BLEND_MODE_MAP[colorScheme];
 	const letterSpacing = `${input.currentLetterSpacing.toFixed(3)}em`;
@@ -119,10 +117,5 @@ body :is(img, svg, video, canvas) {
 body ::selection {
 	background: ${selectionBackground} !important;
 	color: ${selectionTextColor} !important;
-}
-body .weave-foliate-concealment {
-	fill: ${concealment.base};
-	stroke: ${concealment.border};
-	stroke-width: 1;
 }${darkModeOverrides}`;
 }

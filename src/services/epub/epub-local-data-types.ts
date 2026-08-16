@@ -4,16 +4,12 @@ import type { EpubExcerptSettings } from "./epub-excerpt-settings";
 import type { EpubReaderSettingsDeviceKind } from "./reader-settings";
 import type {
 	BookMetadata,
-	ConcealedText,
 	EpubBook,
 	EpubLastOpenBookmark,
 	EpubReadingReferencePoint,
 	EpubReaderSettings,
 } from "./types";
-import type { EpubTocChapterMarkMap } from "./epub-toc-chapter-mark";
-import type { EpubTocChapterMarkSettings } from "./epub-toc-chapter-mark-settings";
 export interface EpubPluginUiMemory {
-	lastSelectedIRDeckId: string;
 	selectionQuickCreateLastFolder: string;
 	bookshelfSearchQuery: string;
 }
@@ -58,14 +54,6 @@ export interface EpubReaderLocalBookRecord {
 	state?: Pick<EpubBook, "currentPosition" | "readingStats">;
 	lastOpenBookmark?: EpubLastOpenBookmark | null;
 	readingReferencePoint?: EpubReadingReferencePoint | null;
-	concealedTexts?: ConcealedText[];
-	tocChapterMarks?: EpubTocChapterMarkMap;
-}
-
-export interface CanvasExcerptAnchorRecord {
-	lockedNodeId: string | null;
-	lastCreatedNodeId: string | null;
-	layoutDirection?: "down" | "right" | "up" | "left";
 }
 
 export interface EpubReaderLocalDataFile {
@@ -79,8 +67,5 @@ export interface EpubReaderLocalDataFile {
 	bookshelfMembership?: EpubBookshelfMembershipEntry[];
 	bookshelfPlaylists?: EpubBookshelfPlaylist[];
 	sourceRegistry?: EpubSourceRegistryEntry[];
-	canvasBindings?: Record<string, string>;
-	canvasExcerptAnchors?: Record<string, CanvasExcerptAnchorRecord>;
 	books?: Record<string, EpubReaderLocalBookRecord>;
-	tocChapterMarkSettings?: EpubTocChapterMarkSettings;
 }
