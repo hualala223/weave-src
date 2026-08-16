@@ -525,10 +525,6 @@
 		return componentDisposed || loadToken !== activeBookLoadToken;
 	}
 
-	function normalizeTrackedVaultPath(path?: string | null): string {
-		return normalizePath(String(path || '').trim());
-	}
-
 	function rememberHighlightSourcePath(_path?: string | null) {
 		// 已断开：不再追踪摘录源文件路径（高亮只由 local-storage.json 驱动）。
 	}
