@@ -45,8 +45,7 @@
 	import { showObsidianChoice, showObsidianConfirm } from '../../utils/obsidian-confirm';
 	import { UnifiedThemeManager } from '../../utils/theme-detection';
 	import { getSourceLocateOverlayService } from '../../services/ui/SourceLocateOverlayService';
-	import { getNavigationHub } from '../../services/navigation/navigation-hub-access';
-	import type { BookLocateIntent, NavigationIntent, PendingLocateState } from '../../services/navigation/navigation-intent';
+	import type { BookLocateIntent, PendingLocateState } from '../../services/navigation/navigation-intent';
 	import { getBookSessionManager } from '../../services/epub/session/book-session-manager-access';
 	import type { BookSession } from '../../services/epub/session/BookSessionManager';
 	import {
@@ -62,7 +61,6 @@
 	import { resolveReadingViewportLockTarget } from '../../utils/mobile-reading-viewport-lock';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import { shouldDismissToolbarOnPointerDown } from './toolbar-positioning';
-	import { buildEpubMarkdownLocateCandidates } from '../../services/ui/source-locate-candidates';
 	import { generateBlockID } from '../../services/identifier/WeaveIDGenerator';
 	import {
 		normalizeContinuousReadingPositionAutoSaveEnabled,
@@ -2327,41 +2325,6 @@
 			commentEditorSaving = false;
 		}
 	}
-
-	async function navigateExternalSource(intent: NavigationIntent): Promise<boolean> {
-		if (!ensureBookSourceLocationAccess(app, '双向链接定位是高级功能，请激活许可证后使用')) {
-			return false;
-		}
-		const result = await getNavigationHub(app).navigate({
-			...intent,
-			policy: { reuseLeaf: true, focus: true, ...intent.policy },
-		});
-		if (!result.success) {
-			new Notice('未找到关联笔记');
-			return false;
-		}
-		if (intent.kind === 'json') {
-			new Notice('已打开摘录来源文件，请在文件中搜索该高亮');
-		}
-		return true;
-	}
-
-	async function navigateToMarkdownCallout(sourceFile: string, encodedCfi: string, rawCfi: string, excerptText?: string, createdTime?: number) {
-		const locateCandidates = buildEpubMarkdownLocateCandidates({
-			epubFilePath: filePath,
-			encodedCfi,
-			rawCfi,
-			excerptText,
-			createdTime,
-		});
-		await navigateExternalSource({
-			kind: 'markdown',
-			resourcePath: sourceFile,
-			locate: { candidates: locateCandidates },
-			context: { epubFilePath: filePath },
-		});
-	}
-
 
 	async function handleHighlightCopyText(info: HighlightClickInfo) {
 		const link = linkService.buildEpubLink(

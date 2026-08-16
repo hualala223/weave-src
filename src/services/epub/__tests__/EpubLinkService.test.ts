@@ -231,18 +231,7 @@ describe('EpubLinkService legacy link compatibility', () => {
 		const canonical = `[百年孤独](obsidian://${EPUB_RUNTIME.protocol.primaryName}?file=Books%2Fdemo.epub&cfi=epubcfi(/6/2)&chapter=8&sid=epubsrc-demo)`;
 
 		expect(EpubLinkService.isLegacyProtocolHref(legacy)).toBe(true);
-		expect(EpubLinkService.isLegacyEpubLinkMarkup(legacy)).toBe(true);
 		expect(EpubLinkService.isLegacyProtocolHref(canonical)).toBe(false);
-		expect(EpubLinkService.isLegacyEpubLinkMarkup(canonical)).toBe(false);
-	});
-
-	it('does not migrate canonical protocol links to wikilinks', () => {
-		const service = new EpubLinkService({} as any);
-		const canonical = `[百年孤独](obsidian://${EPUB_RUNTIME.protocol.primaryName}?file=Books%2Fdemo.epub&cfi=epubcfi(/6/2)&chapter=8&sid=epubsrc-demo)`;
-		const migrated = service.migrateLegacyEpubLinksInContent(`前文 ${canonical} 后文`);
-
-		expect(migrated.changed).toBe(false);
-		expect(migrated.content).toBe(`前文 ${canonical} 后文`);
 	});
 
 	it('uses canonical vault paths for portable links and relative paths only when a source note is provided', () => {
@@ -447,80 +436,6 @@ describe('EpubLinkService legacy link compatibility', () => {
 		)).toMatch(
 			/^> \[!EPUB\|purple\+strikethrough\] \[\[Books\/demo\.epub#weave-cfi=readium:hidden(?:&[^|]+)*\|demo\]\] \[第五章\]\n> ~~Hide me~~\n$/
 		);
-	});
-
-	it('detects and migrates legacy epub links inside content', () => {
-		const service = new EpubLinkService({} as any);
-		const content = [
-			'前文 [[Books/demo.epub#weave-cfi=readium%3Aabc&chapter=3&text=Hello%20world|摘录]]',
-			'[EPUB来源](obsidian://weave-epub?vault=Vault&file=Books%2Fdemo.epub&cfi=epubcfi(/6/2)&text=Hello)',
-			'后文 [[Books/demo.epub#weave-cfi=readium:xyz|demo]]',
-		].join('\n');
-
-		expect(
-			EpubLinkService.isLegacyEpubLinkMarkup(
-				'[[Books/demo.epub#weave-cfi=readium%3Aabc&chapter=3&text=Hello%20world|摘录]]'
-			)
-		).toBe(true);
-		expect(
-			EpubLinkService.isLegacyEpubLinkMarkup('[[Books/demo.epub#weave-cfi=readium:xyz|demo]]')
-		).toBe(false);
-
-		const migrated = service.migrateLegacyEpubLinksInContent(content);
-		expect(migrated.changed).toBe(true);
-		expect(migrated.updatedLinks).toBe(2);
-		const lines = migrated.content.split('\n');
-		expect(lines[0]).toMatch(/^前文 \[\[Books\/demo\.epub#weave-cfi=readium:abc(?:&[^|]+)*\|demo\]\]$/);
-		expect(lines[0]).not.toContain('&text=');
-		expect(lines[1]).toMatch(/^\[\[Books\/demo\.epub#weave-cfi=epubcfi\(\/6\/2\)(?:&[^|]+)*\|demo\]\]$/);
-		expect(lines[1]).not.toContain('&text=');
-		expect(lines[2]).toBe('后文 [[Books/demo.epub#weave-cfi=readium:xyz|demo]]');
-		expect(EpubLinkService.parseLinkMarkup(lines[0].replace(/^前文 /, ''))).toEqual({
-			filePath: 'Books/demo.epub',
-			cfi: 'readium:abc',
-			text: '',
-			chapter: undefined,
-			sourceId: undefined,
-			excerptId: undefined,
-		});
-		expect(EpubLinkService.parseLinkMarkup(lines[1])).toEqual({
-			filePath: 'Books/demo.epub',
-			cfi: 'epubcfi(/6/2)',
-			text: '',
-			chapter: undefined,
-			sourceId: undefined,
-			excerptId: undefined,
-		});
-	});
-
-	it('enriches existing epub links with source ids without changing the locator', async () => {
-		const writtenFiles = new Map<string, string>();
-		const service = new EpubLinkService({} as any);
-
-		const result = await service.enrichEpubLinksWithSourceIdsInContent(
-			'前文 [[Books/demo.epub#weave-cfi=readium:abc|demo]] 后文'
-		);
-
-		expect(result.changed).toBe(true);
-		expect(result.updatedLinks).toBe(1);
-		expect(result.content).toMatch(/\[\[Books\/demo\.epub#weave-cfi=readium:abc&sid=epubsrc-/);
-	});
-
-	it('migrates legacy protocol epub links to new wikilinks before backfilling source ids', async () => {
-		const writtenFiles = new Map<string, string>();
-		const service = new EpubLinkService({} as any);
-
-		const result = await service.enrichEpubLinksWithSourceIdsInContent(
-			'[EPUB来源](obsidian://weave-epub?vault=Vault&file=Books%2Fdemo.epub&cfi=epubcfi(/6/2)&text=Hello)',
-			'Notes/demo.md'
-		);
-
-		expect(result.changed).toBe(true);
-		expect(result.updatedLinks).toBe(2);
-		expect(result.content).toMatch(
-			/^\[\[Books\/demo\.epub#weave-cfi=epubcfi\(\/6\/2\)(?:&[^|]+)*&sid=epubsrc-[^|]+\|demo\]\]$/
-		);
-		expect(result.content).not.toContain('&text=');
 	});
 
 	it('compresses long epubcfi locators with weave-loc payloads', () => {

@@ -3,13 +3,11 @@ import {
 	openBookForSourceNavigation,
 	openEpubInPreferredLeaf,
 } from "../../utils/epub-leaf-utils";
-import { openFileWithExistingLeaf } from "../../utils/workspace-navigation";
 import { logger } from "../../utils/logger";
 import { ensureBookSourceLocationAccess, ensureEpubFileAccess } from "../epub/epub-premium";
 import { hasBookLocateTarget } from "./navigation-intent";
 import { resolveEpubVaultPath } from "../epub/epub-vault-path";
 import { getEpubStorageService } from "../epub/epub-storage-access";
-import { SourceNavigationService } from "../ui/SourceNavigationService";
 import type { NavigationIntent, NavigationResult, PendingLocateState } from "./navigation-intent";
 
 export interface NavigationHubOptions {
@@ -51,14 +49,10 @@ function locateToPendingState(locate?: NavigationIntent["locate"]): PendingLocat
 }
 
 export class NavigationHub {
-	private readonly sourceNavigation: SourceNavigationService;
-
 	constructor(
 		private readonly app: App,
 		private readonly options: NavigationHubOptions = {}
-	) {
-		this.sourceNavigation = new SourceNavigationService(app);
-	}
+	) {}
 
 	async navigate(intent: NavigationIntent): Promise<NavigationResult> {
 		const startedAt = this.options.getEnableDebugMode?.() ? performance.now() : 0;
@@ -67,15 +61,6 @@ export class NavigationHub {
 			switch (intent.kind) {
 				case "book":
 					result = await this.navigateBook(intent);
-					break;
-				case "markdown":
-					result = await this.navigateMarkdown(intent);
-					break;
-				case "json":
-					result = await this.navigateJson(intent);
-					break;
-				case "canvas":
-					result = await this.navigateCanvas(intent);
 					break;
 				default:
 					result = { success: false, error: `Unknown navigation kind: ${String((intent as { kind?: string }).kind ?? "unknown")}` };
@@ -146,55 +131,5 @@ export class NavigationHub {
 			return { success: false, error: "no_leaf" };
 		}
 		return { success: true, leaf };
-	}
-
-	private async navigateMarkdown(intent: NavigationIntent): Promise<NavigationResult> {
-		const openInNewTab = this.resolveOpenInNewTab(intent);
-		const focus = intent.policy?.focus !== false;
-		const contextPath = intent.context?.epubFilePath || intent.resourcePath;
-		const candidates = intent.locate?.candidates || [];
-		const label = '定位到溯源位置';
-		const leaf = await this.sourceNavigation.openMarkdownLinkAndLocate(
-			intent.resourcePath,
-			contextPath,
-			candidates,
-			{
-				label,
-				icon: "map-pinned",
-				openInNewTab,
-				focus,
-				delayMs: 220,
-			}
-		);
-		return { success: Boolean(leaf), leaf };
-	}
-
-	private async navigateJson(intent: NavigationIntent): Promise<NavigationResult> {
-		const openInNewTab = this.resolveOpenInNewTab(intent);
-		const focus = intent.policy?.focus !== false;
-		const leaf = await openFileWithExistingLeaf(this.app, intent.resourcePath, {
-			openInNewTab,
-			focus,
-		});
-		return { success: Boolean(leaf), leaf };
-	}
-
-	private async navigateCanvas(intent: NavigationIntent): Promise<NavigationResult> {
-		const openInNewTab = this.resolveOpenInNewTab(intent);
-		const focus = intent.policy?.focus !== false;
-		const candidates = intent.locate?.candidates || [];
-		const leaf = await this.sourceNavigation.openCanvasAndLocate(
-			intent.resourcePath,
-			candidates,
-			intent.context?.nodeId,
-			{
-				label: '定位到溯源位置',
-				icon: "map-pinned",
-				openInNewTab,
-				focus,
-				delayMs: intent.policy?.preferredLeaf ? 500 : 320,
-			}
-		);
-		return { success: Boolean(leaf), leaf };
 	}
 }

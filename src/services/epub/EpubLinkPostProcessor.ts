@@ -1,7 +1,6 @@
 import type { App } from "obsidian";
-import { MarkdownPostProcessorContext, TFile, setIcon } from "obsidian";
+import { MarkdownPostProcessorContext, setIcon } from "obsidian";
 import { isSupportedBookLocatorHref, stripSupportedBookExtension } from "./book-format";
-import { maybeMigrateEpubLinksInMarkdownFile } from "./epub-link-content-migration";
 import { EpubLinkService } from "./EpubLinkService";
 import { resolveEpubSourceNavigationTextHint } from "./epub-source-navigation-text-hint";
 import { isSupportedEpubProtocolName } from "./epub-runtime";
@@ -203,28 +202,8 @@ function bindEpubLocatorLink(
 }
 
 export function createEpubLinkPostProcessor(app: App) {
-	const scheduledMigrationPaths = new Set<string>();
 	return (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
 		applyEpubCalloutAppearanceAttributes(el);
-
-		const sourcePath = String(ctx?.sourcePath || "").trim();
-		if (sourcePath && !scheduledMigrationPaths.has(sourcePath)) {
-			scheduledMigrationPaths.add(sourcePath);
-			queueMicrotask(() => {
-				void (async () => {
-					try {
-						const sourceFile = app.vault.getAbstractFileByPath(sourcePath);
-						if (!(sourceFile instanceof TFile) || sourceFile.extension !== "md") {
-							return;
-						}
-						const originalContent = await app.vault.cachedRead(sourceFile);
-						await maybeMigrateEpubLinksInMarkdownFile(app, sourceFile, originalContent);
-					} catch {
-						// ignore background enrichment failures
-					}
-				})();
-			});
-		}
 
 		const links = el.querySelectorAll("a");
 
