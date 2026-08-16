@@ -5,12 +5,10 @@
         import type { App } from 'obsidian';
         import { logger } from '../../utils/logger';
         import {
-                getEpubBacklinkHighlightService,
                 EPUB_RUNTIME,
                 canUseEpubReadingProgress,
                 getEpubStorageService,
                 resolveEpubHost,
-                warmEpubAnnotationIndexForPaths,
         } from '../../services/epub';
         import { getBookFormatDisplayLabel, isSupportedBookFile, stripSupportedBookExtension } from '../../services/epub/book-format';
         import { FoliateVaultPublicationParser } from '../../services/epub/FoliateVaultPublicationParser';
@@ -1302,45 +1300,14 @@
         }
 
         async function collectBookNoteStats(filePath: string): Promise<BookNoteStats> {
-                        const backlinkService = getEpubBacklinkHighlightService(app);
-                try {
-                        const highlights = await backlinkService.collectHighlights(filePath);
-                        const sourceFiles = new Set<string>();
-                        let commentCount = 0;
-
-                        for (const highlight of highlights) {
-                                if (highlight.hasCommentDivider) {
-                                        commentCount += 1;
-                                }
-                                const primarySourceFile = normalizePath(highlight.sourceFile || '');
-                                if (primarySourceFile) {
-                                        sourceFiles.add(primarySourceFile);
-                                }
-                                for (const locator of highlight.sourceLocators || []) {
-                                        const locatorPath = normalizePath(locator.sourceFile || '');
-                                        if (locatorPath) {
-                                                sourceFiles.add(locatorPath);
-                                        }
-                                }
-                        }
-
-                        return {
-                                totalHighlights: highlights.length,
-                                commentCount,
-                                sourceFileCount: sourceFiles.size,
-                                available: true,
-                        };
-                } catch (error) {
-                        logger.error('Failed to collect book note stats:', error);
-                        return {
-                                totalHighlights: 0,
-                                commentCount: 0,
-                                sourceFileCount: 0,
-                                available: false,
-                        };
-                } finally {
-                        backlinkService.destroy();
-                }
+                void filePath;
+                // 反链高亮来源已移除，书架不再统计笔记引用数/评论数。
+                return {
+                        totalHighlights: 0,
+                        commentCount: 0,
+                        sourceFileCount: 0,
+                        available: false,
+                };
         }
 
         async function deleteBookFile(filePath: string) {
@@ -2049,10 +2016,6 @@
                                         }
 
                                 await refreshBookshelf();
-                                warmEpubAnnotationIndexForPaths(
-                                        app,
-                                        addedEntries.map((entry) => entry.path)
-                                );
                                 new Notice(`我的书架：已加入 ${addedEntries.length} 本书籍或漫画`);
                         },
                 });

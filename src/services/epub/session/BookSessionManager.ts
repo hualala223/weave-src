@@ -1,20 +1,16 @@
 import type { App } from "obsidian";
 import { findOpenEpubLeaf, pathsReferToSameOpenBook } from "../../../utils/epub-leaf-utils";
 import { normalizePath } from "obsidian";
-import { ExcerptPipeline } from "../highlight/ExcerptPipeline";
-import { HighlightIndex } from "../highlight/HighlightIndex";
 
 export class BookSession {
-	readonly highlightIndex = new HighlightIndex();
-	readonly excerptPipeline: ExcerptPipeline;
 	loadToken = 0;
 
 	constructor(options?: { cardSyncDedupeMs?: number; getEnableDebugMode?: () => boolean }) {
-		this.excerptPipeline = new ExcerptPipeline(this.highlightIndex, options);
+		void options;
 	}
 
 	dispose(): void {
-		this.highlightIndex.clear();
+		// 反链高亮索引已移除，会话无需清理其他驻留状态。
 	}
 }
 

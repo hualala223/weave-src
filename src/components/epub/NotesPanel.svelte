@@ -11,9 +11,7 @@
 		type EpubDisplayHighlight,
 		type EpubHighlightRenderSnapshot,
 	} from '../../services/epub/EpubHighlightViewSnapshotService';
-	import { getEpubAnnotationIndexService } from '../../services/epub';
 	import type { EpubAnnotationService } from '../../services/epub';
-	import type { EpubBacklinkHighlightService } from '../../services/epub/EpubBacklinkHighlightService';
 	import EpubAnnotationCard from './EpubAnnotationCard.svelte';
 	import EpubLoadingState from './EpubLoadingState.svelte';
 
@@ -34,7 +32,6 @@
 		readerService?: EpubReaderEngine | null;
 		annotationService: EpubAnnotationService;
 		snapshotService?: EpubHighlightViewSnapshotService | null;
-		backlinkService?: EpubBacklinkHighlightService;
 		filePath?: string;
 		highlightRevision?: number;
 		showStrikethroughHighlights?: boolean;
@@ -61,7 +58,6 @@
 		readerService = null,
 		annotationService,
 		snapshotService = null,
-		backlinkService,
 		filePath,
 		highlightRevision = 0,
 		showStrikethroughHighlights = false,
@@ -619,7 +615,6 @@
 				filePath: expectedFilePath ?? '',
 				showStrikethroughHighlights: showStrikethrough,
 				annotationService,
-				backlinkService,
 				readerService,
 				highlightRevision,
 			});
@@ -655,7 +650,6 @@
 				filePath: expectedFilePath ?? '',
 				showStrikethroughHighlights: showStrikethrough,
 				annotationService,
-				backlinkService,
 				readerService,
 				highlightRevision,
 			});
@@ -741,51 +735,9 @@
 			return;
 		}
 
-		const annotationIndex = getEpubAnnotationIndexService(app);
-		const readiness = annotationIndex.getReadiness(snapshotContext);
-		if (readiness === 'preparing') {
-			preparing = true;
-			syncing = false;
-			await annotationIndex.waitForReady(snapshotContext);
-			if (isStaleAnnotationsLoad(loadToken, currentBook.id, expectedFilePath)) {
-				return;
-			}
-			const warmedSnapshot = await resolveDisplaySnapshot(currentBook, expectedFilePath);
-			if (warmedSnapshot) {
-				applySnapshot(warmedSnapshot.highlights);
-				preparing = false;
-				if (shouldSkipBackgroundAnnotationRefresh(warmedSnapshot)) {
-					return;
-				}
-				if (!warmedSnapshot.pageLabelsResolved) {
-					void hydratePageLabelsInBackground(
-						loadToken,
-						currentBook,
-						expectedFilePath,
-						showStrikethroughHighlights
-					);
-				}
-				void refreshAnnotationsInBackground(
-					loadToken,
-					currentBook,
-					expectedFilePath,
-					showStrikethroughHighlights
-				);
-				return;
-			}
-		}
-
 		preparing = true;
 		syncing = false;
 		try {
-			await annotationIndex.prefetchBook({
-				...snapshotContext,
-				annotationService,
-				backlinkService,
-				readerService,
-				highlightRevision,
-				priority: 'immediate',
-			});
 			if (isStaleAnnotationsLoad(loadToken, currentBook.id, expectedFilePath)) {
 				return;
 			}
@@ -807,7 +759,6 @@
 				? await snapshotService.revalidateSnapshot({
 					...snapshotContext,
 					annotationService,
-					backlinkService,
 					readerService,
 					highlightRevision,
 				})

@@ -394,8 +394,7 @@
 		book: EpubBook,
 		annotationService: NonNullable<EpubSharedState['annotationService']>,
 		highlightViewSnapshotService: EpubSharedState['highlightViewSnapshotService'] | undefined,
-		filePath?: string | null,
-		backlinkService?: EpubSharedState['backlinkService']
+		filePath?: string | null
 	) {
 		const loadToken = ++highlightCountLoadToken;
 		const snapshotContext = {
@@ -418,7 +417,6 @@
 					filePath: filePath ?? '',
 					showStrikethroughHighlights: Boolean(sharedState?.excerptSettings?.showStrikethroughInSidebar),
 					annotationService,
-					backlinkService: backlinkService ?? undefined,
 					readerService: sharedState?.readerService ?? undefined,
 					highlightRevision: sharedState?.annotationRevision ?? 0,
 				})
@@ -645,7 +643,6 @@
 		const annotationService = sharedState?.annotationService;
 		const highlightViewSnapshotService = sharedState?.highlightViewSnapshotService;
 		const filePath = sharedState?.filePath;
-		const backlinkService = sharedState?.backlinkService;
 		const canUseExcerptNotes = sharedState?.canUseExcerptNotes ?? false;
 		const highlightRevision = sharedState?.annotationRevision ?? 0;
 		const showStrikethroughInSidebar = sharedState?.excerptSettings?.showStrikethroughInSidebar ? '1' : '0';
@@ -662,7 +659,7 @@
 
 		if (highlightContextKey !== lastHighlightCountContextKey) {
 			lastHighlightCountContextKey = highlightContextKey;
-			void loadHighlightCount(book, annotationService, highlightViewSnapshotService, filePath, backlinkService);
+			void loadHighlightCount(book, annotationService, highlightViewSnapshotService, filePath);
 		}
 	});
 
@@ -965,7 +962,6 @@
 							readerService={sharedState.readerService ?? undefined}
 							annotationService={sharedState.annotationService}
 							snapshotService={sharedState.highlightViewSnapshotService ?? undefined}
-							backlinkService={sharedState.backlinkService ?? undefined}
 							filePath={sharedState.filePath ?? undefined}
 							highlightRevision={sharedState.annotationRevision}
 							showStrikethroughHighlights={Boolean(sharedState.excerptSettings?.showStrikethroughInSidebar)}

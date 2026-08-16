@@ -5,8 +5,21 @@ describe("EpubHighlightViewSnapshotService", () => {
 	it("returns a render-ready snapshot before page labels finish hydrating", async () => {
 		const pageLabelResolvers: Array<(value: number) => void> = [];
 		const service = new EpubHighlightViewSnapshotService();
-		const annotationService = {
-			collectAllHighlights: vi.fn(async () => [
+		const readerService = {
+			canonicalizeLocation: vi.fn(async (cfi: string) => cfi),
+			getPageNumberFromCfi: vi.fn(
+				() =>
+					new Promise<number>((resolve) => {
+						pageLabelResolvers.push(resolve);
+					}),
+			),
+		} as any;
+
+		const fastSnapshot = await service.revalidateSnapshot({
+			bookId: "book-1",
+			filePath: "Books/demo.epub",
+			showStrikethroughHighlights: false,
+			preloadedHighlights: [
 				{
 					cfiRange: "epubcfi(/6/2)",
 					color: "green",
@@ -19,24 +32,7 @@ describe("EpubHighlightViewSnapshotService", () => {
 					style: "underline",
 					presentation: "highlight",
 				},
-			]),
-		} as any;
-		const readerService = {
-			canonicalizeLocation: vi.fn(async (cfi: string) => cfi),
-			getPageNumberFromCfi: vi.fn(
-				() =>
-					new Promise<number>((resolve) => {
-						pageLabelResolvers.push(resolve);
-					})
-			),
-		} as any;
-
-		const fastSnapshot = await service.revalidateSnapshot({
-			bookId: "book-1",
-			filePath: "Books/demo.epub",
-			showStrikethroughHighlights: false,
-			annotationService,
-			backlinkService: {} as any,
+			] as any,
 			readerService,
 			highlightRevision: 1,
 		});
@@ -62,8 +58,6 @@ describe("EpubHighlightViewSnapshotService", () => {
 			bookId: "book-1",
 			filePath: "Books/demo.epub",
 			showStrikethroughHighlights: false,
-			annotationService,
-			backlinkService: {} as any,
 			readerService,
 			highlightRevision: 1,
 		});
@@ -74,8 +68,12 @@ describe("EpubHighlightViewSnapshotService", () => {
 
 	it("keeps the stale snapshot available after invalidation until refresh completes", async () => {
 		const service = new EpubHighlightViewSnapshotService();
-		const highlightSets = [
-			[
+
+		const firstSnapshot = await service.revalidateSnapshot({
+			bookId: "book-1",
+			filePath: "Books/demo.epub",
+			showStrikethroughHighlights: false,
+			preloadedHighlights: [
 				{
 					cfiRange: "epubcfi(/6/2)",
 					color: "yellow",
@@ -84,28 +82,7 @@ describe("EpubHighlightViewSnapshotService", () => {
 					createdTime: 1,
 					presentation: "highlight",
 				},
-			],
-			[
-				{
-					cfiRange: "epubcfi(/6/4)",
-					color: "blue",
-					text: "新摘录",
-					sourceFile: "Notes/new.md",
-					createdTime: 2,
-					presentation: "highlight",
-				},
-			],
-		];
-		const annotationService = {
-			collectAllHighlights: vi.fn(async () => highlightSets.shift() || []),
-		} as any;
-
-		const firstSnapshot = await service.revalidateSnapshot({
-			bookId: "book-1",
-			filePath: "Books/demo.epub",
-			showStrikethroughHighlights: false,
-			annotationService,
-			backlinkService: {} as any,
+			] as any,
 			readerService: null,
 			highlightRevision: 1,
 		});
@@ -117,20 +94,27 @@ describe("EpubHighlightViewSnapshotService", () => {
 				bookId: "book-1",
 				filePath: "Books/demo.epub",
 				showStrikethroughHighlights: false,
-			})?.highlights[0]?.text
+			})?.highlights[0]?.text,
 		).toBe("旧摘录");
 
 		const refreshedSnapshot = await service.revalidateSnapshot({
 			bookId: "book-1",
 			filePath: "Books/demo.epub",
 			showStrikethroughHighlights: false,
-			annotationService,
-			backlinkService: {} as any,
+			preloadedHighlights: [
+				{
+					cfiRange: "epubcfi(/6/4)",
+					color: "blue",
+					text: "新摘录",
+					sourceFile: "Notes/new.md",
+					createdTime: 2,
+					presentation: "highlight",
+				},
+			] as any,
 			readerService: null,
 			highlightRevision: 2,
 		});
 
 		expect(refreshedSnapshot.highlights[0]?.text).toBe("新摘录");
-		expect(annotationService.collectAllHighlights).toHaveBeenCalledTimes(2);
 	});
 });

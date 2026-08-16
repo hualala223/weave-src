@@ -10,7 +10,6 @@ import {
 	dispatchEpubBookshelfFullRefresh,
 } from "./services/epub/bookshelf-data-events";
 import {
-	EPUB_RUNTIME,
 	EpubStorageService,
 	normalizeEpubBookmarkFolderPath,
 	resetEpubStorageServiceCache,
@@ -145,7 +144,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 
 	getOfficialAPI(): EpubWeaveOfficialAPI {
 		if (!this.epubOfficialApiService) {
-			this.epubOfficialApiService = new EpubExcerptOfficialApiService(this.app);
+			this.epubOfficialApiService = new EpubExcerptOfficialApiService();
 		}
 		return this.epubOfficialApiService;
 	}
@@ -344,23 +343,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		registerEpubMarkdownPostProcessor(this, this.app);
 		registerEpubProtocolHandler(this, this.app, "[Standalone EPUB Protocol]");
 		this.registerBookshelfVaultRefreshBridge();
-		const {
-			bootstrapEpubAnnotationIndex,
-			scheduleEpubAnnotationIndexWarmup,
-		} = await import("./services/epub/epub-annotation-index");
-		this.registerEvent(
-			this.app.workspace.on("layout-ready", () => {
-				bootstrapEpubAnnotationIndex(this.app);
-			})
-		);
-		scheduleEpubAnnotationIndexWarmup(this.app);
-		this.registerDomEvent(
-			window,
-			EPUB_RUNTIME.events.bookshelfDataChanged as keyof WindowEventMap,
-			() => {
-				scheduleEpubAnnotationIndexWarmup(this.app, 8_000);
-			}
-		);
 		this.addRibbonIcon("library", '我的书架', () => {
 			void this.openEpubBookshelf();
 		});

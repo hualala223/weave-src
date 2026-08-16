@@ -15,8 +15,6 @@
 	import { reportEpubError } from '../../services/epub/epub-error';
 	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubStorageService, PaginationInfo, ReaderHighlight, ReadingPosition } from '../../services/epub';
 	import { flushEpubPendingProgress } from '../../services/epub';
-	import type { EpubAnnotationService } from '../../services/epub';
-	import type { EpubBacklinkHighlightService } from '../../services/epub/EpubBacklinkHighlightService';
 	import { logger } from '../../utils/logger';
 
 	interface Props {
@@ -24,8 +22,6 @@
 		book: EpubBook | null;
 		readerService: EpubReaderEngine;
 		storageService: EpubStorageService;
-		annotationService: EpubAnnotationService;
-		backlinkService: EpubBacklinkHighlightService;
 		settings: EpubReaderSettings;
 		excerptSettings: EpubExcerptSettings;
 		canUseReadingProgress?: boolean;
@@ -48,8 +44,6 @@
 		book,
 		readerService,
 		storageService,
-		annotationService,
-		backlinkService,
 		settings,
 		excerptSettings,
 		canUseReadingProgress = true,
@@ -644,16 +638,10 @@
 	}
 
 	async function collectAllHighlights(): Promise<ReaderHighlight[]> {
+		// 反链高亮来源已移除：阅读器高亮由 EpubReaderApp 从 local-storage.json 统一加载并应用。
 		if (!canUseExcerptNotes) return [];
 		if (!book) return [];
-		try {
-			const allHighlights = await annotationService.collectAllHighlights(book.id, filePath, backlinkService);
-			logger.debug('[EpubReaderView] total highlights to apply:', allHighlights.length);
-			return allHighlights;
-		} catch (e) {
-			logger.warn('[EpubReaderView] Failed to collect highlights:', e);
-			return [];
-		}
+		return [];
 	}
 
 	function scheduleHighlightReapply(delayMs = 300) {

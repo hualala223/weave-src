@@ -67,7 +67,7 @@ describe("EpubHighlightViewSnapshotService disk persistence", () => {
 						],
 					},
 				},
-			})
+			}),
 		);
 
 		const service = new EpubHighlightViewSnapshotService(app);
@@ -82,8 +82,12 @@ describe("EpubHighlightViewSnapshotService disk persistence", () => {
 
 	it("persists revalidated snapshots to disk", async () => {
 		const service = new EpubHighlightViewSnapshotService(app);
-		const annotationService = {
-			collectAllHighlights: vi.fn(async () => [
+
+		await service.revalidateSnapshot({
+			bookId: "book-1",
+			filePath: "Books/demo.epub",
+			showStrikethroughHighlights: false,
+			preloadedHighlights: [
 				{
 					cfiRange: "epubcfi(/6/2)",
 					color: "yellow",
@@ -91,15 +95,7 @@ describe("EpubHighlightViewSnapshotService disk persistence", () => {
 					presentation: "highlight",
 					createdTime: 1,
 				},
-			]),
-		} as any;
-
-		await service.revalidateSnapshot({
-			bookId: "book-1",
-			filePath: "Books/demo.epub",
-			showStrikethroughHighlights: false,
-			annotationService,
-			backlinkService: {} as any,
+			] as any,
 			readerService: null,
 			highlightRevision: 1,
 		});

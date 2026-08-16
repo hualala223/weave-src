@@ -4,9 +4,6 @@ import {
 	MAX_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
 	MIN_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
 } from "../../config/reading-position-auto-save";
-import { getEpubBacklinkHighlightService } from "../../services/epub/epub-backlink-highlight-access";
-import { scheduleEpubAnnotationIndexWarmup } from "../../services/epub/epub-annotation-index";
-import { showNotification } from "../../utils/notifications";
 import { mountFolderSearchSetting } from "./epub-settings-folder-search";
 import type {
 	EpubBasicSettingsMountOptions,
@@ -132,28 +129,6 @@ export function mountEpubBasicSettings(options: EpubBasicSettingsMountOptions): 
 			toggle.setValue(snapshot.sourceNavigationOpenInNewTab);
 			toggle.onChange(async (value) => {
 				await callbacks.updateSourceNavigationOpenInNewTab(value);
-			});
-		});
-
-	new Setting(hosts.diagnostics)
-		.setName('重建 EPUB 摘录索引')
-		.setDesc('删除插件目录中的摘录缓存与来源索引后，在下次打开书籍时后台重建。不会删除笔记、canvas 或 .wdeck 中的卡片正文。')
-		.setClass("epub-rebuild-highlight-index-setting")
-		.addButton((button) => {
-			button.setButtonText('重建索引');
-			button.onClick(async () => {
-				button.setDisabled(true);
-				try {
-					const service = getEpubBacklinkHighlightService(plugin.app);
-					await service.rebuildHighlightIndexes();
-					scheduleEpubAnnotationIndexWarmup(plugin.app, 2_000, { forceAll: true });
-					showNotification('摘录索引缓存已清除，下次打开书籍时将重新建立。', "success");
-				} catch (error) {
-					console.error("[EpubSettings] rebuild highlight index failed:", error);
-					showNotification('清除摘录索引缓存失败，请查看控制台日志。', "error");
-				} finally {
-					button.setDisabled(false);
-				}
 			});
 		});
 

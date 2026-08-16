@@ -17,8 +17,6 @@ import type { EpubTocChapterMark, EpubTocChapterMarkMap } from "../services/epub
 import type { EpubTocChapterMarkSettings } from "../services/epub/epub-toc-chapter-mark-settings";
 import type { EpubDisplayHighlight } from "../services/epub/EpubHighlightViewSnapshotService";
 import type { FlashStyle, PaginationInfo } from "../services/epub";
-import type { EpubBacklinkHighlightService } from "../services/epub/EpubBacklinkHighlightService";
-import type { EpubReferenceStatsService } from "../services/epub/EpubReferenceStatsService";
 
 export interface EpubNavigationRequest {
 	cfi?: string;
@@ -34,8 +32,6 @@ export interface EpubSharedState {
 	readerService: EpubReaderEngine | null;
 	annotationService: EpubAnnotationService | null;
 	highlightViewSnapshotService: EpubHighlightViewSnapshotService | null;
-	backlinkService: EpubBacklinkHighlightService | null;
-	referenceStatsService: EpubReferenceStatsService | null;
 	book: EpubBook | null;
 	canUseReadingProgress: boolean;
 	canUseExcerptNotes: boolean;
@@ -71,8 +67,6 @@ const EMPTY_STATE: EpubSharedState = {
 	readerService: null,
 	annotationService: null,
 	highlightViewSnapshotService: null,
-	backlinkService: null,
-	referenceStatsService: null,
 	book: null,
 	canUseReadingProgress: false,
 	canUseExcerptNotes: false,

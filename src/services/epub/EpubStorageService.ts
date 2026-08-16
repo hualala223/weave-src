@@ -3901,12 +3901,6 @@ export class EpubStorageService {
 		const dataPath = this.resolveDataPath();
 		const targets: Array<{ legacy: string; next: string }> = [
 			{
-				legacy: legacyPluginCache.incrementalReading.epubBacklinkHighlightsCache,
-				next: normalizePath(
-					`${dataPath}/cache/incremental-reading/epub-backlink-highlights-cache.json`
-				),
-			},
-			{
 				legacy: legacyPluginCache.incrementalReading.epubAnnotationViewSnapshotsCache,
 				next: normalizePath(
 					`${dataPath}/cache/incremental-reading/epub-annotation-view-snapshots-cache.json`

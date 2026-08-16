@@ -3,7 +3,6 @@ import { resolveConfiguredDataPath } from "../../config/paths";
 import { DirectoryUtils } from "../../utils/directory-utils";
 import { logger } from "../../utils/logger";
 import { TagExtractor } from "../../utils/tag-extractor";
-import type { EpubBacklinkHighlightService } from "./EpubBacklinkHighlightService";
 import type { EpubAnnotationService } from "./EpubAnnotationService";
 import { shouldIncludeHighlightInSidebarSnapshot } from "./reader-annotation-model";
 import type { EpubReaderEngine, ReaderHighlight } from "./reader-engine-types";
@@ -63,7 +62,6 @@ export interface EpubHighlightSnapshotContextInput {
 export interface EpubHighlightSnapshotRevalidateInput
 	extends EpubHighlightSnapshotContextInput {
 	annotationService?: EpubAnnotationService;
-	backlinkService?: EpubBacklinkHighlightService;
 	readerService?: EpubReaderEngine | null;
 	highlightRevision?: number;
 	/** When provided, skips another vault-wide collectAllHighlights pass. */
@@ -248,13 +246,7 @@ export class EpubHighlightViewSnapshotService {
 		const revalidatePromise = (async () => {
 			const allHighlights = Array.isArray(input.preloadedHighlights)
 				? input.preloadedHighlights
-				: input.annotationService && input.backlinkService && input.filePath
-					? await input.annotationService.collectAllHighlights(
-							input.bookId,
-							input.filePath,
-							input.backlinkService
-					  )
-					: [];
+				: [];
 
 			const previousSnapshot = entry.snapshot;
 			const previousPageLabels = new Map<string, string>();

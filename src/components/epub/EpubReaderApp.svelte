@@ -12,18 +12,14 @@
 	import EpubHighlightToolbar from './EpubHighlightToolbar.svelte';
 	import EpubCommentEditorPopover from './EpubCommentEditorPopover.svelte';
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
-	import ReferenceDetailModal from './ReferenceDetailModal.svelte';
-	import { canUseEpubCanvasExcerpts, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, createTapBurstTracker, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubAnnotationIndexService, getEpubBacklinkHighlightService, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, resolveEpubWeaveOfficialAPI, TAP_FLIP_GRACE_MS, TAP_TRIPLE_WINDOW_MS, warmEpubAnnotationIndexForPaths } from '../../services/epub';
+	import { canUseEpubCanvasExcerpts, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, createTapBurstTracker, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, TAP_FLIP_GRACE_MS, TAP_TRIPLE_WINDOW_MS } from '../../services/epub';
 	import { EpubBookmarkService } from '../../services/epub/EpubBookmarkService';
-	import { EpubReferenceStatsService } from '../../services/epub/EpubReferenceStatsService';
 	import {
 		getDefaultEpubReaderSettings,
 		normalizeEpubReaderSettingsForDevice,
 		type EpubReaderSettingsDeviceKind,
 	} from '../../services/epub/reader-settings';
-	import type { ReferenceSourceInfo, ReferenceStats } from '../../services/epub/EpubReferenceStatsService';
 	import { vaultStorage } from '../../utils/vault-local-storage';
-	import type { BacklinkSourceMatch } from '../../services/epub/EpubBacklinkHighlightService';
 	import { EpubScreenshotService } from '../../services/epub/EpubScreenshotService';
 	import { EpubCanvasService } from '../../services/epub/EpubCanvasService';
 	import {
@@ -31,7 +27,7 @@
 		type WeaveEpubCanvasLayoutDirectionPayload,
 	} from '../../services/epub/canvas-excerpt-anchor';
 	import type { EpubVisibleFrameLike, ScreenshotRect } from '../../services/epub/EpubScreenshotService';
-	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubHostCapabilities, EpubLayoutMode, EpubParagraphModeReadingPosition, EpubParagraphModeTransitionStyle, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubWeaveExcerptRemovalMode, EpubWeaveOfficialAPI, EpubWeaveRemoveExcerptResult, FlashStyle, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderParagraph, ReaderTapEvent, ReadingPosition, TocItem } from '../../services/epub';
+	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubParagraphModeReadingPosition, EpubParagraphModeTransitionStyle, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, FlashStyle, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderParagraph, ReaderTapEvent, ReadingPosition, TocItem } from '../../services/epub';
 	import { getBookFormatDisplayLabel, isSupportedBookFile } from '../../services/epub/book-format';
 	import type { EpubTocChapterMark, EpubTocChapterMarkMap } from '../../services/epub/epub-toc-chapter-mark';
 	import type { EpubTocChapterMarkSettings } from '../../services/epub/epub-toc-chapter-mark-settings';
@@ -196,8 +192,6 @@
 	let linkService = untrack(() => new EpubLinkService(app));
 	let screenshotService = untrack(() => new EpubScreenshotService(app));
 	let canvasService = untrack(() => new EpubCanvasService(app));
-	let backlinkService = untrack(() => getEpubBacklinkHighlightService(app));
-	let referenceStatsService = untrack(() => new EpubReferenceStatsService(app, backlinkService));
 
 	let book = $state<EpubBook | null>(null);
 	let loading = $state(true);
@@ -256,8 +250,6 @@
 	let highlightToolbarInfo = $state<HighlightClickInfo | null>(null);
 	let commentEditorInfo = $state<HighlightClickInfo | null>(null);
 	let footnotePreviewInfo = $state<ReaderFootnotePreviewInfo | null>(null);
-	let referencePopoverInfo = $state<HighlightClickInfo | null>(null);
-	let referencePopoverStats = $state<ReferenceStats | null>(null);
 	let commentEditorDraft = $state('');
 	let commentEditorSaving = $state(false);
 	let highlightDeleting = $state(false);
@@ -282,7 +274,6 @@
 	let tocChapterMarkSettingsRevision = $state(0);
 	let migratedLocationBookIds = new Set<string>();
 	let migratingLocationBookId: string | null = null;
-	let referenceBadgeClickCleanup: (() => void) | null = null;
 	let scrolledChapterEndCleanup: (() => void) | null = null;
 	const sourceLocateOverlay = getSourceLocateOverlayService();
 	let hasPendingBookLocate = $state(false);
@@ -893,8 +884,6 @@
 		highlightToolbarInfo = null;
 		closeCommentEditor();
 		footnotePreviewInfo = null;
-		referencePopoverInfo = null;
-		referencePopoverStats = null;
 		screenshotMode = false;
 		if (!enabled) {
 			await exitParagraphModeToMainReader({
@@ -1133,8 +1122,6 @@
 			return;
 		}
 		footnotePreviewInfo = null;
-		referencePopoverInfo = null;
-		referencePopoverStats = null;
 		closeCommentEditor();
 		highlightToolbarInfo = readerService.getHighlightClickInfo(info.cfiRange, 'highlight', {
 			rect: {
@@ -1573,10 +1560,6 @@
 					);
 					return;
 				}
-				warmEpubAnnotationIndexForPaths(
-					app,
-					addedEntries.map((entry) => entry.path)
-				);
 				dispatchEpubBookshelfDataChanged();
 				new Notice(`我的书架：已加入 ${addedEntries.length} 本书籍或漫画`);
 			},
@@ -1658,22 +1641,18 @@
 	}
 
 	async function isHighlightStillPersistedInSource(
-		info: HighlightClickInfo,
-		source: BacklinkSourceMatch
+		info: HighlightClickInfo
 	): Promise<boolean> {
 		// 已断开：不校验 backlink 源持久化，local-storage 高亮视为已持久化。
 		void info;
-		void source;
 		return true;
 	}
 
 	async function finalizeHighlightRemoval(
 		info: HighlightClickInfo,
-		source: BacklinkSourceMatch,
 		options?: { quiet?: boolean }
 	): Promise<void> {
 		// 已断开：直接按 local-storage 高亮删除。
-		void source;
 		purgeOrphanHighlightFromReader(info);
 		if (!options?.quiet) {
 			new Notice('高亮已删除');
@@ -3106,16 +3085,12 @@
 		readerService.onHighlightClick((info: HighlightClickInfo) => {
 			footnotePreviewInfo = null;
 			if (info.interactionTarget === 'comment-marker') {
-				referencePopoverInfo = null;
-				referencePopoverStats = null;
 				openCommentEditor(info);
 				return;
 			}
 			if (info.interactionTarget === 'reference-badge') {
 				return;
 			}
-			referencePopoverInfo = null;
-			referencePopoverStats = null;
 			closeCommentEditor();
 			highlightToolbarInfo = info;
 		});
@@ -3130,52 +3105,6 @@
 		scrolledChapterEndCleanup = readerService.onScrolledChapterEndChange(() => {
 			syncScrolledChapterNavVisibility();
 		});
-	}
-
-	function setupReferenceBadgeClickHandler() {
-		referenceBadgeClickCleanup?.();
-		referenceBadgeClickCleanup = null;
-
-		const cleanupTasks: Array<() => void> = [];
-
-		if (typeof readerService.onReferenceBadgeClick === 'function') {
-			cleanupTasks.push(
-				readerService.onReferenceBadgeClick((info: HighlightClickInfo) => {
-					void handleReferenceBadgeClick(info);
-				})
-			);
-		}
-
-		// 保留旧的 DOM 自定义事件监听作为兼容兜底。
-		if (readerService && typeof (readerService as any).foliateView !== 'undefined') {
-			const foliateView = (readerService as any).foliateView;
-			if (foliateView) {
-				const handleReferenceBadgeClickEvent = (event: Event) => {
-					const customEvent = event as CustomEvent;
-					const cfiRange = customEvent.detail?.cfiRange;
-					if (cfiRange) {
-						const info = readerService.getHighlightClickInfo?.(cfiRange, 'reference-badge') || cfiRange;
-						void handleReferenceBadgeClick(info);
-					}
-				};
-
-				foliateView.addEventListener('reference-badge-click', handleReferenceBadgeClickEvent as EventListener);
-				cleanupTasks.push(() => {
-					foliateView.removeEventListener(
-						'reference-badge-click',
-						handleReferenceBadgeClickEvent as EventListener
-					);
-				});
-			}
-		}
-
-		if (cleanupTasks.length > 0) {
-			referenceBadgeClickCleanup = () => {
-				for (const cleanup of cleanupTasks) {
-					cleanup();
-				}
-			};
-		}
 	}
 
 	function setupFootnotePreviewHandler() {
@@ -3200,8 +3129,6 @@
 // Always allow (gate removed)
 		highlightToolbarInfo = null;
 		footnotePreviewInfo = null;
-		referencePopoverInfo = null;
-		referencePopoverStats = null;
 		commentEditorInfo = info;
 		commentEditorDraft = resolveCommentDraftFromMemory(info);
 		commentEditorSaving = false;
@@ -3247,11 +3174,6 @@
 		commentEditorSaving = false;
 	}
 
-	function closeReferencePopover() {
-		referencePopoverInfo = null;
-		referencePopoverStats = null;
-	}
-
 	function syncAsActiveEpubDocumentIfActive(leaf: WorkspaceLeaf | null = app.workspace.activeLeaf): void {
 		if (isActiveEpubReaderInstance(leaf)) {
 			syncAsActiveEpubDocument();
@@ -3287,8 +3209,6 @@
 			readerService,
 			annotationService: canUseExcerptNotes ? annotationService : null,
 			highlightViewSnapshotService: canUseExcerptNotes ? highlightViewSnapshotService : null,
-			backlinkService: canUseExcerptNotes ? backlinkService : null,
-			referenceStatsService: canUseExcerptNotes ? referenceStatsService : null,
 			book,
 			canUseReadingProgress,
 			canUseExcerptNotes,
@@ -3352,18 +3272,6 @@
 		} catch (_e) {}
 	}
 
-	async function resolveHighlightSource(_info: HighlightClickInfo): Promise<BacklinkSourceMatch | null> {
-		// 已断开：所有高亮均为 local-storage 内联高亮（__inline__），不再查询 backlink 来源。
-		return null;
-	}
-
-	function resolveHighlightMutationCfi(
-		info: HighlightClickInfo,
-		source: BacklinkSourceMatch
-	): string {
-		return String(source.cfiRange || info.cfiRange || '').trim();
-	}
-
 	async function handleHighlightDelete(
 		info: HighlightClickInfo,
 		options?: { quiet?: boolean }
@@ -3416,31 +3324,6 @@
 
 	async function deleteDisplayHighlight(highlight: EpubDisplayHighlight, quiet = false): Promise<boolean> {
 		return handleHighlightDelete(buildHighlightClickInfoFromDisplay(highlight), { quiet });
-	}
-
-	async function deleteHighlightThroughOfficialAPI(
-		api: EpubWeaveOfficialAPI,
-		info: HighlightClickInfo,
-		source: BacklinkSourceMatch & { excerptId?: string },
-		mutationCfiRange: string,
-		supportsInteractiveUserChoice: boolean
-	): Promise<'success' | 'failed' | 'cancelled' | 'fallback'> {
-		// 已断开：官方摘录 API 删除不再参与阅读器高亮管线。
-		void api;
-		void info;
-		void source;
-		void mutationCfiRange;
-		void supportsInteractiveUserChoice;
-		return 'fallback';
-	}
-
-
-	async function promptHighlightDeleteChoice(
-		result: EpubWeaveRemoveExcerptResult
-	): Promise<EpubWeaveExcerptRemovalMode | null> {
-		// 已断开。
-		void result;
-		return null;
 	}
 
         function handleTemporarilyRevealConcealed(info: HighlightClickInfo) {
@@ -3498,60 +3381,7 @@
 		void reloadHighlights();
 	}
 
-	async function handleReferenceBadgeClick(infoOrCfi: HighlightClickInfo | string) {
-		if (!hasExcerptNotesCapability()) {
-			return;
-		}
-		try {
-			if (!book || !filePath) {
-				logger.warn('[EpubReaderApp] Reference badge click ignored because reader context is incomplete', {
-					hasBook: Boolean(book),
-					filePath,
-					cfiRange: typeof infoOrCfi === 'string' ? infoOrCfi : infoOrCfi.cfiRange,
-				});
-				new Notice('当前阅读上下文尚未准备完成，请稍后再试');
-				return;
-			}
-
-			const info = typeof infoOrCfi === 'string'
-				? readerService.getHighlightClickInfo?.(infoOrCfi, 'reference-badge') || null
-				: infoOrCfi;
-			const cfiRange = typeof infoOrCfi === 'string' ? infoOrCfi : infoOrCfi.cfiRange;
-
-			const stats = await referenceStatsService.getStatsForCfi(
-				filePath,
-				cfiRange,
-				getBoundCanvasPath()
-			);
-
-			if (!stats) {
-				logger.warn('[EpubReaderApp] No reference stats found for clicked badge', {
-					filePath,
-					cfiRange,
-				});
-				new Notice('未找到引用统计数据');
-				return;
-			}
-			if (!info) {
-				logger.warn('[EpubReaderApp] Reference stats found but anchor info is missing', {
-					filePath,
-					cfiRange,
-				});
-				new Notice('已找到引用数据，但暂时无法定位浮窗位置');
-				return;
-			}
-			closeCommentEditor();
-			highlightToolbarInfo = null;
-			footnotePreviewInfo = null;
-			referencePopoverInfo = info;
-			referencePopoverStats = stats;
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to open reference detail popover:', error);
-			new Notice('打开引用浮窗失败，请稍后重试');
-		}
-	}
-
-	function handleHighlightEditComment(info: HighlightClickInfo) {
+		function handleHighlightEditComment(info: HighlightClickInfo) {
 		openCommentEditor(info);
 	}
 
@@ -3606,30 +3436,6 @@
 		return true;
 	}
 
-	async function navigateToReferenceSource(source: ReferenceSourceInfo) {
-		if (source.type === 'canvas') {
-			await navigateExternalSource({
-				kind: 'canvas',
-				resourcePath: source.file,
-				locate: { candidates: source.locateCandidates },
-				context: { nodeId: source.nodeId, epubFilePath: filePath },
-			});
-			return;
-		}
-
-		if (source.file.endsWith('.json')) {
-			await navigateExternalSource({ kind: 'json', resourcePath: source.file });
-			return;
-		}
-
-		await navigateExternalSource({
-			kind: 'markdown',
-			resourcePath: source.file,
-			locate: { candidates: source.locateCandidates },
-			context: { epubFilePath: filePath },
-		});
-	}
-
 	async function navigateToMarkdownCallout(sourceFile: string, encodedCfi: string, rawCfi: string, excerptText?: string, createdTime?: number) {
 		const locateCandidates = buildEpubMarkdownLocateCandidates({
 			epubFilePath: filePath,
@@ -3673,28 +3479,12 @@
 				return;
 			}
 
-			const referenceStats = referenceStatsService.computeReferenceStatsFromHighlights(
-				allHighlights,
-				filePath,
-				getBoundCanvasPath()
-			);
-			const highlightsWithStats = allHighlights.map((highlight) => {
-				const normalizedCfi = EpubLinkService.normalizeCfi(highlight.cfiRange);
-				const stats = referenceStats.get(normalizedCfi);
-
-				return {
-					...highlight,
-					referenceCount: stats?.referenceCount || 1,
-					referenceHeat: stats?.referenceHeat || 0,
-				};
-			});
-
-			pendingLoadedHighlights = highlightsWithStats;
+			pendingLoadedHighlights = allHighlights;
 
 			if (readerReady) {
-				await readerService.applyHighlights(highlightsWithStats);
+				await readerService.applyHighlights(allHighlights);
 			}
-			publishSidebarHighlights(highlightsWithStats);
+			publishSidebarHighlights(allHighlights);
 		} catch (_e) {
 			logger.warn('[EpubReaderApp] Failed to reload highlights:', _e);
 		} finally {
@@ -3910,7 +3700,6 @@
 		flushPendingLocateFromProps();
 
 		setupHighlightClickHandler();
-		setupReferenceBadgeClickHandler();
 		setupFootnotePreviewHandler();
 		trackHighlightSourceChanges();
 		setupScrolledChapterEndHandler();
@@ -3996,8 +3785,6 @@
 				rootEl.removeEventListener('pointerdown', syncAsActiveEpubDocument);
 				rootEl.removeEventListener('focusin', syncAsActiveEpubDocument);
 			}
-			referenceBadgeClickCleanup?.();
-			referenceBadgeClickCleanup = null;
 			window.removeEventListener(EXCERPT_SETTINGS_CHANGED_EVENT, handleGlobalExcerptSettingsChanged);
 			window.removeEventListener(EPUB_NAVIGATE_EVENT, handleEpubNavigateEvent);
 			if (LEGACY_EPUB_NAVIGATE_EVENT) {
@@ -4166,7 +3953,6 @@
 					{readerService}
 					{storageService}
 					{annotationService}
-					{backlinkService}
 					{settings}
 					{excerptSettings}
 					canUseReadingProgress={hasReadingProgressCapability()}
@@ -4347,19 +4133,6 @@
 			<EpubFootnotePreviewPopover
 				info={footnotePreviewInfo}
 				boundsEl={viewportEl}
-			/>
-
-			<ReferenceDetailModal
-				open={referencePopoverInfo !== null && referencePopoverStats !== null}
-				info={referencePopoverInfo}
-				stats={referencePopoverStats}
-				{readerService}
-				boundsEl={viewportEl}
-				onNavigate={async (source: ReferenceSourceInfo) => {
-					await navigateToReferenceSource(source);
-					closeReferencePopover();
-				}}
-				onClose={closeReferencePopover}
 			/>
 
 			<SelectionToolbar
