@@ -19,8 +19,6 @@
     app: App;
     dataSource?: DataSource;
     availableTags?: TagSuggestionOption[];
-    availablePriorities?: number[];
-    availableQuestionTypes?: string[];
     availableSources?: string[];
     availableStatuses?: string[];
     availableAuthors?: string[];
@@ -30,10 +28,6 @@
     availableNoteTypes?: string[];
     availableHighlightColors?: string[];
     availableChapters?: string[];
-    availableStates?: string[];
-    availableAccuracies?: string[];
-    availableAttemptThresholds?: number[];
-    availableErrorLevels?: string[];
     matchCount?: number;
     totalCount?: number;
     autoFocus?: boolean;
@@ -47,8 +41,6 @@
     app,
     dataSource = 'bookshelf',
     availableTags = [],
-    availablePriorities = [],
-    availableQuestionTypes = [],
     availableSources = [],
     availableStatuses = [],
     availableAuthors = [],
@@ -58,9 +50,6 @@
     availableNoteTypes = [],
     availableHighlightColors = [],
     availableChapters = [],
-    availableStates = [],
-    availableAccuracies = [],
-    availableAttemptThresholds = [],
     matchCount = -1,
     totalCount = -1,
     autoFocus = false
@@ -281,26 +270,6 @@
     menu.showAtPosition({ x: rect.left, y: rect.bottom + 2 });
   }
 
-  function showStatusSuggestions() {
-    if (!containerRef || menuShown) return;
-    const menu = new Menu();
-    (menu as any).app = app;
-    menu.addItem((item) => {
-      item.setTitle('状态');
-      item.setDisabled(true);
-    });
-    const values = availableStatuses.length > 0 ? availableStatuses : ['new', 'learning', 'review', 'relearning'];
-    values.forEach((v) => {
-      menu.addItem((item) => {
-        item.setTitle(v);
-        item.onClick(() => {
-          replaceLastWord(v);
-        });
-      });
-    });
-    showMenuSafe(menu);
-  }
-
   function showBookshelfStatusSuggestions() {
     if (!containerRef || menuShown) return;
     const menu = new Menu();
@@ -493,86 +462,6 @@
     showMenuSafe(menu);
   }
 
-  function showStateSuggestions() {
-    if (!containerRef || menuShown) return;
-    const menu = new Menu();
-    (menu as any).app = app;
-    menu.addItem((item) => {
-      item.setTitle('阅读状态');
-      item.setDisabled(true);
-    });
-    const values = availableStates.length > 0 ? availableStates : ['new', 'learning', 'review', 'queued', 'active', 'scheduled', 'done', 'suspended', 'removed'];
-    values.slice(0, 20).forEach((v) => {
-      menu.addItem((item) => {
-        item.setTitle(v);
-        item.onClick(() => {
-          replaceLastWord(v);
-        });
-      });
-    });
-    showMenuSafe(menu);
-  }
-
-  function showAccuracySuggestions() {
-    if (!containerRef || menuShown) return;
-    const menu = new Menu();
-    (menu as any).app = app;
-    menu.addItem((item) => {
-      item.setTitle('正确率');
-      item.setDisabled(true);
-    });
-    const values = availableAccuracies.length > 0 ? availableAccuracies : ['high', 'medium', 'low', '80', '60'];
-    values.forEach((v) => {
-      menu.addItem((item) => {
-        item.setTitle(v);
-        item.onClick(() => {
-          replaceLastWord(v);
-        });
-      });
-    });
-    showMenuSafe(menu);
-  }
-
-  function showAttemptsSuggestions() {
-    if (!containerRef || menuShown) return;
-    const menu = new Menu();
-    (menu as any).app = app;
-    menu.addItem((item) => {
-      item.setTitle('测试次数');
-      item.setDisabled(true);
-    });
-    const values = availableAttemptThresholds.length > 0 ? availableAttemptThresholds : [1, 3, 5, 10];
-    values.forEach((v) => {
-      menu.addItem((item) => {
-        item.setTitle(`${v}`);
-        item.onClick(() => {
-          replaceLastWord(`${v}`);
-        });
-      });
-    });
-    showMenuSafe(menu);
-  }
-
-  function showErrorSuggestions() {
-    if (!containerRef || menuShown) return;
-    const menu = new Menu();
-    (menu as any).app = app;
-    menu.addItem((item) => {
-      item.setTitle('错题等级');
-      item.setDisabled(true);
-    });
-    const values = availableErrorLevels.length > 0 ? availableErrorLevels : ['high', 'common', 'light', 'none'];
-    values.forEach((v) => {
-      menu.addItem((item) => {
-        item.setTitle(v);
-        item.onClick(() => {
-          replaceLastWord(v);
-        });
-      });
-    });
-    showMenuSafe(menu);
-  }
-
   function showDateSuggestions(dateType: 'created' | 'modified' | 'due') {
     if (!containerRef || menuShown) return;
     const menu = new Menu();
@@ -618,97 +507,11 @@
     showMenuSafe(menu);
   }
 
-  // 显示 YAML 属性建议
-  function showYamlSuggestions() {
-    if (!containerRef || menuShown) return;
-    const menu = new Menu();
-    (menu as any).app = app;
-    menu.addItem((item) => {
-      item.setTitle('YAML 属性筛选');
-      item.setDisabled(true);
-    });
-    menu.addItem((item) => {
-      item.setTitle('输入格式: yaml:属性名:值');
-      item.setDisabled(true);
-    });
-
-    const yamlKeys = availableYamlKeys.length > 0 ? availableYamlKeys : ['author', 'page', 'Color', 'Date', 'Annotation Type'];
-    yamlKeys.slice(0, 20).forEach((key) => {
-      menu.addItem((item) => {
-        item.setTitle(`yaml:${key}:`);
-        item.onClick(() => {
-          replaceLastWord(`${key}:`);
-        });
-      });
-    });
-    showMenuSafe(menu);
-  }
-
   // 显示标签建议
   function showTagSuggestions() {
     closeActiveMenu();
     inputRef?.focus();
     inputRef?.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-
-  // 显示牌组建议
-  function showDeckSuggestions() {
-    if (!containerRef || menuShown) return;
-    const menu = new Menu();
-    (menu as any).app = app;
-    menu.addItem((item) => {
-      item.setTitle('牌组');
-      item.setDisabled(true);
-    });
-    availableDecks.slice(0, 20).forEach((deck) => {
-      menu.addItem((item) => {
-        item.setTitle(deck.name);
-        item.onClick(() => {
-          replaceLastWord(`"${deck.name}"`);
-        });
-      });
-    });
-    showMenuSafe(menu);
-  }
-
-  // 显示优先级建议
-  function showPrioritySuggestions() {
-    if (!containerRef || menuShown) return;
-    const menu = new Menu();
-    (menu as any).app = app;
-    menu.addItem((item) => {
-      item.setTitle('优先级');
-      item.setDisabled(true);
-    });
-    availablePriorities.forEach((priority) => {
-      menu.addItem((item) => {
-        item.setTitle(`${priority}`);
-        item.onClick(() => {
-          replaceLastWord(`${priority}`);
-        });
-      });
-    });
-    showMenuSafe(menu);
-  }
-
-  // 显示题型建议
-  function showTypeSuggestions() {
-    if (!containerRef || menuShown) return;
-    const menu = new Menu();
-    (menu as any).app = app;
-    menu.addItem((item) => {
-      item.setTitle('题型');
-      item.setDisabled(true);
-    });
-    availableQuestionTypes.forEach((type) => {
-      menu.addItem((item) => {
-        item.setTitle(type);
-        item.onClick(() => {
-          replaceLastWord(type);
-        });
-      });
-    });
-    showMenuSafe(menu);
   }
 
   // 显示来源建议
@@ -776,42 +579,6 @@
     inputRef?.focus();
   }
 
-  // 显示排序菜单（独立菜单，从排序图标触发）
-  function showSortMenu(e: MouseEvent) {
-    e.preventDefault();
-    
-    if (!containerRef || menuShown) return;
-    
-    const menu = new Menu();
-    (menu as any).app = app;
-    
-    const sortFields = [
-      { field: 'created', label: '创建时间' },
-      { field: 'modified', label: '修改时间' },
-      { field: 'front', label: '正面内容' },
-      { field: 'back', label: '背面内容' },
-      { field: 'deck', label: '牌组' },
-      { field: 'tags', label: '标签' },
-      { field: 'status', label: '状态' },
-    ];
-    
-    sortFields.forEach(({ field, label }) => {
-      menu.addItem((item) => {
-        if (sortField === field) {
-          item.setChecked(true);
-          item.setTitle(sortDirection === 'asc' ? `${label} ↑` : `${label} ↓`);
-        } else {
-          item.setTitle(label);
-        }
-        item.onClick(() => {
-          onSort?.(field);
-        });
-      });
-    });
-    
-    showMenuSafe(menu);
-  }
-  
   // 插入前缀到搜索框
   function insertPrefix(prefix: string) {
     if (!inputRef) return;
@@ -1061,29 +828,6 @@
   }
 
   .clear-button:hover {
-    background: var(--background-modifier-hover);
-    color: var(--text-normal);
-  }
-
-  .filter-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px;
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    border-radius: 4px;
-    transition: all 0.2s ease;
-    flex-shrink: 0;
-    box-shadow: none;
-    outline: none;
-    -webkit-appearance: none;
-    appearance: none;
-  }
-
-  .filter-button:hover {
     background: var(--background-modifier-hover);
     color: var(--text-normal);
   }

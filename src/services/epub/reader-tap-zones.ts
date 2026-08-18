@@ -4,10 +4,16 @@
  * 移动端分页模式下：点按内容区下方 60% 区域 → 下一页，上方 40% 区域 → 上一页。
  * 长按（触发原生文字选择）不翻页；拖动（foliate 滑动翻页）不翻页；
  * 当前存在（或刚刚存在）文字选区时不翻页；命中链接/交互元素时不翻页（链接交给 foliate 处理）。
+ * 单击立即翻页（无防抖/双击延迟）。
+ *
+ * 多指手势：双指轻点（基本同时按下并抬起、无位移）→ 触发「双指点击」事件（切换全屏用），
+ * 不参与翻页判定；任何包含多指的手势都不会被当作单击翻页。
  *
  * EPUB 内容渲染在 iframe 中，事件不会冒泡到宿主，因此监听器必须挂到每个 frame document 上
  * （与 foliate-paginator 自身的 touch 监听、本服务的 attachSelectionListeners 同一模式）。
  */
+
+import { recordGesture, selectionDesc } from "./gesture-diagnostics";
 
 export type ReaderTapZone = 'prev' | 'next';
 
@@ -19,15 +25,18 @@ export interface ReaderTapEvent {
 	timeStamp: number;
 }
 
+/** 双指轻点事件（正文内容区内，用于切换全屏）。 */
+export interface ReaderTwoFingerTapEvent {
+	clientX: number;
+	clientY: number;
+	timeStamp: number;
+}
+
 /** 上方多少比例属于「上一页」区域。 */
 export const TAP_ZONE_PREV_RATIO = 0.4;
-/** 三连击判定窗口：与上一次点按的间隔超过该值视为新连击。 */
-export const TAP_TRIPLE_WINDOW_MS = 300;
-/** 首次点按后等待该时长再翻页，给三连击留判定余地（100ms 兼顾跟手与三连击）。 */
-export const TAP_FLIP_GRACE_MS = 100;
 /** 按住多久视为长按（取消点按翻页）。 */
 export const TAP_LONG_PRESS_MS = 500;
-/** 手指移动超过该距离视为拖动（取消点按翻页）。 */
+/** 手指移动超过该距离视为拖动（取消点按翻页 / 双指轻点判定）。 */
 export const TAP_MOVE_TOLERANCE_PX = 12;
 /** 该时间窗内出现过文字选区时，点按不翻页（避免「长按选词后点空白处收起工具条」误翻页）。 */
 export const TAP_RECENT_SELECTION_MS = 600;
@@ -47,49 +56,13 @@ export function resolveTapZone(clientY: number, frameHeight: number): ReaderTapZ
 	return clientY / frameHeight < TAP_ZONE_PREV_RATIO ? 'prev' : 'next';
 }
 
-export interface TapBurstOptions {
-	/** 两次点按之间的最大间隔（毫秒），超过则视为新一轮。 */
-	windowMs?: number;
-}
-
-export interface TapBurstTracker {
-	/** 记录一次点按，返回当前连击次数（1 起，达到 3 表示三连击）。 */
-	push(tap: { time: number }): number;
-	reset(): void;
-}
-
-/**
- * 连击计数器：时间窗内连续点按计数，用于「三连击切换全屏」（与 full-screen-cross-platform 一致）。
- * 纯逻辑，便于单测。
- */
-export function createTapBurstTracker(options: TapBurstOptions = {}): TapBurstTracker {
-	const { windowMs = TAP_TRIPLE_WINDOW_MS } = options;
-	let lastTime = -Infinity;
-	let count = 0;
-
-	return {
-		push(tap) {
-			if (!Number.isFinite(tap.time) || tap.time - lastTime > windowMs) {
-				count = 1;
-			} else {
-				count += 1;
-			}
-			lastTime = tap.time;
-			return count;
-		},
-		reset() {
-			lastTime = -Infinity;
-			count = 0;
-		},
-	};
-}
-
 export interface ReaderTapZoneController {
 	setEnabled(enabled: boolean): void;
 	isEnabled(): boolean;
 	/** 为单个 frame document 挂载监听，返回卸载函数。 */
 	attach(doc: Document): () => void;
 	onTap(callback: (event: ReaderTapEvent) => void): () => void;
+	onTwoFingerTap(callback: (event: ReaderTwoFingerTapEvent) => void): () => void;
 	dispose(): void;
 }
 
@@ -105,14 +78,35 @@ export interface ReaderTapZoneControllerOptions {
 }
 
 interface DocTapState {
-	startX: number;
-	startY: number;
+	/** 每个仍按下的触点（identifier → 起点坐标）。 */
+	startPoints: Map<number, { x: number; y: number }>;
+	/** 当前按下的触点总数。 */
+	pointerCount: number;
+	/** 本手势期间的峰值触点总数（用于区分单指/双指）。 */
+	peakPointers: number;
 	moved: boolean;
 	longPressed: boolean;
 	longPressTimer: number | null;
 	lastSelectionActiveAt: number;
+	/** 最近一次选区被收起/清空的时刻（收起后短暂窗口内点按也不翻页，避免误翻页）。 */
+	selectionClosedAt: number;
 	/** 本次手势开始时已有文字选区（点按=收起选区，不得翻页）。 */
 	suppressGesture: boolean;
+}
+
+function createDocTapState(): DocTapState {
+	return {
+		startPoints: new Map(),
+		pointerCount: 0,
+		peakPointers: 0,
+		moved: false,
+		longPressed: false,
+		longPressTimer: null,
+		lastSelectionActiveAt: 0,
+		selectionClosedAt: 0,
+		selectionOpen: false,
+		suppressGesture: false,
+	};
 }
 
 function getFrameViewportHeight(doc: Document): number {
@@ -143,6 +137,8 @@ export function createReaderTapZoneController(
 	const { shouldBlockTap } = options;
 	let enabled = false;
 	const tapCallbacks = new Set<(event: ReaderTapEvent) => void>();
+	const twoFingerTapCallbacks = new Set<(event: ReaderTwoFingerTapEvent) => void>();
+
 	function emit(event: ReaderTapEvent): void {
 		for (const callback of tapCallbacks) {
 			try {
@@ -154,16 +150,18 @@ export function createReaderTapZoneController(
 		}
 	}
 
+	function emitTwoFingerTap(event: ReaderTwoFingerTapEvent): void {
+		for (const callback of twoFingerTapCallbacks) {
+			try {
+				callback(event);
+			} catch (error) {
+				console.warn('[reader-tap-zones] two-finger tap callback failed:', error);
+			}
+		}
+	}
+
 	function attach(doc: Document): () => void {
-		const state: DocTapState = {
-			startX: 0,
-			startY: 0,
-			moved: false,
-			longPressed: false,
-			longPressTimer: null,
-			lastSelectionActiveAt: 0,
-			suppressGesture: false,
-		};
+		const state = createDocTapState();
 
 		const clearLongPressTimer = () => {
 			if (state.longPressTimer) {
@@ -172,78 +170,171 @@ export function createReaderTapZoneController(
 			}
 		};
 
+		const resetGesture = () => {
+			state.startPoints.clear();
+			state.pointerCount = 0;
+			state.peakPointers = 0;
+			state.moved = false;
+			state.longPressed = false;
+			state.suppressGesture = false;
+			clearLongPressTimer();
+		};
+
 		const onSelectionChange = () => {
-			if (hasActiveSelection(doc)) {
+			const active = hasActiveSelection(doc);
+			if (active) {
 				state.lastSelectionActiveAt = performance.now();
+				state.selectionOpen = true;
+				recordGesture("tapzone:selection", "open " + selectionDesc(doc));
+			} else if (state.selectionOpen) {
+				// 从「有选区」变为「收起/清空」：记录本次收起时刻。
+				// 收起后的下一次点按=取消选中（不翻页），若依赖 lastSelectionActiveAt 的 600ms 窗口，
+				// 用户选词后停顿几秒再点就会漏判误翻页——这是持久状态的原因。
+				state.selectionOpen = false;
+				state.selectionClosedAt = performance.now();
+				recordGesture("tapzone:selection", "close " + selectionDesc(doc));
 			}
 		};
 
 		const onTouchStart = (event: TouchEvent) => {
-			const touch = event.changedTouches?.[0];
-			if (!touch) {
-				return;
+			recordGesture("tapzone:touchstart", {
+				ids: Array.from(event.changedTouches || [], (t) => t.identifier),
+				points: Array.from(event.changedTouches || [], (t) => `${t.clientX|0},${t.clientY|0}`),
+				pointerCount: event.touches?.length,
+				sel: selectionDesc(doc),
+			});
+			for (const touch of Array.from(event.changedTouches || [])) {
+				state.startPoints.set(touch.identifier, {
+					x: touch.clientX,
+					y: touch.clientY,
+				});
 			}
-			state.startX = touch.clientX;
-			state.startY = touch.clientY;
-			state.moved = false;
-			state.longPressed = false;
-			state.suppressGesture = hasActiveSelection(doc);
-			clearLongPressTimer();
-			state.longPressTimer = window.setTimeout(() => {
-				state.longPressed = true;
-			}, TAP_LONG_PRESS_MS);
-		};
-
-		const onTouchMove = (event: TouchEvent) => {
-			const touch = event.changedTouches?.[0];
-			if (!touch) {
-				return;
-			}
-			const dx = touch.clientX - state.startX;
-			const dy = touch.clientY - state.startY;
-			if (Math.hypot(dx, dy) > TAP_MOVE_TOLERANCE_PX) {
-				state.moved = true;
+			state.pointerCount = event.touches?.length ?? state.pointerCount + (event.changedTouches?.length ?? 0);
+			state.peakPointers = Math.max(state.peakPointers, state.pointerCount);
+			// 有选区（含未收起的持久状态）时，本盘点按=收起选区（取消选中），不参与翻页。
+			state.suppressGesture = hasActiveSelection(doc) || state.selectionOpen === true;
+			if (state.pointerCount === 1) {
+				if (!state.longPressTimer) {
+					state.longPressTimer = window.setTimeout(() => {
+						state.longPressed = true;
+					}, TAP_LONG_PRESS_MS);
+				}
+			} else {
+				// 多指手势：长按语义只对单指有效，取消长按计时。
 				clearLongPressTimer();
 			}
 		};
 
+		const onTouchMove = (event: TouchEvent) => {
+			for (const touch of Array.from(event.changedTouches || [])) {
+				const start = state.startPoints.get(touch.identifier);
+				if (!start) {
+					continue;
+				}
+				const dx = touch.clientX - start.x;
+				const dy = touch.clientY - start.y;
+				if (Math.hypot(dx, dy) > TAP_MOVE_TOLERANCE_PX) {
+					state.moved = true;
+					clearLongPressTimer();
+					break;
+				}
+			}
+		};
+
 		const onTouchEnd = (event: TouchEvent) => {
+			const remaining = event.touches?.length ?? 0;
+			const changedTouches = Array.from(event.changedTouches || []);
+			for (const touch of changedTouches) {
+				state.startPoints.delete(touch.identifier);
+			}
+			state.pointerCount = remaining;
+			// 仍有手指按着：手势未结束，等待最后一次抬起。
+			if (remaining > 0) {
+				return;
+			}
+
 			clearLongPressTimer();
+			const peakPointers = state.peakPointers;
+			const moved = state.moved;
+			const longPressed = state.longPressed;
+			const suppressGesture = state.suppressGesture;
+			const now = performance.now();
+			resetGesture();
+
 			if (!enabled) {
 				return;
 			}
-			if (state.moved || state.longPressed || state.suppressGesture) {
+			if (moved || longPressed) {
 				return;
 			}
-			const touch = event.changedTouches?.[0];
-			if (!touch) {
+
+			const lift = changedTouches[0];
+			if (!lift) {
+				return;
+			}
+
+			if (peakPointers === 2) {
+				// 双指轻点：切换全屏等手势，不参与翻页。双指手势不拦截链接/标注等单指语义。
+				recordGesture("tapzone:twoFinger", { x: lift.clientX|0, y: lift.clientY|0 });
+				emitTwoFingerTap({
+					clientX: lift.clientX,
+					clientY: lift.clientY,
+					timeStamp: event.timeStamp,
+				});
+				return;
+			}
+			if (peakPointers !== 1) {
+				// 三指及以上：不响应。
+				return;
+			}
+
+			if (suppressGesture) {
+				recordGesture("tapzone:block", { reason: "suppress", moved, longPressed, sel: selectionDesc(doc) });
 				return;
 			}
 			if (hasActiveSelection(doc)) {
+				recordGesture("tapzone:block", { reason: "active-selection" });
+				return;
+			}
+			// 刚刚收起过文字选区（selectionchange 从有到无）：
+			// 本盘点按=取消选中，不得翻页（不依赖旧的时间窗，避免选词后停顿再点被误判）。
+			if (state.selectionClosedAt > 0 && now - state.selectionClosedAt < TAP_RECENT_SELECTION_MS) {
+				recordGesture("tapzone:block", { reason: "recent-close", closedAt: Math.round(now - state.selectionClosedAt) });
 				return;
 			}
 			if (performance.now() - state.lastSelectionActiveAt < TAP_RECENT_SELECTION_MS) {
+				recordGesture("tapzone:block", { reason: "recent-selection", ageMs: Math.round(performance.now() - state.lastSelectionActiveAt) });
 				return;
 			}
 			if (isInteractiveTarget(event.target)) {
+				recordGesture("tapzone:block", { reason: "interactive" });
 				return;
 			}
-			if (shouldBlockTap?.({ x: touch.clientX, y: touch.clientY }, doc)) {
+			if (shouldBlockTap?.({ x: lift.clientX, y: lift.clientY }, doc)) {
+				recordGesture("tapzone:block", { reason: "shouldBlockTap" });
 				return;
 			}
 			const frameHeight = getFrameViewportHeight(doc);
-			emit({
-				zone: resolveTapZone(touch.clientY, frameHeight),
-				clientX: touch.clientX,
-				clientY: touch.clientY,
+			const tapEvent: ReaderTapEvent = {
+				zone: resolveTapZone(lift.clientY, frameHeight),
+				clientX: lift.clientX,
+				clientY: lift.clientY,
 				frameHeight,
 				timeStamp: event.timeStamp,
-			});
+			};
+			// 单击立即翻页（无防抖延迟）。选中态与交互元素已在上面分支拦截。
+			recordGesture("tapzone:emit", { zone: tapEvent.zone, x: tapEvent.clientX|0, y: tapEvent.clientY|0 });
+			emit(tapEvent);
+		};
+
+		const onTouchCancel = () => {
+			resetGesture();
 		};
 
 		doc.addEventListener('touchstart', onTouchStart, { passive: true });
 		doc.addEventListener('touchmove', onTouchMove, { passive: true });
 		doc.addEventListener('touchend', onTouchEnd, { passive: true });
+		doc.addEventListener('touchcancel', onTouchCancel, { passive: true });
 		doc.addEventListener('selectionchange', onSelectionChange);
 
 		return () => {
@@ -251,6 +342,7 @@ export function createReaderTapZoneController(
 			doc.removeEventListener('touchstart', onTouchStart);
 			doc.removeEventListener('touchmove', onTouchMove);
 			doc.removeEventListener('touchend', onTouchEnd);
+			doc.removeEventListener('touchcancel', onTouchCancel);
 			doc.removeEventListener('selectionchange', onSelectionChange);
 		};
 	}
@@ -269,8 +361,15 @@ export function createReaderTapZoneController(
 				tapCallbacks.delete(callback);
 			};
 		},
+		onTwoFingerTap(callback) {
+			twoFingerTapCallbacks.add(callback);
+			return () => {
+				twoFingerTapCallbacks.delete(callback);
+			};
+		},
 		dispose() {
 			tapCallbacks.clear();
+			twoFingerTapCallbacks.clear();
 		},
 	};
 }

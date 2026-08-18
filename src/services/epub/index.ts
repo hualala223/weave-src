@@ -69,10 +69,7 @@ export { EpubLocationMigrationService } from "./EpubLocationMigrationService";
 export * from "./types";
 export {
 	createReaderTapZoneController,
-	createTapBurstTracker,
 	resolveTapZone,
-	TAP_FLIP_GRACE_MS,
-	TAP_TRIPLE_WINDOW_MS,
 	TAP_ZONE_PREV_RATIO,
 	TAP_LONG_PRESS_MS,
 	TAP_MOVE_TOLERANCE_PX,
@@ -80,7 +77,7 @@ export {
 	TAP_INTERACTIVE_SELECTOR,
 	type ReaderTapEvent,
 	type ReaderTapZone,
-	type TapBurstTracker,
+	type ReaderTwoFingerTapEvent,
 } from "./reader-tap-zones";
 export {
 	isBookCompleted,

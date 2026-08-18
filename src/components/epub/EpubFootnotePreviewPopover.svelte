@@ -45,12 +45,16 @@
 				shift({ padding: 12 }),
 			],
 		});
+		// await 期间组件可能已卸载（bind:this 会置空 popoverEl），此时直接放弃定位。
+		if (!popoverEl) {
+			return;
+		}
 		posLeft = position.x;
 		posTop = position.y;
 		currentPlacement = position.placement;
 		logger.debugWithTag(
 			'FootnoteDiag',
-			`[FootnoteDiag] EpubFootnotePreviewPopover positioned preview href=${info.href} top=${String(posTop)} left=${String(posLeft)} placement=${currentPlacement} width=${String(popoverEl.offsetWidth)}`
+			`[FootnoteDiag] EpubFootnotePreviewPopover positioned preview href=${info.href} top=${String(posTop)} left=${String(posLeft)} placement=${currentPlacement} width=${String(popoverEl?.offsetWidth ?? 0)}`
 		);
 	}
 
@@ -130,9 +134,23 @@
 		-webkit-box-orient: vertical;
 	}
 
-	@media (max-width: 768px) {
+	/* 触屏设备：脚注弹窗可见、可触摸滚动查看超长注文。
+	 * 用悬停/指针能力而非宽度区分——窄窗口的桌面端仍保持悬停预览行为。 */
+	@media (hover: none) and (pointer: coarse) {
 		.epub-footnote-preview {
-			display: none;
+			pointer-events: auto;
+			overflow-y: auto;
+			overflow-x: hidden;
+			overscroll-behavior: contain;
+			-webkit-overflow-scrolling: touch;
+			max-height: min(40vh, calc(100vh - 32px));
+		}
+
+		.epub-footnote-preview__text {
+			display: block;
+			line-clamp: unset;
+			-webkit-line-clamp: unset;
+			overflow: visible;
 		}
 	}
 </style>

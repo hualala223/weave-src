@@ -512,8 +512,8 @@ body.is-mobile .epub-bottom-nav {
 }
 
 
-/* 三连击全屏：隐藏 Obsidian 移动端顶部栏（navbar/view-header）与底部标签栏（tab header） */
-/* 选择器参照 full-screen-cross-platform 插件：.mobile-navbar / .view-header / .workspace-tab-header-inner */
+/* 双指点击全屏：隐藏 Obsidian 移动端顶部栏（navbar/view-header）与底部标签栏（tab header） */
+/* 触发：正文内容区双指轻点（tap-zones 服务）。选择器参照 full-screen-cross-platform 插件 */
 body.is-mobile.weave-epub-fullscreen .mobile-navbar,
 body.is-mobile.weave-epub-fullscreen .mobile-tab-bar,
 body.is-mobile.weave-epub-fullscreen .view-header,

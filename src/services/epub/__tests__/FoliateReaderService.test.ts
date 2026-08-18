@@ -1734,6 +1734,29 @@ describe("FoliateReaderService", () => {
 					}
 					const range = document.createRange();
 					range.selectNodeContents(paragraph);
+					// frame 本地坐标系矩形：iframe 在宿主中偏移 left=40/top=80。
+					// 命中点 (120,130) 落在 frame 本地矩形 (100,110)-(260,150) 内；
+					// 若按旧实现映射到宿主坐标（(140,190)-(300,230)），则 120<140 会 miss——
+					// 这正是「点击划线误翻页」的根因修复验证点。
+					const frameRects = [{ left: 100, top: 110, width: 160, height: 40 }];
+					Object.defineProperty(range, "getClientRects", {
+						value: () => frameRects,
+						configurable: true,
+					});
+					Object.defineProperty(range, "getBoundingClientRect", {
+						value: () => ({
+							left: 100,
+							top: 110,
+							width: 160,
+							height: 40,
+							right: 260,
+							bottom: 150,
+							x: 100,
+							y: 110,
+							toJSON: () => ({}),
+						}),
+						configurable: true,
+					});
 					return range;
 				}) as any
 			);
@@ -3411,6 +3434,47 @@ describe("FoliateReaderService", () => {
 				Object.defineProperty(HTMLIFrameElement.prototype, "src", originalIframeSrcDescriptor);
 			}
 			resetMobileBlobIframePatchStateForTests();
+		}
+	});
+
+	it("blocks tap-zone page turns while the footnote preview is pinned", async () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
+		try {
+			const frameDoc = document.implementation.createHTMLDocument("frame");
+			const visibleFrames = [
+				{
+					index: 0,
+					href: "chapter.xhtml",
+					frameDocument: frameDoc,
+					frameElement: null,
+					frame: { frameDocument: frameDoc, frameWindow: window } as never,
+				},
+			];
+			vi.spyOn(service as unknown as { getVisibleFramesWithIndex: () => unknown }, "getVisibleFramesWithIndex")
+				.mockReturnValue(visibleFrames as never);
+			vi.spyOn(
+				service as unknown as { findHighlightAtPointer: () => unknown },
+				"findHighlightAtPointer"
+			).mockReturnValue(null);
+
+			const point = { x: 10, y: 700 };
+			const blocked = (service as any).isTapZoneBlockedByContent as (
+				point: { x: number; y: number },
+				doc: Document
+			) => boolean;
+
+			// 未固定脚注弹窗：空白处点按不拦截（无高亮）→ 可以翻页。
+			expect(blocked.call(service, point, frameDoc)).toBe(false);
+
+			// 固定脚注弹窗：点击只关弹窗、不得翻页。
+			(service as any).footnotePreviewController.setPinnedState(true);
+			expect(blocked.call(service, point, frameDoc)).toBe(true);
+
+			// 弹窗关闭后恢复可翻页。
+			(service as any).footnotePreviewController.setPinnedState(false);
+			expect(blocked.call(service, point, frameDoc)).toBe(false);
+		} finally {
+			service.destroy();
 		}
 	});
 });

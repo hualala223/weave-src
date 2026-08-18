@@ -12,7 +12,7 @@ import type {
 	TocItem,
 } from "./types";
 import type { EpubChapterLocationFormat } from "./epub-excerpt-settings";
-import type { ReaderTapEvent } from "./reader-tap-zones";
+import type { ReaderTapEvent, ReaderTwoFingerTapEvent } from "./reader-tap-zones";
 
 export type EpubReaderEngineType = "foliate";
 
@@ -227,6 +227,8 @@ export interface EpubReaderEngine {
 	setTapZonesEnabled?(enabled: boolean): void;
 	/** 订阅阅读内容点按事件（长按/拖动/选区/链接不会触发）。 */
 	onReaderTap?(callback: (event: ReaderTapEvent) => void): () => void;
+	/** 订阅阅读内容双指轻点事件（切换全屏用）。 */
+	onReaderTwoFingerTap?(callback: (event: ReaderTwoFingerTapEvent) => void): () => void;
 	setLayoutMode(
 		mode: EpubLayoutMode,
 		flowMode: EpubFlowMode,

@@ -10,8 +10,9 @@
 	import EpubHighlightToolbar from './EpubHighlightToolbar.svelte';
 	import EpubCommentEditorPopover from './EpubCommentEditorPopover.svelte';
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
-	import { createEpubReaderEngine, createTapBurstTracker, DEFAULT_EPUB_EXCERPT_SETTINGS, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, TAP_FLIP_GRACE_MS, TAP_TRIPLE_WINDOW_MS } from '../../services/epub';
+	import { createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress } from '../../services/epub';
 	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderTapEvent, ReadingPosition } from '../../services/epub';
+	import { getBookFormatDisplayLabel, isSupportedBookFile } from '../../services/epub/book-format';
 	import { EpubBookmarkService } from '../../services/epub/EpubBookmarkService';
 	import {
 		getDefaultEpubReaderSettings,
@@ -64,6 +65,7 @@
 	import { shouldDismissToolbarOnPointerDown } from './toolbar-positioning';
 	import { generateBlockID } from '../../services/identifier/WeaveIDGenerator';
 	import {
+		DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
 		normalizeContinuousReadingPositionAutoSaveEnabled,
 		normalizeContinuousReadingPositionAutoSavePages,
 	} from '../../config/reading-position-auto-save';
@@ -173,9 +175,6 @@
 	let readingProgress = $state(0);
 	let paginationInfo = $state<PaginationInfo>({ currentPage: 0, totalPages: 0 });
 	let mobileFullscreen = $state(false);
-	let tapTurnTimer: number | null = null;
-	let tapTurnZone: 'prev' | 'next' | null = null;
-	const tapBurstTracker = createTapBurstTracker({ windowMs: TAP_TRIPLE_WINDOW_MS });
 	let currentChapterIndex = $state(0);
 	let showScrolledChapterNavActions = $state(false);
 	let readerVersion = $state(0);
@@ -1702,26 +1701,6 @@
 		}
 	}
 
-	function cancelPendingTapTurn(): void {
-		if (tapTurnTimer) {
-			window.clearTimeout(tapTurnTimer);
-			tapTurnTimer = null;
-		}
-		tapTurnZone = null;
-	}
-
-	function scheduleTapTurn(zone: 'prev' | 'next', delayMs: number): void {
-		cancelPendingTapTurn();
-		tapTurnZone = zone;
-		tapTurnTimer = window.setTimeout(() => {
-			tapTurnTimer = null;
-			const turnZone = tapTurnZone;
-			tapTurnZone = null;
-			tapBurstTracker.reset();
-			flipPage(turnZone);
-		}, delayMs);
-	}
-
 	function toggleMobileFullscreen(): void {
 		const next = !mobileFullscreen;
 		mobileFullscreen = next;
@@ -1732,16 +1711,15 @@
 		if (!readerReady) {
 			return;
 		}
-		const count = tapBurstTracker.push({ time: performance.now() });
-		if (count >= 3) {
-			// 三连击：取消待翻页，切换全屏
-			cancelPendingTapTurn();
-			tapBurstTracker.reset();
-			toggleMobileFullscreen();
+		// 单指点击立即翻页（无连击防抖延迟；全屏切换走双指点击）。
+		flipPage(event.zone);
+	}
+
+	function handleReaderTwoFingerTap(): void {
+		if (!readerReady) {
 			return;
 		}
-		// 首次点按等 100ms 宽限（给三连击留余地）；连击点按等满 300ms 窗口
-		scheduleTapTurn(event.zone, count === 1 ? TAP_FLIP_GRACE_MS : TAP_TRIPLE_WINDOW_MS);
+		toggleMobileFullscreen();
 	}
 
 
@@ -2624,7 +2602,6 @@
 		return () => {
 			unsubscribeTheme();
 			window.removeEventListener('mousedown', handleTypographyPointerDownOutside);
-			cancelPendingTapTurn();
 			document.body.classList.remove('weave-epub-fullscreen');
 		};
 	});
@@ -2636,8 +2613,12 @@
 			service.setTapZonesEnabled?.(enabled);
 			return service.onReaderTap?.((event) => handleReaderTap(event));
 		});
+		const offTwoFingerTap = untrack(() =>
+			service.onReaderTwoFingerTap?.(() => handleReaderTwoFingerTap())
+		);
 		return () => {
 			offTap?.();
+			offTwoFingerTap?.();
 		};
 	});
 

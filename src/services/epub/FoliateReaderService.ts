@@ -61,6 +61,7 @@ import {
 	createAnchorPointFromRect,
 	createElementViewportRect,
 	createViewportRectFromRawRect,
+	createViewportRectListFromRawRectList,
 	extractRangeBoundingRect,
 	extractRangeClientRects,
 	hasUsableOverlayRects,
@@ -72,6 +73,7 @@ import { mapRawRectToViewport } from "./reader-viewport-rect-map";
 import {
 	createReaderTapZoneController,
 	type ReaderTapEvent,
+	type ReaderTwoFingerTapEvent,
 } from "./reader-tap-zones";
 import {
 	type FoliateOverlayerModule,
@@ -110,6 +112,7 @@ import {
 	resolveScrolledChapterEndState,
 } from "./scrolled-chapter-end";
 import { logger } from "../../utils/logger";
+import { gestureDiagCount, gestureDiagDump, recordGesture, selectionDesc } from "./gesture-diagnostics";
 import { domInstanceOf } from "../../utils/dom-instance-of";
 import { createSpanInOwnerDocument } from "../../utils/obsidian-document-dom";
 import {
@@ -343,6 +346,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private scrolledChapterEndMonitorCleanup: (() => void) | null = null;
 	private scrolledChapterEndSyncFrame = 0;
 	private atCurrentChapterEndCached = false;
+	/** 诊断日志节流写盘定时器（排查拖动选区闪跳用，完成后删除）。 */
+	private gestureDiagFlushTimer: ReturnType<typeof window.setInterval> | null = null;
 	private footnotePreviewCallbacks = new Set<(info: ReaderFootnotePreviewInfo | null) => void>();
 	private selectionChangeCallbacks = new Set<(event: ReaderSelectionChange) => void>();
 	private readonly tapZoneController = createReaderTapZoneController({
@@ -533,6 +538,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.applyRenderOptions(options);
 		container.replaceChildren();
 		container.dataset.foliate = "true";
+		this.startGestureDiagFlush();
 
 		const view = activeWindow.createEl("foliate-view") as FoliateViewElement;
 		view.classList.add("weave-epub-reader-host");
@@ -1506,6 +1512,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	async prevPage(): Promise<void> {
 		await this.enqueueNavigation(async () => {
 			this.clearSelections();
+			recordGesture("fork:prevPage", void 0);
 			if (!this.foliateView) {
 				return;
 			}
@@ -1523,6 +1530,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 		await this.enqueueNavigation(async () => {
 			this.clearSelections();
+			recordGesture("fork:nextPage", void 0);
 			if (!this.foliateView) {
 				return;
 			}
@@ -1580,6 +1588,11 @@ export class FoliateReaderService implements EpubReaderEngine {
 	/** 订阅阅读区域点按事件（上 40% 上一页 / 下 60% 下一页）。 */
 	onReaderTap(callback: (event: ReaderTapEvent) => void): () => void {
 		return this.tapZoneController.onTap(callback);
+	}
+
+	/** 订阅阅读区域双指轻点事件（切换全屏用）。 */
+	onReaderTwoFingerTap(callback: (event: ReaderTwoFingerTapEvent) => void): () => void {
+		return this.tapZoneController.onTwoFingerTap(callback);
 	}
 
 
@@ -1718,6 +1731,11 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return;
 		}
 		const detail = (event as CustomEvent<{ cfi?: string; index?: number }>).detail;
+		recordGesture("foliate:relocate", {
+			cfi: detail?.cfi,
+			index: detail?.index,
+			flow: this.currentFlowMode,
+		});
 		if (!detail) {
 			return;
 		}
@@ -1747,6 +1765,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return;
 		}
 		const detail = (event as CustomEvent<{ doc?: Document; index?: number }>).detail;
+		recordGesture("foliate:load", { index: detail?.index, flow: this.currentFlowMode });
 		const doc = detail?.doc;
 		if (!doc) {
 			return;
@@ -5062,16 +5081,48 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const sectionHighlights = this.collectHighlightsForSection(frame.index);
 		for (let index = sectionHighlights.length - 1; index >= 0; index -= 1) {
 			const highlight = sectionHighlights[index];
-			const geometry = this.getCurrentHighlightViewportGeometry(
-				highlight.cfiRange,
-				highlight.text
-			);
+			const geometry = this.getCurrentHighlightFrameGeometry(highlight, frame);
 			if (geometry && this.isClientPointInHighlightGeometry(clientX, clientY, geometry)) {
 				return highlight;
 			}
 		}
 
 		return this.findHighlightAtDocumentPoint(clientX, clientY, frame);
+	}
+
+	/**
+	 * 命中检测专用：按 frame 本地坐标系解析高亮矩形。
+	 *
+	 * 与控件定位用的 getCurrentHighlightViewportGeometry 不同，这里**不做宿主视口偏移映射**
+	 * （mapRawRectToViewport）：frame 内触摸/点击事件的 clientX/Y 是 iframe 视口坐标，
+	 * 若拿宿主坐标系的矩形去比对会差一个 iframe 偏移（移动端 ≥12px），导致点按命中恒失败、
+	 * 点击标注误触发翻页。
+	 */
+	private getCurrentHighlightFrameGeometry(
+		highlight: ReaderHighlight,
+		frame: VisibleFrameWithIndex
+	): { rect: HighlightClickInfo["rect"]; rects?: HighlightClickInfo["rect"][] } | null {
+		const range = this.parser.resolveRangeInLoadedSection(
+			highlight.cfiRange,
+			frame.frameDocument,
+			frame.index,
+			String(highlight.text || "").trim() || undefined
+		);
+		if (!range) {
+			return null;
+		}
+		const rawRect = extractRangeBoundingRect(range);
+		if (!rawRect) {
+			return null;
+		}
+		const rect = createViewportRectFromRawRect(rawRect);
+		const rects = createViewportRectListFromRawRectList(extractRangeClientRects(range));
+		return rect
+			? {
+					rect,
+					rects: rects?.length ? rects : undefined,
+				}
+			: null;
 	}
 
 	private findHighlightAtDocumentPoint(
@@ -5127,7 +5178,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 
 		const docWithCaretApis = doc as Document & Record<string, unknown>;
-		const caretPositionFromPoint = docWithCaretApis["caretPositionFromPoint"];
+		const caretPositionFromPoint = docWithCaretApis.caretPositionFromPoint;
 		if (typeof caretPositionFromPoint === "function") {
 			const position = Reflect.apply(
 				caretPositionFromPoint as (
@@ -5142,6 +5193,20 @@ export class FoliateReaderService implements EpubReaderEngine {
 				const range = doc.createRange();
 				range.setStart(position.offsetNode, position.offset);
 				range.collapse(true);
+				return range;
+			}
+		}
+
+		// caretPositionFromPoint 仅 Firefox 系提供；iOS/Android 的 Obsidian WebView
+		// 需要 caretRangeFromPoint（Chrome/WebKit 系），兜底缺失会导致命中检测整体失效。
+		const caretRangeFromPoint = docWithCaretApis.caretRangeFromPoint;
+		if (typeof caretRangeFromPoint === "function") {
+			const range = Reflect.apply(
+				caretRangeFromPoint as (this: Document, x: number, y: number) => Range | null,
+				doc,
+				[clientX, clientY]
+			);
+			if (range) {
 				return range;
 			}
 		}
@@ -5165,12 +5230,19 @@ export class FoliateReaderService implements EpubReaderEngine {
 			});
 		};
 
-		const onSelectionChange = () => scheduleEmit();
+		const onSelectionChange = () => {
+			recordGesture("service:selectionchange", selectionDesc(doc));
+			scheduleEmit();
+		};
 		const onMouseUp = (event: MouseEvent) => {
+			recordGesture("service:mouseup-touchend", { type: "mouseup", sel: selectionDesc(doc) });
 			scheduleEmit();
 			this.bridgeHostSelectionMouseUp(doc, event);
 		};
-		const onTouchEnd = () => scheduleEmit();
+		const onTouchEnd = () => {
+			recordGesture("service:selection-touchend", selectionDesc(doc));
+			scheduleEmit();
+		};
 		const onKeyUp = () => scheduleEmit();
 
 		doc.addEventListener("selectionchange", onSelectionChange);
@@ -5203,6 +5275,11 @@ export class FoliateReaderService implements EpubReaderEngine {
 		point: { x: number; y: number },
 		doc: Document
 	): boolean {
+		// 脚注弹窗已固定时，点击页面只应关闭弹窗（click 处理器负责），不得同时翻页。
+		// tap-zone 的 touchend 先于 click 判定，此刻弹窗仍处于 pinned 状态。
+		if (this.footnotePreviewPinned) {
+			return true;
+		}
 		const frame = this.getVisibleFramesWithIndex().find((item) => item.frameDocument === doc);
 		if (!frame) {
 			return false;
@@ -6707,6 +6784,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	private async destroyAll(): Promise<void> {
+		this.stopGestureDiagFlush();
 		await this.destroyViewOnly();
 		this.resetHighlightState();
 		this.resetParagraphState();
@@ -6719,6 +6797,39 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.highlightClickCallbacks.clear();
 		this.referenceBadgeClickCallbacks.clear();
 		this.tapZoneController.dispose();
+	}
+
+	/** 启动诊断日志节流写盘（仅移动端分页需要；桌面/滚动模式无意义但也无害）。 */
+	private startGestureDiagFlush(): void {
+		this.stopGestureDiagFlush();
+		this.gestureDiagFlushTimer = window.setInterval(() => {
+			void this.flushGestureDiagnosticsToVault();
+		}, 1200);
+	}
+
+	private stopGestureDiagFlush(): void {
+		if (this.gestureDiagFlushTimer !== null) {
+			window.clearInterval(this.gestureDiagFlushTimer);
+			this.gestureDiagFlushTimer = null;
+		}
+	}
+
+	/** 把诊断缓冲节流写入 vault 根目录 weave-gesture-debug.log。 */
+	private async flushGestureDiagnosticsToVault(): Promise<void> {
+		try {
+			const count = gestureDiagCount();
+			if (count === 0) {
+				return;
+			}
+			const content = gestureDiagDump();
+			const adapter = this.app.vault.adapter as { write?: (path: string, content: string) => Promise<void> };
+			if (typeof adapter?.write === "function") {
+				await adapter.write("weave-gesture-debug.log", content);
+			}
+		} catch (error) {
+			// 诊断写入失败不影响阅读器主流程。
+			logger.warn("[FoliateReaderService] Failed to flush gesture diagnostics:", error);
+		}
 	}
 
 	private resetTemporaryHighlightTimers(): void {
