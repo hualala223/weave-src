@@ -13,8 +13,6 @@
  * （与 foliate-paginator 自身的 touch 监听、本服务的 attachSelectionListeners 同一模式）。
  */
 
-import { recordGesture, selectionDesc } from "./gesture-diagnostics";
-
 export type ReaderTapZone = 'prev' | 'next';
 
 export interface ReaderTapEvent {
@@ -185,24 +183,16 @@ export function createReaderTapZoneController(
 			if (active) {
 				state.lastSelectionActiveAt = performance.now();
 				state.selectionOpen = true;
-				recordGesture("tapzone:selection", "open " + selectionDesc(doc));
 			} else if (state.selectionOpen) {
 				// 从「有选区」变为「收起/清空」：记录本次收起时刻。
 				// 收起后的下一次点按=取消选中（不翻页），若依赖 lastSelectionActiveAt 的 600ms 窗口，
 				// 用户选词后停顿几秒再点就会漏判误翻页——这是持久状态的原因。
 				state.selectionOpen = false;
 				state.selectionClosedAt = performance.now();
-				recordGesture("tapzone:selection", "close " + selectionDesc(doc));
 			}
 		};
 
 		const onTouchStart = (event: TouchEvent) => {
-			recordGesture("tapzone:touchstart", {
-				ids: Array.from(event.changedTouches || [], (t) => t.identifier),
-				points: Array.from(event.changedTouches || [], (t) => `${t.clientX|0},${t.clientY|0}`),
-				pointerCount: event.touches?.length,
-				sel: selectionDesc(doc),
-			});
 			for (const touch of Array.from(event.changedTouches || [])) {
 				state.startPoints.set(touch.identifier, {
 					x: touch.clientX,
@@ -275,7 +265,6 @@ export function createReaderTapZoneController(
 
 			if (peakPointers === 2) {
 				// 双指轻点：切换全屏等手势，不参与翻页。双指手势不拦截链接/标注等单指语义。
-				recordGesture("tapzone:twoFinger", { x: lift.clientX|0, y: lift.clientY|0 });
 				emitTwoFingerTap({
 					clientX: lift.clientX,
 					clientY: lift.clientY,
@@ -289,29 +278,23 @@ export function createReaderTapZoneController(
 			}
 
 			if (suppressGesture) {
-				recordGesture("tapzone:block", { reason: "suppress", moved, longPressed, sel: selectionDesc(doc) });
 				return;
 			}
 			if (hasActiveSelection(doc)) {
-				recordGesture("tapzone:block", { reason: "active-selection" });
 				return;
 			}
 			// 刚刚收起过文字选区（selectionchange 从有到无）：
 			// 本盘点按=取消选中，不得翻页（不依赖旧的时间窗，避免选词后停顿再点被误判）。
 			if (state.selectionClosedAt > 0 && now - state.selectionClosedAt < TAP_RECENT_SELECTION_MS) {
-				recordGesture("tapzone:block", { reason: "recent-close", closedAt: Math.round(now - state.selectionClosedAt) });
 				return;
 			}
 			if (performance.now() - state.lastSelectionActiveAt < TAP_RECENT_SELECTION_MS) {
-				recordGesture("tapzone:block", { reason: "recent-selection", ageMs: Math.round(performance.now() - state.lastSelectionActiveAt) });
 				return;
 			}
 			if (isInteractiveTarget(event.target)) {
-				recordGesture("tapzone:block", { reason: "interactive" });
 				return;
 			}
 			if (shouldBlockTap?.({ x: lift.clientX, y: lift.clientY }, doc)) {
-				recordGesture("tapzone:block", { reason: "shouldBlockTap" });
 				return;
 			}
 			const frameHeight = getFrameViewportHeight(doc);
@@ -323,7 +306,6 @@ export function createReaderTapZoneController(
 				timeStamp: event.timeStamp,
 			};
 			// 单击立即翻页（无防抖延迟）。选中态与交互元素已在上面分支拦截。
-			recordGesture("tapzone:emit", { zone: tapEvent.zone, x: tapEvent.clientX|0, y: tapEvent.clientY|0 });
 			emit(tapEvent);
 		};
 

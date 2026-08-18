@@ -112,7 +112,6 @@ import {
 	resolveScrolledChapterEndState,
 } from "./scrolled-chapter-end";
 import { logger } from "../../utils/logger";
-import { gestureDiagCount, gestureDiagDump, recordGesture, selectionDesc } from "./gesture-diagnostics";
 import { domInstanceOf } from "../../utils/dom-instance-of";
 import { createSpanInOwnerDocument } from "../../utils/obsidian-document-dom";
 import {
@@ -353,8 +352,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private scrolledChapterEndMonitorCleanup: (() => void) | null = null;
 	private scrolledChapterEndSyncFrame = 0;
 	private atCurrentChapterEndCached = false;
-	/** 诊断日志节流写盘定时器（排查拖动选区闪跳用，完成后删除）。 */
-	private gestureDiagFlushTimer: ReturnType<typeof window.setInterval> | null = null;
 	private footnotePreviewCallbacks = new Set<(info: ReaderFootnotePreviewInfo | null) => void>();
 	private selectionChangeCallbacks = new Set<(event: ReaderSelectionChange) => void>();
 	private readonly tapZoneController = createReaderTapZoneController({
@@ -545,7 +542,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.applyRenderOptions(options);
 		container.replaceChildren();
 		container.dataset.foliate = "true";
-		this.startGestureDiagFlush();
 
 		const view = activeWindow.createEl("foliate-view") as FoliateViewElement;
 		view.classList.add("weave-epub-reader-host");
@@ -1533,7 +1529,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 	async prevPage(): Promise<void> {
 		await this.enqueueNavigation(async () => {
 			this.clearSelections();
-			recordGesture("fork:prevPage", void 0);
 			if (!this.foliateView) {
 				return;
 			}
@@ -1551,7 +1546,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 		await this.enqueueNavigation(async () => {
 			this.clearSelections();
-			recordGesture("fork:nextPage", void 0);
 			if (!this.foliateView) {
 				return;
 			}
@@ -1751,14 +1745,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (event.currentTarget && event.currentTarget !== this.foliateView) {
 			return;
 		}
-		const detail = (event as CustomEvent<{ cfi?: string; index?: number; reason?: string }>).detail;
-		const reason = String(detail?.reason || "");
-		recordGesture("foliate:relocate", {
-			cfi: detail?.cfi,
-			index: detail?.index,
-			reason,
-			flow: this.currentFlowMode,
-		});
+		const detail = (event as CustomEvent<{ cfi?: string; index?: number }>).detail;
 		if (!detail) {
 			return;
 		}
@@ -1766,7 +1753,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 		// 移动端扩选期间，系统原生选区会连续触发 foliate 的 anchor/snap relocate。
 		// 插件必须保持旁观：不同步位置、不恢复布局、不刷新标注，否则页面会闪跳/错位。
 		if (this.hasActiveReaderSelection()) {
-			recordGesture("service:relocate-suppress", { reason, cfi: detail.cfi });
 			return;
 		}
 
@@ -1785,7 +1771,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 			target === this.lastHandledRelocateCfi
 			&& now - this.lastHandledRelocateAt < FoliateReaderService.RELOCATE_DEDUPE_MS
 		) {
-			recordGesture("service:relocate-dedupe", { reason, cfi: target });
 			return;
 		}
 		this.lastHandledRelocateCfi = target;
@@ -1808,7 +1793,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return;
 		}
 		const detail = (event as CustomEvent<{ doc?: Document; index?: number }>).detail;
-		recordGesture("foliate:load", { index: detail?.index, flow: this.currentFlowMode });
 		const doc = detail?.doc;
 		if (!doc) {
 			return;
@@ -5275,30 +5259,13 @@ export class FoliateReaderService implements EpubReaderEngine {
 		};
 
 		const onSelectionChange = () => {
-			recordGesture("service:selectionchange", selectionDesc(doc));
-			// 拖动选区 handle 时，Android WebView 可能原生滚动分页器 #container（scrollLeft）
-			// 以保持 handle 可见——这是「页面闪跳但无 relocate」的唯一通道。这里顺带记录
-			// 分页器实时位置，用于核对滚动冻结是否生效、以及跳页是否伴随位置漂移。
-			const paginator = this.foliateView?.renderer as
-				| { containerPosition?: number; page?: number; pages?: number }
-				| undefined;
-			if (paginator && typeof paginator.containerPosition === "number") {
-				recordGesture("service:paginator-pos", {
-					pos: paginator.containerPosition,
-					page: paginator.page,
-					pages: paginator.pages,
-					sel: selectionDesc(doc),
-				});
-			}
 			scheduleEmit();
 		};
 		const onMouseUp = (event: MouseEvent) => {
-			recordGesture("service:mouseup-touchend", { type: "mouseup", sel: selectionDesc(doc) });
 			scheduleEmit();
 			this.bridgeHostSelectionMouseUp(doc, event);
 		};
 		const onTouchEnd = () => {
-			recordGesture("service:selection-touchend", selectionDesc(doc));
 			scheduleEmit();
 		};
 		const onKeyUp = () => scheduleEmit();
@@ -5725,9 +5692,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private emitSelectionChangeIfNeeded(doc: Document): void {
 		const selection = doc.defaultView?.getSelection?.();
 		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-			if (this.lastSelectionByDocument.delete(doc)) {
-				recordGesture("service:selection-cleared", selectionDesc(doc));
-			}
+			this.lastSelectionByDocument.delete(doc);
 			this.maybeFlushPendingSelectionResize();
 			return;
 		}
@@ -6854,7 +6819,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	private async destroyAll(): Promise<void> {
-		this.stopGestureDiagFlush();
 		await this.destroyViewOnly();
 		this.resetHighlightState();
 		this.resetParagraphState();
@@ -6867,39 +6831,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.highlightClickCallbacks.clear();
 		this.referenceBadgeClickCallbacks.clear();
 		this.tapZoneController.dispose();
-	}
-
-	/** 启动诊断日志节流写盘（仅移动端分页需要；桌面/滚动模式无意义但也无害）。 */
-	private startGestureDiagFlush(): void {
-		this.stopGestureDiagFlush();
-		this.gestureDiagFlushTimer = window.setInterval(() => {
-			void this.flushGestureDiagnosticsToVault();
-		}, 1200);
-	}
-
-	private stopGestureDiagFlush(): void {
-		if (this.gestureDiagFlushTimer !== null) {
-			window.clearInterval(this.gestureDiagFlushTimer);
-			this.gestureDiagFlushTimer = null;
-		}
-	}
-
-	/** 把诊断缓冲节流写入 vault 根目录 weave-gesture-debug.log。 */
-	private async flushGestureDiagnosticsToVault(): Promise<void> {
-		try {
-			const count = gestureDiagCount();
-			if (count === 0) {
-				return;
-			}
-			const content = gestureDiagDump();
-			const adapter = this.app.vault.adapter as { write?: (path: string, content: string) => Promise<void> };
-			if (typeof adapter?.write === "function") {
-				await adapter.write("weave-gesture-debug.log", content);
-			}
-		} catch (error) {
-			// 诊断写入失败不影响阅读器主流程。
-			logger.warn("[FoliateReaderService] Failed to flush gesture diagnostics:", error);
-		}
 	}
 
 	private resetTemporaryHighlightTimers(): void {
