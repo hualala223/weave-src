@@ -50,9 +50,21 @@ export function recordGesture(label: string, detail?: unknown): void {
 
 /** 导出诊断缓冲为纯文本（最近在前）。 */
 export function gestureDiagDump(): string {
-	return entries
-		.map((entry) => `[${nowTime()}] ${entry.label} ${entry.detail}`)
-		.join("\n");
+	if (entries.length === 0) {
+		return "";
+	}
+	// 每条记录的是真实打点时刻 performance.now()；导出时统一生成墙钟时间会让所有条目
+	// 时间戳相同、无法排序。这里保留 dump 时刻墙钟作锚点，再按每条原始 performance.now()
+	// 相对缓冲首条输出单调差值（毫秒），以便精确看出事件先后与间隙（如同 CFI relocate 刷屏间距）。
+	const origin = entries[0].t;
+	const wallStamp = nowTime();
+	const lines = new Array<string>(entries.length);
+	for (let i = 0; i < entries.length; i += 1) {
+		const rel = entries[i].t - origin;
+		const relStamp = rel >= 0 ? `+${rel.toFixed(1)}ms` : `${rel.toFixed(1)}ms`;
+		lines[i] = `[${wallStamp}|${relStamp}] ${entries[i].label} ${entries[i].detail}`;
+	}
+	return lines.join("\n");
 }
 
 /** 缓冲当前条数。 */

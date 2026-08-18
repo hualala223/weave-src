@@ -898,6 +898,68 @@ describe("FoliateReaderService", () => {
 		expect(renderer.getAttribute("max-inline-size")).toBe("804px");
 	});
 
+	it("defers paginated relayout while a mobile text selection is active and flushes it once cleared", () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any) as any;
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		vi.spyOn(container, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 760, 800));
+
+		const renderer = document.createElement("foliate-paginator") as HTMLElement & {
+			render: ReturnType<typeof vi.fn>;
+			getContents: () => Array<{ index: number; doc: Document }>;
+		};
+		renderer.render = vi.fn();
+		renderer.getContents = () => [];
+
+		service.renderContainer = container;
+		service.foliateView = { renderer, clientWidth: 0, offsetWidth: 0 } as any;
+		service.currentWidthMode = "fit";
+		service.currentLayoutMode = "paginated";
+		service.currentFlowMode = "paginated";
+		service.currentPageMargin = 48;
+
+		// 扩选期间：resize 必须整体让位，绝不能触发 renderer.render 重排。
+		service.hasActiveReaderSelection = () => true;
+		service.resize(760, 800);
+		expect(renderer.render).not.toHaveBeenCalled();
+		expect(service.pendingResizeAfterSelection).toBe(true);
+
+		// 选区收起后：补一次重排版（applyRendererLayoutAttributes 与 resize 各调一次 render）。
+		service.hasActiveReaderSelection = () => false;
+		service.emitSelectionChangeIfNeeded(document);
+		expect(service.pendingResizeAfterSelection).toBe(false);
+		expect(renderer.render).toHaveBeenCalledTimes(2);
+	});
+
+	it("flushes a deferred selection resize when selections are programmatically cleared", () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any) as any;
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		vi.spyOn(container, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 760, 800));
+
+		const renderer = document.createElement("foliate-paginator") as HTMLElement & {
+			render: ReturnType<typeof vi.fn>;
+			getContents: () => Array<{ index: number; doc: Document }>;
+		};
+		renderer.render = vi.fn();
+		renderer.getContents = () => [];
+
+		service.renderContainer = container;
+		service.foliateView = { renderer, clientWidth: 0, offsetWidth: 0 } as any;
+		service.currentWidthMode = "fit";
+		service.currentLayoutMode = "paginated";
+		service.currentFlowMode = "paginated";
+		service.currentPageMargin = 48;
+
+		service.hasActiveReaderSelection = () => true;
+		service.resize(760, 800);
+		expect(renderer.render).not.toHaveBeenCalled();
+
+		service.hasActiveReaderSelection = () => false;
+		service.clearSelections();
+		expect(renderer.render).toHaveBeenCalledTimes(2);
+	});
+
 	it("navigates toc hrefs with raw href targets while still canonicalizing reader state", async () => {
 		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any);
 		try {

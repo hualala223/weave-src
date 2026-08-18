@@ -247,6 +247,11 @@
 		clearAndHide();
 	}
 
+	function hasNonCollapsedIframeSelection(): boolean {
+		const selection = iframeDoc?.getSelection?.();
+		return Boolean(selection && selection.rangeCount > 0 && !selection.isCollapsed);
+	}
+
 	function handlePointerDownOutside(event: Event) {
 		if (!shouldDismissToolbarOnPointerDown(toolbarEl, event)) {
 			const target = getEventTargetNode(event.target);
@@ -257,6 +262,11 @@
 		}
 
 		dismissActiveToolbarMenu();
+		// 移动端原生选择 handle 的拖拽会以 touchstart 落到 iframe；此时清空选区会打断扩选。
+		// 扩选期间保持旁观，待浏览器自行收起选区后由 selectionchange 统一隐藏工具条。
+		if (isMobileToolbar && event.type === 'touchstart' && hasNonCollapsedIframeSelection()) {
+			return;
+		}
 		if (isVisible) {
 			clearAndHide();
 		}
@@ -381,6 +391,7 @@
 		binder.bind(scrollHost, 'scroll', scheduleActiveSync, { passive: true });
 		binder.bind(iframeWindow, 'scroll', scheduleActiveSync, { passive: true });
 		binder.bind(iframeWindow, 'resize', scheduleActiveSync);
+		binder.bind(iframeDocument, 'selectionchange', scheduleActiveSync);
 		binder.bind(iframeDocument, 'mousedown', handlePointerDownOutside, { capture: true });
 		binder.bind(iframeDocument, 'touchstart', handlePointerDownOutside, { capture: true, passive: true });
 		binder.bind(activeDocument, 'mousedown', handlePointerDownOutside, { capture: true });

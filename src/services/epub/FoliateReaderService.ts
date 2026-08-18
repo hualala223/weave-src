@@ -312,6 +312,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private static readonly FOOTNOTE_PREVIEW_RESOLVE_TIMEOUT_MS = 2200;
 	private static readonly FOOTNOTE_PREVIEW_CANDIDATE_TIMEOUT_MS = 480;
 	private static readonly NAVIGATION_TIMEOUT_MS = 5000;
+	private static readonly RELOCATE_DEDUPE_MS = 250;
+	private static readonly PAGINATED_LAYOUT_RECOVERY_COOLDOWN_MS = 250;
 
 	private readonly app: App;
 	private readonly parser: FoliateVaultPublicationParser;
@@ -342,6 +344,11 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private paragraphFootnotePreviewSession = 0;
 	private paragraphAnchorSyncDepth = 0;
 	private relocatedCallbacks = new Set<(position: ReadingPosition) => void>();
+	private lastHandledRelocateCfi = "";
+	private lastHandledRelocateAt = 0;
+	private lastPaginatedLayoutRecoveryScheduleAt = 0;
+	/** 扩选期间被跳过的 resize 标记：选区收起后补一次重排版（排查拖动选区闪跳用）。 */
+	private pendingResizeAfterSelection = false;
 	private scrolledChapterEndCallbacks = new Set<(atEnd: boolean) => void>();
 	private scrolledChapterEndMonitorCleanup: (() => void) | null = null;
 	private scrolledChapterEndSyncFrame = 0;
@@ -760,9 +767,23 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	resize(_width: number, _height: number): void {
+		// 移动端扩选（拖动原生选区 handle）期间，容器/视口的 resize 触发的整页重排
+		// 正是「页面闪跳/错位」的常见元凶：跳过本次重排并记标记，选区收起后再补一次。
+		if (this.hasActiveReaderSelection()) {
+			this.pendingResizeAfterSelection = true;
+			return;
+		}
 		this.applyRendererLayout();
 		(this.foliateView?.renderer as FoliateRenderer | undefined)?.render?.();
-		this.schedulePaginatedLayoutRecovery();
+		this.schedulePaginatedLayoutRecovery(true);
+	}
+
+	private maybeFlushPendingSelectionResize(): void {
+		if (!this.pendingResizeAfterSelection || this.hasActiveReaderSelection()) {
+			return;
+		}
+		this.pendingResizeAfterSelection = false;
+		this.resize(0, 0);
 	}
 
 	async applyReaderAppearance(
@@ -1730,19 +1751,23 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (event.currentTarget && event.currentTarget !== this.foliateView) {
 			return;
 		}
-		const detail = (event as CustomEvent<{ cfi?: string; index?: number }>).detail;
+		const detail = (event as CustomEvent<{ cfi?: string; index?: number; reason?: string }>).detail;
+		const reason = String(detail?.reason || "");
 		recordGesture("foliate:relocate", {
 			cfi: detail?.cfi,
 			index: detail?.index,
+			reason,
 			flow: this.currentFlowMode,
 		});
 		if (!detail) {
 			return;
 		}
 
-		const shouldPreserveFootnotePreview = this.footnotePreviewController.shouldPreserveOnRelocate();
-		if (!shouldPreserveFootnotePreview) {
-			this.dismissFootnotePreview({ unpin: true });
+		// 移动端扩选期间，系统原生选区会连续触发 foliate 的 anchor/snap relocate。
+		// 插件必须保持旁观：不同步位置、不恢复布局、不刷新标注，否则页面会闪跳/错位。
+		if (this.hasActiveReaderSelection()) {
+			recordGesture("service:relocate-suppress", { reason, cfi: detail.cfi });
+			return;
 		}
 
 		const target =
@@ -1751,6 +1776,24 @@ export class FoliateReaderService implements EpubReaderEngine {
 			this.currentPosition.cfi;
 		if (!target) {
 			return;
+		}
+
+		// foliate 在 render/anchor 时会用同一 CFI 连发 relocate，形成“relocate→布局恢复→relocate”
+		// 循环。短窗口内相同 CFI 只处理一次，打断该循环。
+		const now = Date.now();
+		if (
+			target === this.lastHandledRelocateCfi
+			&& now - this.lastHandledRelocateAt < FoliateReaderService.RELOCATE_DEDUPE_MS
+		) {
+			recordGesture("service:relocate-dedupe", { reason, cfi: target });
+			return;
+		}
+		this.lastHandledRelocateCfi = target;
+		this.lastHandledRelocateAt = now;
+
+		const shouldPreserveFootnotePreview = this.footnotePreviewController.shouldPreserveOnRelocate();
+		if (!shouldPreserveFootnotePreview) {
+			this.dismissFootnotePreview({ unpin: true });
 		}
 
 		this.schedulePaginatedLayoutRecovery();
@@ -1782,7 +1825,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.attachTapZoneListeners(doc);
 		this.renderedAnnotations.clear();
 		this.lastSyncedVisibleSectionKey = "";
-		this.schedulePaginatedLayoutRecovery();
+		this.schedulePaginatedLayoutRecovery(true);
 		void this.queueAnnotationSync(true);
 	};
 
@@ -2166,6 +2209,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 				/* ignore */
 			}
 		}
+		this.maybeFlushPendingSelectionResize();
 	}
 
 	private getElementFromEventTarget(target: EventTarget | null): Element | null {
@@ -5232,6 +5276,20 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 		const onSelectionChange = () => {
 			recordGesture("service:selectionchange", selectionDesc(doc));
+			// 拖动选区 handle 时，Android WebView 可能原生滚动分页器 #container（scrollLeft）
+			// 以保持 handle 可见——这是「页面闪跳但无 relocate」的唯一通道。这里顺带记录
+			// 分页器实时位置，用于核对滚动冻结是否生效、以及跳页是否伴随位置漂移。
+			const paginator = this.foliateView?.renderer as
+				| { containerPosition?: number; page?: number; pages?: number }
+				| undefined;
+			if (paginator && typeof paginator.containerPosition === "number") {
+				recordGesture("service:paginator-pos", {
+					pos: paginator.containerPosition,
+					page: paginator.page,
+					pages: paginator.pages,
+					sel: selectionDesc(doc),
+				});
+			}
 			scheduleEmit();
 		};
 		const onMouseUp = (event: MouseEvent) => {
@@ -5667,7 +5725,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private emitSelectionChangeIfNeeded(doc: Document): void {
 		const selection = doc.defaultView?.getSelection?.();
 		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-			this.lastSelectionByDocument.delete(doc);
+			if (this.lastSelectionByDocument.delete(doc)) {
+				recordGesture("service:selection-cleared", selectionDesc(doc));
+			}
+			this.maybeFlushPendingSelectionResize();
 			return;
 		}
 
@@ -5761,7 +5822,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		for (const frame of this.getVisibleFramesWithIndex()) {
 			this.normalizeDocument(frame.frameDocument);
 		}
-		this.schedulePaginatedLayoutRecovery();
+		this.schedulePaginatedLayoutRecovery(true);
 	}
 
 	private applyHostThemeSurface(): void {
@@ -5773,7 +5834,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		});
 	}
 
-	private schedulePaginatedLayoutRecovery(): void {
+	private schedulePaginatedLayoutRecovery(force = false): void {
 		if (!this.renderContainer || !this.foliateView || this.currentFlowMode !== "paginated") {
 			return;
 		}
@@ -5781,6 +5842,15 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (!isFoliatePaginatorRenderer(renderer)) {
 			return;
 		}
+		const now = Date.now();
+		if (
+			!force
+			&& now - this.lastPaginatedLayoutRecoveryScheduleAt
+				< FoliateReaderService.PAGINATED_LAYOUT_RECOVERY_COOLDOWN_MS
+		) {
+			return;
+		}
+		this.lastPaginatedLayoutRecoveryScheduleAt = now;
 		this.paginatedLayoutRecovery.schedule((token) => this.recoverPaginatedLayoutIfNeeded(token));
 	}
 
@@ -6981,6 +7051,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 	private resetReaderState(): void {
 		this.resetReadingPaceTracking();
+		this.lastHandledRelocateCfi = "";
+		this.lastHandledRelocateAt = 0;
+		this.lastPaginatedLayoutRecoveryScheduleAt = 0;
+		this.pendingResizeAfterSelection = false;
 		this.currentBook = null;
 		this.currentPosition = { chapterIndex: 0, cfi: "", percent: 0 };
 		this.currentPaginationInfo = { currentPage: 0, totalPages: 0 };
