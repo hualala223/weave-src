@@ -1,7 +1,4 @@
-import { type App, normalizePath } from "obsidian";
-import { resolveConfiguredDataPath } from "../../config/paths";
-import { DirectoryUtils } from "../../utils/directory-utils";
-import { logger } from "../../utils/logger";
+import type { App } from "obsidian";
 import { TagExtractor } from "../../utils/tag-extractor";
 import { shouldIncludeHighlightInSidebarSnapshot } from "./reader-annotation-model";
 import type { EpubReaderEngine, ReaderHighlight } from "./reader-engine-types";
@@ -74,24 +71,13 @@ interface SnapshotCacheEntry {
 	version: number;
 }
 
-interface EpubHighlightViewSnapshotDiskStore {
-	version: string;
-	lastUpdated: string;
-	entries: Record<string, EpubHighlightRenderSnapshot>;
-}
-
-const EPUB_HIGHLIGHT_VIEW_SNAPSHOT_CACHE_VERSION = "1.0.0";
-
 export class EpubHighlightViewSnapshotService {
 	private snapshotCache = new Map<string, SnapshotCacheEntry>();
-	private diskStore: EpubHighlightViewSnapshotDiskStore | null = null;
-	private diskStoreLoaded = false;
-	private inflightDiskStoreLoad: Promise<EpubHighlightViewSnapshotDiskStore> | null = null;
-	private inflightDiskStoreWrite: Promise<void> | null = null;
-	private pendingDiskPersistKeys = new Set<string>();
-	private diskPersistTimer: ReturnType<typeof setTimeout> | null = null;
 
-	constructor(private readonly app?: App) {}
+	constructor(_app?: App) {
+		// 高亮侧栏快照只做会话内存缓存：不再落盘（<dataPath>/cache 已消除，重启后按需重建）。
+		void _app;
+	}
 
 	buildContextKey(input: EpubHighlightSnapshotContextInput): string {
 		return [
@@ -111,26 +97,8 @@ export class EpubHighlightViewSnapshotService {
 	async hydrateFromDisk(
 		input: EpubHighlightSnapshotContextInput
 	): Promise<EpubHighlightRenderSnapshot | null> {
-		if (!this.app) {
-			return this.getCachedSnapshot(input);
-		}
-
-		const contextKey = this.buildContextKey(input);
-		const memorySnapshot = this.getCachedSnapshot(input);
-		if (memorySnapshot) {
-			return memorySnapshot;
-		}
-
-		const store = await this.loadDiskStore();
-		const diskSnapshot = store.entries[contextKey];
-		if (!diskSnapshot) {
-			return null;
-		}
-
-		const entry = this.getOrCreateEntry(contextKey);
-		entry.snapshot = this.cloneSnapshot(diskSnapshot);
-		entry.dirty = true;
-		return this.cloneSnapshot(entry.snapshot);
+		// 纯内存缓存：无磁盘持久化，仅返回会话内快照（缺失时由调用方重建）。
+		return this.getCachedSnapshot(input);
 	}
 
 	publishFromHighlights(input: {
@@ -180,7 +148,6 @@ export class EpubHighlightViewSnapshotService {
 		entry.dirty = false;
 		entry.version += 1;
 		entry.inflightRevalidate = null;
-		this.schedulePersistSnapshot(contextKey);
 
 		if (input.readerService && !snapshot.pageLabelsResolved) {
 			window.setTimeout(() => {
@@ -282,7 +249,6 @@ export class EpubHighlightViewSnapshotService {
 			entry.snapshot = snapshot;
 			entry.dirty = false;
 			entry.version += 1;
-			this.schedulePersistSnapshot(contextKey);
 
 			if (input.readerService && !snapshot.pageLabelsResolved) {
 				window.setTimeout(() => {
@@ -355,7 +321,6 @@ export class EpubHighlightViewSnapshotService {
 			};
 			entry.snapshot = nextSnapshot;
 			entry.version += 1;
-			this.schedulePersistSnapshot(contextKey);
 			return nextSnapshot;
 		})();
 
@@ -384,150 +349,6 @@ export class EpubHighlightViewSnapshotService {
 		};
 		this.snapshotCache.set(contextKey, created);
 		return created;
-	}
-
-	private getDiskCachePath(): string {
-		if (!this.app) {
-			return "";
-		}
-		const dataPath = resolveConfiguredDataPath(this.app);
-		return normalizePath(
-			`${dataPath}/cache/incremental-reading/epub-annotation-view-snapshots-cache.json`
-		);
-	}
-
-	private createEmptyDiskStore(): EpubHighlightViewSnapshotDiskStore {
-		return {
-			version: EPUB_HIGHLIGHT_VIEW_SNAPSHOT_CACHE_VERSION,
-			lastUpdated: new Date(0).toISOString(),
-			entries: {},
-		};
-	}
-
-	private normalizeDiskStore(raw: unknown): EpubHighlightViewSnapshotDiskStore {
-		if (!raw || typeof raw !== "object") {
-			return this.createEmptyDiskStore();
-		}
-		const candidate = raw as Partial<EpubHighlightViewSnapshotDiskStore>;
-		if (candidate.version !== EPUB_HIGHLIGHT_VIEW_SNAPSHOT_CACHE_VERSION) {
-			return this.createEmptyDiskStore();
-		}
-		return {
-			version: EPUB_HIGHLIGHT_VIEW_SNAPSHOT_CACHE_VERSION,
-			lastUpdated:
-				typeof candidate.lastUpdated === "string" && candidate.lastUpdated.trim()
-					? candidate.lastUpdated
-					: new Date().toISOString(),
-			entries:
-				candidate.entries && typeof candidate.entries === "object"
-					? candidate.entries
-					: {},
-		};
-	}
-
-	private async loadDiskStore(): Promise<EpubHighlightViewSnapshotDiskStore> {
-		if (!this.app) {
-			return this.createEmptyDiskStore();
-		}
-		if (this.diskStore) {
-			return this.diskStore;
-		}
-		if (this.inflightDiskStoreLoad) {
-			return this.inflightDiskStoreLoad;
-		}
-
-		const loadPromise = (async () => {
-			const adapter = this.app!.vault.adapter;
-			const cachePath = this.getDiskCachePath();
-			try {
-				if (!(await adapter.exists(cachePath))) {
-					const emptyStore = this.createEmptyDiskStore();
-					this.diskStore = emptyStore;
-					this.diskStoreLoaded = true;
-					return emptyStore;
-				}
-				const content = await adapter.read(cachePath);
-				const store = this.normalizeDiskStore(JSON.parse(content));
-				this.diskStore = store;
-				this.diskStoreLoaded = true;
-				return store;
-			} catch (error) {
-				logger.warn("[EpubHighlightViewSnapshotService] Failed to read disk cache:", error);
-				const emptyStore = this.createEmptyDiskStore();
-				this.diskStore = emptyStore;
-				this.diskStoreLoaded = true;
-				return emptyStore;
-			}
-		})();
-
-		this.inflightDiskStoreLoad = loadPromise;
-		try {
-			return await loadPromise;
-		} finally {
-			if (this.inflightDiskStoreLoad === loadPromise) {
-				this.inflightDiskStoreLoad = null;
-			}
-		}
-	}
-
-	private schedulePersistSnapshot(contextKey: string): void {
-		if (!this.app) {
-			return;
-		}
-		this.pendingDiskPersistKeys.add(contextKey);
-		if (this.diskPersistTimer) {
-			return;
-		}
-		this.diskPersistTimer = window.setTimeout(() => {
-			this.diskPersistTimer = null;
-			void this.flushDiskPersistQueue();
-		}, 0);
-	}
-
-	private async flushDiskPersistQueue(): Promise<void> {
-		if (!this.app || this.pendingDiskPersistKeys.size === 0) {
-			return;
-		}
-
-		const keys = Array.from(this.pendingDiskPersistKeys);
-		this.pendingDiskPersistKeys.clear();
-		const store = await this.loadDiskStore();
-		let changed = false;
-
-		for (const contextKey of keys) {
-			const entry = this.snapshotCache.get(contextKey);
-			if (!entry?.snapshot || entry.dirty) {
-				continue;
-			}
-			store.entries[contextKey] = this.cloneSnapshot(entry.snapshot);
-			changed = true;
-		}
-
-		if (!changed) {
-			return;
-		}
-
-		store.lastUpdated = new Date().toISOString();
-		const previousWrite = this.inflightDiskStoreWrite ?? Promise.resolve();
-		const writePromise = previousWrite
-			.catch(() => undefined)
-			.then(async () => {
-				const cachePath = this.getDiskCachePath();
-				await DirectoryUtils.ensureDirForFile(this.app!.vault.adapter, cachePath);
-				await this.app!.vault.adapter.write(cachePath, JSON.stringify(store));
-				this.diskStore = store;
-				this.diskStoreLoaded = true;
-			});
-		this.inflightDiskStoreWrite = writePromise;
-		try {
-			await writePromise;
-		} catch (error) {
-			logger.warn("[EpubHighlightViewSnapshotService] Failed to write disk cache:", error);
-		} finally {
-			if (this.inflightDiskStoreWrite === writePromise) {
-				this.inflightDiskStoreWrite = null;
-			}
-		}
 	}
 
 	private normalizeRevision(value?: number): number {

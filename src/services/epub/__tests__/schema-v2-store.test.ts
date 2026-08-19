@@ -89,6 +89,25 @@ describe("schema-v2-store", () => {
 		expect(typeof parsed.updatedAt).toBe("number");
 	});
 
+	it("never persists meta.coverImage into weave-data.json (covers resolve dynamically)", async () => {
+		const { app, files } = createApp();
+		const store = new SchemaV2Store(app, () => DATA_PATH);
+
+		const aggregate = createAggregate("bk_001", "Book");
+		store.upsertBook({
+			...aggregate,
+			meta: {
+				...aggregate.meta,
+				coverImage: "data:image/jpeg;base64,s0m3R3411yV3rYl0nGc0v3r==",
+			},
+		});
+		await store.flush();
+
+		const parsed = JSON.parse(files.get(FILE_PATH) as string);
+		expect(parsed.books.bk_001.meta.coverImage).toBeUndefined();
+		expect(parsed.books.bk_001.meta.title).toBe("Book");
+	});
+
 	it("writes atomically via temp file + rename", async () => {
 		const { app, writes } = createApp();
 		const store = new SchemaV2Store(app, () => DATA_PATH);

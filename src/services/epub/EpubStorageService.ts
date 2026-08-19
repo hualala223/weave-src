@@ -2027,9 +2027,6 @@ export class EpubStorageService {
 		}
 		this.legacyStorageRetired = true;
 
-		// 先把旧插件目录 cache 文件迁移到统一数据目录，再删除其余旧文件。
-		await this.migrateLegacyPluginCacheFiles();
-
 		const adapter = this.app.vault.adapter as {
 			remove?: (path: string) => Promise<void>;
 		};
@@ -2037,6 +2034,7 @@ export class EpubStorageService {
 			return;
 		}
 
+		const legacyCache = getPluginPathsById(this.app, this.localPluginId).cache;
 		const legacyPaths = [
 			`${this.basePath}/books.json`,
 			`${this.basePath}/reader-settings.json`,
@@ -2052,9 +2050,11 @@ export class EpubStorageService {
 			...this.getLegacyUnifiedLocalDataPaths(),
 			normalizePath(`${this.getLocalReaderStateRoot()}/reader-settings.desktop.json`),
 			normalizePath(`${this.getLocalReaderStateRoot()}/reader-settings.mobile.json`),
+			this.getPluginAdapterPath(legacyCache.epubScanIndex),
 			this.getPluginAdapterPath(
-				getPluginPathsById(this.app, this.localPluginId).cache.epubScanIndex
+				legacyCache.incrementalReading.epubAnnotationViewSnapshotsCache
 			),
+			this.getPluginAdapterPath(legacyCache.epubParagraphModePositions),
 		];
 
 		for (const legacyPath of legacyPaths) {
@@ -2078,6 +2078,9 @@ export class EpubStorageService {
 			]);
 		}
 
+		// 消除统一数据目录下的 cache 文件夹（可重建缓存，schema v2 已不再维护）。
+		await this.removeLocalCacheTree();
+
 		await Promise.all([
 			DirectoryUtils.pruneEmptyDirsUnder(adapter as unknown, this.basePath, {
 				preserveRoot: false,
@@ -2092,56 +2095,52 @@ export class EpubStorageService {
 	}
 
 	/**
-	 * 旧插件目录 cache 文件迁移到统一数据目录（<dataPath>/cache/...）：
-	 * 旧位置存在且新位置不存在时复制内容，随后删除旧文件。
+	 * 消除统一数据目录下的 cache 文件夹（可重建缓存，schema v2 已不再维护——
+	 * 快照改纯内存、段落位置已入 books[id].ui、扫描索引为派生数据）。
+	 * 仅执行一次（随 retireLegacyStorageFiles）。
 	 */
-	private async migrateLegacyPluginCacheFiles(): Promise<void> {
+	private async removeLocalCacheTree(): Promise<void> {
 		const adapter = this.app.vault.adapter as {
-			read?: (path: string) => Promise<string>;
-			write?: (path: string, data: string) => Promise<void>;
+			list?: (path: string) => Promise<{ files?: string[]; folders?: string[] }>;
 			remove?: (path: string) => Promise<void>;
 		};
-		if (
-			typeof adapter.read !== "function" ||
-			typeof adapter.write !== "function" ||
-			typeof adapter.remove !== "function"
-		) {
+		const listFiles = adapter.list;
+		const removeEntry = adapter.remove;
+		if (typeof listFiles !== "function" || typeof removeEntry !== "function") {
 			return;
 		}
 
-		const legacyPluginCache = getPluginPathsById(this.app, this.localPluginId).cache;
-		const dataPath = this.resolveDataPath();
-		const targets: Array<{ legacy: string; next: string }> = [
-			{
-				legacy: legacyPluginCache.incrementalReading.epubAnnotationViewSnapshotsCache,
-				next: normalizePath(
-					`${dataPath}/cache/incremental-reading/epub-annotation-view-snapshots-cache.json`
-				),
-			},
-			{
-				legacy: legacyPluginCache.epubParagraphModePositions,
-				next: normalizePath(`${dataPath}/cache/epub-paragraph-mode-positions.json`),
-			},
-		];
+		const cacheRoot = normalizePath(`${this.resolveDataPath()}/cache`);
+		if (!(await this.app.vault.adapter.exists(cacheRoot))) {
+			return;
+		}
 
-		for (const { legacy, next } of targets) {
+		const deleteTree = async (path: string): Promise<void> => {
+			const listing = await listFiles(path);
+			for (const filePath of listing.files || []) {
+				try {
+					await removeEntry(filePath);
+				} catch (error) {
+					logger.warn(
+						`[EpubStorageService] Failed to remove legacy cache file ${filePath}:`,
+						error
+					);
+				}
+			}
+			for (const folderPath of listing.folders || []) {
+				await deleteTree(folderPath);
+			}
 			try {
-				if (!(await this.app.vault.adapter.exists(legacy))) {
-					continue;
-				}
-				if (!(await this.app.vault.adapter.exists(next))) {
-					const content = await adapter.read(legacy);
-					await DirectoryUtils.ensureDirForFile(this.app.vault.adapter, next);
-					await adapter.write(next, content);
-				}
-				await adapter.remove(legacy);
+				await removeEntry(path);
 			} catch (error) {
 				logger.warn(
-					`[EpubStorageService] Failed to migrate legacy cache file ${legacy}:`,
+					`[EpubStorageService] Failed to remove legacy cache dir ${path}:`,
 					error
 				);
 			}
-		}
+		};
+
+		await deleteTree(cacheRoot);
 	}
 
 	private async removeLegacyScopedFiles(rootPath: string, fileNames: string[]): Promise<void> {

@@ -68,6 +68,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+/**
+ * 持久化前剔除书籍元数据中的封面图（coverImage 可能是很大的 base64 data URL）。
+ * 封面改为由运行时动态解析（书架懒加载），不入 weave-data.json。
+ */
+function stripPersistedBookMetadataCover(
+	meta: EpubBookAggregate["meta"]
+): EpubBookAggregate["meta"] {
+	const { coverImage: _coverImage, ...rest } = meta;
+	return rest;
+}
+
 /** 单例 store 缓存（按 App + 数据路径）。 */
 const storeByApp = new WeakMap<App, Map<string, SchemaV2Store>>();
 
@@ -162,6 +173,8 @@ export class SchemaV2Store {
 			document.books[id] = {
 				...aggregate,
 				id,
+				// 封面不入库：预览由运行时动态解析（meta 剔除 coverImage，避免 base64 撑爆数据文件）。
+				meta: stripPersistedBookMetadataCover(aggregate.meta),
 				audit: {
 					createdAt:
 						previous?.audit?.createdAt ?? aggregate.audit?.createdAt ?? now,
