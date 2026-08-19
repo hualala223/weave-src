@@ -1,7 +1,5 @@
-const TAG_BODY_PATTERN = String.raw`[\p{L}\p{N}_-]+(?:\/[\p{L}\p{N}_-]+)*`;
+	const TAG_BODY_PATTERN = String.raw`[\p{L}\p{N}_-]+(?:\/[\p{L}\p{N}_-]+)*`;
 const EXTRACT_TAG_REGEX = new RegExp(`#(${TAG_BODY_PATTERN})`, "gu");
-const REMOVE_TAG_REGEX = new RegExp(`#${TAG_BODY_PATTERN}`, "gu");
-const VALID_TAG_REGEX = new RegExp(`^${TAG_BODY_PATTERN}$`, "u");
 const FRONTMATTER_REGEX = /^---[\t ]*\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
 const FENCED_CODE_BLOCK_REGEX = /```[\s\S]*?```/g;
 const INLINE_CODE_REGEX = /`[^`]+`/g;
@@ -51,56 +49,5 @@ export class TagExtractor {
 		}
 
 		return this.extractTags(this.sanitizeContentForTagExtraction(content));
-	}
-
-	/** 按指定策略合并现有标签和内容中提取出的标签。 */
-	static mergeTags(
-		content: string,
-		existingTags: string[] = [],
-		mode: "replace" | "append" | "smart" = "smart"
-	): string[] {
-		const extractedTags = this.extractTagsExcludingCode(content);
-
-		switch (mode) {
-			case "replace":
-				return extractedTags;
-			case "append":
-				return Array.from(new Set([...existingTags, ...extractedTags])).sort();
-			default: {
-				const allTags = new Set([...existingTags, ...extractedTags]);
-				return Array.from(allTags).sort();
-			}
-		}
-	}
-
-	/** 校验标签格式，入参不含 `#` 前缀。 */
-	static isValidTag(tag: string): boolean {
-		if (!tag || typeof tag !== "string") {
-			return false;
-		}
-
-		return VALID_TAG_REGEX.test(tag) && tag.length > 0 && tag.length <= 100;
-	}
-
-	/** 去掉空白和无效标签，保留原有顺序。 */
-	static cleanTags(tags: string[]): string[] {
-		if (!Array.isArray(tags)) {
-			return [];
-		}
-
-		return tags
-			.map((tag) => tag.trim())
-			.filter((tag) => tag.length > 0)
-			.filter((tag) => this.isValidTag(tag))
-			.filter((tag, index, array) => array.indexOf(tag) === index);
-	}
-
-	/** 从正文中移除内联标签。 */
-	static removeTags(content: string): string {
-		if (!content || typeof content !== "string") {
-			return "";
-		}
-
-		return content.replace(REMOVE_TAG_REGEX, "").trim();
 	}
 }

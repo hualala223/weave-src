@@ -1,7 +1,7 @@
 /**
  * Weave 标识符系统常量定义
  *
- * 定义UUID、BlockID等标识符的格式规范和常量
+ * 定义UUID、BlockID等标识符的格式规范
  *
  * @module services/identifier
  */
@@ -62,51 +62,10 @@ export const BLOCK_ID_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
 export const BLOCK_ID_LENGTH = 6;
 
 /**
- * BlockID插件前缀（用于标识插件生成的块）
- */
-export const BLOCK_ID_PREFIX_WE = "we-";
-
-/**
- * BlockID完整长度（含前缀）
- */
-export const BLOCK_ID_FULL_LENGTH = 9; // 'we-' + 6位随机
-
-/**
  * BlockID格式验证正则表达式
  * 格式：we-{6位base36随机字符}
  */
 export const BLOCK_ID_REGEX = /^we-[0-9a-z]{6}$/;
-
-/**
- * BlockID前缀（Obsidian标准）
- */
-export const BLOCK_ID_PREFIX = "^";
-
-// ============================================================================
-// 写入格式常量
-// ============================================================================
-
-/**
- * UUID写入格式
- */
-export const UUID_WRITE_FORMAT = {
-	/** HTML注释格式（用于批量解析） */
-	HTML_COMMENT: (uuid: string) => `<!-- weave-uuid: ${uuid} -->`,
-
-	/** YAML字段格式（用于标注块） */
-	YAML_FIELD: (uuid: string) => `uuid: ${uuid}`,
-
-	/** 行内代码格式（备用） */
-	INLINE_CODE: (uuid: string) => `\`${uuid}\``,
-} as const;
-
-/**
- * BlockID写入格式
- */
-export const BLOCK_ID_WRITE_FORMAT = {
-	/** Obsidian标准格式 */
-	STANDARD: (blockId: string) => `^${blockId}`,
-} as const;
 
 // ============================================================================
 // ID生成配置
@@ -126,40 +85,6 @@ export const UNIQUENESS_CONFIG = {
 	MAX_PER_MILLISECOND: 100,
 } as const;
 
-/**
- * 时间戳配置
- */
-export const TIMESTAMP_CONFIG = {
-	/** 起始时间（用于压缩时间戳） */
-	EPOCH_START: new Date("2025-01-01T00:00:00Z").getTime(),
-
-	/** 支持的最大时间（约100年） */
-	MAX_TIMESTAMP: new Date("2125-01-01T00:00:00Z").getTime(),
-} as const;
-
-// ============================================================================
-// 验证配置
-// ============================================================================
-
-/**
- * ID验证严格程度
- */
-export enum ValidationLevel {
-	/** 宽松：仅检查基本格式 */
-	LOOSE = "loose",
-
-	/** 标准：检查格式和字符集 */
-	STANDARD = "standard",
-
-	/** 严格：检查格式、字符集和时间戳有效性 */
-	STRICT = "strict",
-}
-
-/**
- * 默认验证级别
- */
-export const DEFAULT_VALIDATION_LEVEL = ValidationLevel.STANDARD;
-
 // ============================================================================
 // 错误消息
 // ============================================================================
@@ -176,39 +101,3 @@ export const ERROR_MESSAGES = {
 	INVALID_ALPHABET: "包含无效字符",
 	GENERATION_FAILED: "ID生成失败",
 } as const;
-
-// ============================================================================
-// 导出配置对象
-// ============================================================================
-
-/**
- * 完整的ID系统配置
- */
-export const ID_SYSTEM_CONFIG = {
-	uuid: {
-		prefix: UUID_PREFIX,
-		alphabet: UUID_ALPHABET,
-		length: UUID_LENGTH,
-		regex: UUID_REGEX,
-		base: UUID_BASE,
-	},
-	blockId: {
-		pluginPrefix: BLOCK_ID_PREFIX_WE, // 插件前缀 'we-'
-		alphabet: BLOCK_ID_ALPHABET,
-		randomLength: BLOCK_ID_LENGTH, // 随机部分长度
-		fullLength: BLOCK_ID_FULL_LENGTH, // 完整长度
-		regex: BLOCK_ID_REGEX,
-		obsidianPrefix: BLOCK_ID_PREFIX, // Obsidian标准前缀 '^'
-	},
-	uniqueness: UNIQUENESS_CONFIG,
-	timestamp: TIMESTAMP_CONFIG,
-	validation: {
-		level: DEFAULT_VALIDATION_LEVEL,
-	},
-	errors: ERROR_MESSAGES,
-} as const;
-
-/**
- * 类型导出：配置类型
- */
-export type IDSystemConfig = typeof ID_SYSTEM_CONFIG;
