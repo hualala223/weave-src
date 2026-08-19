@@ -26,6 +26,15 @@ export const WEAVE_DATA_SCHEMA_VERSION = 2;
 /** 全局 UI 记忆（只留真正的 UI 偏好）。 */
 export interface WeaveUiMemory {
 	selectionQuickCreateLastFolder?: string;
+	/** 书架搜索框记忆（从 v1 uiMemory 延续）。 */
+	bookshelfSearchQuery?: string;
+	/** 摘录显示/生成偏好（从 v1 excerptSettings 收敛到 UI 记忆）。 */
+	excerptSettings?: {
+		addCreationTime: boolean;
+		chapterLocationFormat: "root" | "leaf" | "full";
+		strikethroughDisplayMode: "strikethrough";
+		showStrikethroughInSidebar: boolean;
+	};
 }
 
 /** 播放清单（收藏夹）。 */
@@ -113,4 +122,6 @@ export interface WeaveDataDocumentV2 {
 	shelfDisplayMode?: string;
 	playlists?: EpubPlaylist[];
 	books?: Record<string, EpubBookAggregate>;
+	/** 通用 vault 级键值（搜索历史等 UI 记忆，v1 highlights 分区收敛于此）。 */
+	vaultLocalStorage?: Record<string, string>;
 }

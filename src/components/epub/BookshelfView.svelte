@@ -1961,6 +1961,8 @@
                                 await host.saveSettings();
                         }
                 }
+                // v2：书架显示模式持久化到 weave-data.json 顶层。
+                void storageService.saveShelfDisplayMode(mode);
 
                 bookshelfDisplayMode = mode;
                 window.dispatchEvent(new CustomEvent(BOOKSHELF_DISPLAY_SETTINGS_CHANGED_EVENT, {

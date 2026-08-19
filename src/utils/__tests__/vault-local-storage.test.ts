@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { App } from "obsidian";
 import { vaultStorage } from "../vault-local-storage";
-import { getWeaveDataStore } from "../../services/epub/weave-data-store";
+import { getSchemaV2Store } from "../../services/epub/schema-v2-store";
 
 function createMemoryAdapter(initialFiles: Record<string, string> = {}) {
 	const files = new Map<string, string>(Object.entries(initialFiles));
@@ -57,7 +57,7 @@ describe("vault-local-storage", () => {
 		vi.useRealTimers();
 	});
 
-	it("persists setItem into the highlights section of weave-data.json", async () => {
+	it("persists setItem into the vaultLocalStorage section of weave-data.json", async () => {
 		const { app, files } = createApp();
 		await vaultStorage.initialize(app as any);
 
@@ -67,17 +67,18 @@ describe("vault-local-storage", () => {
 		await vaultStorage.flush();
 
 		const parsed = JSON.parse(files.get(WEAVE_DATA_FILE) as string);
-		expect(parsed.highlights).toEqual({
+		expect(parsed.schemaVersion).toBe(2);
+		expect(parsed.vaultLocalStorage).toEqual({
 			"weave-inline-hl-book-1": JSON.stringify([{ cfi: "/6/2" }]),
 			"weave-search-history-demo": "query",
 		});
 	});
 
-	it("reads back persisted keys into the highlights section after init", async () => {
+	it("reads back persisted keys into the vaultLocalStorage section after init", async () => {
 		const { app, files } = createApp({
 			[WEAVE_DATA_FILE]: JSON.stringify({
-				schemaVersion: 1,
-				highlights: { "weave-inline-hl-a": "[1]" },
+				schemaVersion: 2,
+				vaultLocalStorage: { "weave-inline-hl-a": "[1]" },
 			}),
 		});
 		await vaultStorage.initialize(app as any);
@@ -89,11 +90,11 @@ describe("vault-local-storage", () => {
 		]);
 	});
 
-	it("removeItem deletes the key from the highlights section", async () => {
+	it("removeItem deletes the key from the vaultLocalStorage section", async () => {
 		const { app, files } = createApp({
 			[WEAVE_DATA_FILE]: JSON.stringify({
-				schemaVersion: 1,
-				highlights: { "weave-inline-hl-a": "[1]", "weave-key-b": "v" },
+				schemaVersion: 2,
+				vaultLocalStorage: { "weave-inline-hl-a": "[1]", "weave-key-b": "v" },
 			}),
 		});
 		await vaultStorage.initialize(app as any);
@@ -103,10 +104,10 @@ describe("vault-local-storage", () => {
 
 		await vaultStorage.flush();
 		const parsed = JSON.parse(files.get(WEAVE_DATA_FILE) as string);
-		expect(parsed.highlights).toEqual({ "weave-key-b": "v" });
+		expect(parsed.vaultLocalStorage).toEqual({ "weave-key-b": "v" });
 	});
 
-	it("reads back a fresh store from the persisted highlights section", async () => {
+	it("reads back a fresh store from the persisted vaultLocalStorage section", async () => {
 		const { app } = createApp();
 		await vaultStorage.initialize(app as any);
 		vaultStorage.setItem("weave-inline-hl-book-x", JSON.stringify([{ cfi: "/4" }]));
@@ -118,10 +119,10 @@ describe("vault-local-storage", () => {
 			JSON.stringify([{ cfi: "/4" }])
 		);
 
-		// The shared store singleton carries the same highlights document.
-		const store = getWeaveDataStore(app as any, () => "CONFIG/STORAGE");
+		// The shared store singleton carries the same document.
+		const store = getSchemaV2Store(app as any, () => "CONFIG/STORAGE");
 		const doc = await store.getDocument();
-		expect(doc.highlights).toEqual({
+		expect(doc.vaultLocalStorage).toEqual({
 			"weave-inline-hl-book-x": JSON.stringify([{ cfi: "/4" }]),
 		});
 	});

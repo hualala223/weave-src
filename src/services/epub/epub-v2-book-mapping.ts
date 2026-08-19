@@ -32,6 +32,7 @@ export function toEpubBookAggregate(
 		notes?: EpubBookNotes;
 		lastPosition?: EpubBookReading["lastPosition"];
 		ui?: Record<string, unknown>;
+		legacyPaths?: string[];
 	}
 ): EpubBookAggregate {
 	const now = Date.now();
@@ -42,6 +43,7 @@ export function toEpubBookAggregate(
 			vaultPath: String(book.filePath || "").trim(),
 			sourceId: book.sourceId || undefined,
 			sourceFingerprint: book.sourceFingerprint || undefined,
+			legacyPaths: extras?.legacyPaths,
 		},
 		meta: book.metadata,
 		reading: {

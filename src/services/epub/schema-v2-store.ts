@@ -61,6 +61,7 @@ const OWNED_TOP_LEVEL_KEYS = new Set<string>([
 	"shelfDisplayMode",
 	"playlists",
 	"books",
+	"vaultLocalStorage",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -184,6 +185,19 @@ export class SchemaV2Store {
 		});
 	}
 
+	/** 删除 books[id]（不存在时忽略）。 */
+	removeBook(id: string): void {
+		const normalizedId = String(id || "").trim();
+		if (!normalizedId) {
+			return;
+		}
+		this.mutate((document) => {
+			if (document.books) {
+				delete document.books[normalizedId];
+			}
+		});
+	}
+
 	/** 更新文档顶层设置（readerSettings/uiMemory/shelfDisplayMode/playlists）。 */
 	saveSettings(patch: SchemaV2SettingsPatch): void {
 		this.mutate((document) => {
@@ -247,7 +261,7 @@ export class SchemaV2Store {
 	}
 
 	/** 内存中变更文档（同步），并调度节流落盘。 */
-	private mutate(mutator: (document: WeaveDataDocumentV2) => void): void {
+	mutate(mutator: (document: WeaveDataDocumentV2) => void): void {
 		const document = this.getCachedDocument();
 		mutator(document);
 		document.updatedAt = Date.now();

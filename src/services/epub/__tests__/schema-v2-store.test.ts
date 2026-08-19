@@ -1,15 +1,15 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { App } from "obsidian";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveWeaveDataFilePath } from "../../../config/paths";
+import {
+	type EpubBookAggregate,
+	WEAVE_DATA_SCHEMA_VERSION,
+} from "../schema-v2";
 import {
 	SCHEMA_V2_PERSIST_DELAY_MS,
 	SchemaV2Store,
 	getSchemaV2Store,
 } from "../schema-v2-store";
-import {
-	WEAVE_DATA_SCHEMA_VERSION,
-	type EpubBookAggregate,
-} from "../schema-v2";
-import { resolveWeaveDataFilePath } from "../../../config/paths";
 
 function createMemoryAdapter(initialFiles: Record<string, string> = {}) {
 	const files = new Map<string, string>(Object.entries(initialFiles));
@@ -85,7 +85,7 @@ describe("schema-v2-store", () => {
 		expect(files.has(FILE_PATH)).toBe(true);
 		const parsed = JSON.parse(files.get(FILE_PATH) as string);
 		expect(parsed.schemaVersion).toBe(WEAVE_DATA_SCHEMA_VERSION);
-		expect(parsed.books["bk_001"].meta.title).toBe("设计中的设计");
+		expect(parsed.books.bk_001.meta.title).toBe("设计中的设计");
 		expect(typeof parsed.updatedAt).toBe("number");
 	});
 
@@ -171,7 +171,11 @@ describe("schema-v2-store", () => {
 		const { app } = createApp();
 		const store = new SchemaV2Store(app, () => DATA_PATH);
 
-		store.saveBookNotes("missing", { bookmarks: [], highlights: [], excerpts: [] });
+		store.saveBookNotes("missing", {
+			bookmarks: [],
+			highlights: [],
+			excerpts: [],
+		});
 		store.saveReading("missing", {
 			position: { chapterIndex: 0, cfi: "epubcfi(/6)", percent: 0 },
 			stats: { totalReadTime: 0, lastReadTime: 0, createdTime: 0 },
@@ -237,7 +241,7 @@ describe("schema-v2-store", () => {
 		const parsed = JSON.parse(files.get(FILE_PATH) as string);
 		expect(parsed.shelf).toEqual({ scanIndex: [{ path: "Books/a.epub" }] });
 		expect(parsed.traceability).toEqual({ sourceRegistry: [] });
-		expect(parsed.books["bk_001"]).toBeDefined();
+		expect(parsed.books.bk_001).toBeDefined();
 		expect(parsed.schemaVersion).toBe(2);
 	});
 
@@ -255,7 +259,7 @@ describe("schema-v2-store", () => {
 		expect(writes.length).toBeGreaterThan(0);
 
 		const parsed = JSON.parse(files.get(FILE_PATH) as string);
-		expect(parsed.books["bk_001"].meta.title).toBe("B");
+		expect(parsed.books.bk_001.meta.title).toBe("B");
 	});
 
 	it("getSchemaV2Store returns singleton per app+path", () => {

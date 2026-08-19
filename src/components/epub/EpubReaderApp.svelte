@@ -1474,6 +1474,8 @@
 				}
 				bookshelfSettingsHost.settings.bookshelfDisplayMode = mode;
 				bookshelfSettingsHost.settings.bookshelfAutoViewByLocationEnabled = mode === 'adaptive';
+				// v2：书架显示模式持久化到 weave-data.json 顶层。
+				void storageService.saveShelfDisplayMode(mode);
 				if (typeof bookshelfSettingsHost.saveSettings === 'function') {
 					await bookshelfSettingsHost.saveSettings();
 				}

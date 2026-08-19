@@ -2,9 +2,8 @@
  * Vault-scoped plugin local storage
  *
  * Plugin-owned local key/value state converges into the unified
- * weave-data.json store (highlights section), accessed through
- * getWeaveDataStore. The public API is unchanged, but persistence no
- * longer touches weave/local-storage.json.
+ * weave-data.json document (schema v2 top-level `vaultLocalStorage`),
+ * accessed through getSchemaV2Store. The public API is unchanged.
  */
 
 import type { App } from "obsidian";
@@ -13,10 +12,7 @@ import {
 	normalizeDataPath,
 } from "../config/paths";
 import { CURRENT_PLUGIN_ID } from "../config/plugin-runtime";
-import {
-	getWeaveDataStore,
-	type WeaveDataStore,
-} from "../services/epub/weave-data-store";
+import { getSchemaV2Store, type SchemaV2Store } from "../services/epub/schema-v2-store";
 import { logger } from "./logger";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -44,11 +40,11 @@ class VaultLocalStorage {
 		return normalizeDataPath(plugin?.settings?.dataPath) || DEFAULT_DATA_PATH;
 	}
 
-	private getStore(): WeaveDataStore | null {
+	private getStore(): SchemaV2Store | null {
 		if (!this.app) {
 			return null;
 		}
-		return getWeaveDataStore(this.app, () => this.resolveDataPath());
+		return getSchemaV2Store(this.app, () => this.resolveDataPath());
 	}
 
 	async initialize(app: App): Promise<void> {
@@ -72,7 +68,9 @@ class VaultLocalStorage {
 		if (!store) {
 			return;
 		}
-		store.updateSection("highlights", { ...this.entries });
+		store.mutate((document) => {
+			document.vaultLocalStorage = { ...this.entries };
+		});
 	}
 
 	removeItem(key: string): void {
@@ -84,7 +82,9 @@ class VaultLocalStorage {
 		if (!store) {
 			return;
 		}
-		store.updateSection("highlights", { ...this.entries });
+		store.mutate((document) => {
+			document.vaultLocalStorage = { ...this.entries };
+		});
 	}
 
 	/**
@@ -117,10 +117,10 @@ class VaultLocalStorage {
 			return;
 		}
 		try {
-			const section = await store.getSection<unknown>("highlights");
+			const document = await store.getDocument();
 			const loaded: Record<string, string> = {};
-			if (isRecord(section)) {
-				for (const [key, value] of Object.entries(section)) {
+			if (isRecord(document.vaultLocalStorage)) {
+				for (const [key, value] of Object.entries(document.vaultLocalStorage)) {
 					if (typeof value === "string") {
 						loaded[key] = value;
 					}
@@ -128,7 +128,7 @@ class VaultLocalStorage {
 			}
 			this.entries = loaded;
 		} catch (error) {
-			logger.warn("[VaultLocalStorage] 读取 highlights 分区失败", error);
+			logger.warn("[VaultLocalStorage] 读取 vaultLocalStorage 失败", error);
 			this.entries = {};
 		}
 	}

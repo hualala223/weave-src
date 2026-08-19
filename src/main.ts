@@ -75,7 +75,9 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 
 type PersistedStandaloneEpubPluginSettings = Omit<
 	StandaloneEpubPluginSettings,
-	"selectionQuickCreateLastFolder"
+	| "selectionQuickCreateLastFolder"
+	| "bookshelfDisplayMode"
+	| "bookshelfAutoViewByLocationEnabled"
 >;
 
 export type WeavePlugin = StandaloneEpubPlugin & Record<string, unknown>;
@@ -124,9 +126,13 @@ export default class StandaloneEpubPlugin extends Plugin {
 	private getPersistedSettings(): PersistedStandaloneEpubPluginSettings {
 		const {
 			selectionQuickCreateLastFolder,
+			bookshelfDisplayMode,
+			bookshelfAutoViewByLocationEnabled,
 			...persistedSettings
 		} = this.settings;
 		void selectionQuickCreateLastFolder;
+		void bookshelfDisplayMode;
+		void bookshelfAutoViewByLocationEnabled;
 		return persistedSettings;
 	}
 
@@ -176,6 +182,11 @@ export default class StandaloneEpubPlugin extends Plugin {
 				? localUiMemory.selectionQuickCreateLastFolder
 				: localUiMemory.selectionQuickCreateLastFolder || this.settings.selectionQuickCreateLastFolder
 		);
+		// v2：书架显示模式持久化到 weave-data.json 顶层（data.json 双写已停用）。
+		const storedDisplayMode = await this.getEpubStorageService().loadShelfDisplayMode();
+		if (storedDisplayMode) {
+			this.settings.bookshelfDisplayMode = normalizeBookshelfDisplayMode(storedDisplayMode);
+		}
 		this.syncDebugSettings();
 		this.syncBookshelfDisplaySettings();
 		this.syncReadingPositionAutoSaveSettings();
@@ -198,6 +209,7 @@ export default class StandaloneEpubPlugin extends Plugin {
 			this.settings.selectionQuickCreateLastFolder
 		);
 		await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
+		await this.getEpubStorageService().saveShelfDisplayMode(this.settings.bookshelfDisplayMode);
 		await this.persistSettingsData();
 	}
 

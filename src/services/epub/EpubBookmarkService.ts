@@ -26,9 +26,6 @@ export {
 	normalizeEpubBookmarkFolderPath,
 } from "./epub-bookmark-folder-path";
 
-export type { EpubBookmarkAnalytics } from "./epub-bookmark-page-types";
-export { buildEpubBookmarkAnalytics } from "./epub-bookmark-analytics";
-
 export interface EpubBookmarkReadingState {
 	currentPosition: ReadingPosition;
 	readingStats: ReadingStats;
