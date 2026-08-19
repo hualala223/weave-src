@@ -19,7 +19,6 @@
 		normalizeEpubReaderSettingsForDevice,
 		type EpubReaderSettingsDeviceKind,
 	} from '../../services/epub/reader-settings';
-	import { vaultStorage } from '../../utils/vault-local-storage';
 	import {
 		BookLoadCancelledError,
 		buildBookLoadSlowWarningMessage,
@@ -1857,10 +1856,43 @@
 		style?: EpubHighlightStyle
 	) {
 		outputNote(text, cfiRange, color, style);
-		persistInlineHighlight(cfiRange, text, color, style);
+		void persistInlineHighlight(cfiRange, text, color, style);
 	}
 
-	function persistInlineHighlight(
+	/** v2：读取当前书的高亮记录（books[id].notes.highlights）。 */
+	async function loadInlineHighlights(): Promise<any[]> {
+		if (!book?.id) return [];
+		try {
+			return await storageService.loadBookHighlights(book.id);
+		} catch (_e) {
+			return [];
+		}
+	}
+
+	/** v2：整组覆盖当前书的高亮记录（补齐持久化必需字段）。 */
+	async function saveInlineHighlights(arr: any[]): Promise<void> {
+		if (!book?.id) return;
+		try {
+			const normalized = arr
+				.map((item) => {
+					const cfiRange = String(item?.cfiRange || '').trim();
+					if (!cfiRange) return null;
+					return {
+						...item,
+						id:
+							typeof item.id === 'string' && item.id
+								? item.id
+								: `hl-${String(item.excerptId || cfiRange).slice(0, 40)}`,
+						cfiRange,
+						chapterIndex: typeof item.chapterIndex === 'number' ? item.chapterIndex : 0,
+					};
+				})
+				.filter(Boolean);
+			await storageService.saveBookHighlights(book.id, normalized);
+		} catch (_e) {}
+	}
+
+	async function persistInlineHighlight(
 		cfiRange: string,
 		text: string,
 		color?: string,
@@ -1868,14 +1900,12 @@
 	) {
 		try {
 			if (!book?.id) return;
-			const key = 'weave-inline-hl-' + book.id;
-			const raw = vaultStorage.getItem(key) || '[]';
-			const arr = JSON.parse(raw);
+			const arr = await loadInlineHighlights();
 			const createdTime = Date.now();
 			const item = { cfiRange, color, style, text, commentText: '', createdTime, excerptId: generateBlockID() };
 			const dedup = arr.filter((x: { cfiRange?: string }) => x.cfiRange !== cfiRange);
 			dedup.push(item);
-			vaultStorage.setItem(key, JSON.stringify(dedup));
+			await saveInlineHighlights(dedup);
 			const optimistic: ReaderHighlight = {
 				cfiRange,
 				color,
@@ -1944,7 +1974,7 @@
 	) {
 		// Always allow (gate removed)
 		outputNote(text, cfiRange, color, style);
-		persistInlineHighlight(cfiRange, text, color, style);
+		void persistInlineHighlight(cfiRange, text, color, style);
 	}
 
 	function requestSourceBookLocate(nav: BookLocateIntent): boolean {
@@ -2129,29 +2159,22 @@
 	}
 
 
-	function findInlineHighlight(cfiRange: string) {
+	async function findInlineHighlight(cfiRange: string) {
 		try {
 			if (!book?.id) return null;
-			const key = 'weave-inline-hl-' + book.id;
-			const raw = vaultStorage.getItem(key) || '[]';
-			const arr = JSON.parse(raw);
+			const arr = await loadInlineHighlights();
 			const nCfi = EpubLinkService.normalizeCfi(cfiRange);
 			for (let i = 0; i < arr.length; i++) {
-				if (EpubLinkService.normalizeCfi(arr[i].cfiRange) === nCfi) return { idx: i, item: arr[i], arr, key };
+				if (EpubLinkService.normalizeCfi(arr[i]?.cfiRange) === nCfi) return { idx: i, item: arr[i], arr };
 			}
 		} catch (_e) {}
 		return null;
 	}
-	function updateInlineHighlight(key: string, arr: any[]) {
-		try { vaultStorage.setItem(key, JSON.stringify(arr)); } catch (_e) {}
-	}
 
-	function updateInlineHighlightFields(cfiRange: string, patch: Record<string, unknown>): void {
+	async function updateInlineHighlightFields(cfiRange: string, patch: Record<string, unknown>): Promise<void> {
 		try {
 			if (!book?.id) return;
-			const key = 'weave-inline-hl-' + book.id;
-			const raw = vaultStorage.getItem(key) || '[]';
-			const arr = JSON.parse(raw);
+			const arr = await loadInlineHighlights();
 			const nCfi = EpubLinkService.normalizeCfi(cfiRange);
 			let changed = false;
 			for (let i = 0; i < arr.length; i++) {
@@ -2162,7 +2185,7 @@
 				}
 			}
 			if (changed) {
-				vaultStorage.setItem(key, JSON.stringify(arr));
+				await saveInlineHighlights(arr);
 			}
 		} catch (_e) {}
 	}
@@ -2188,9 +2211,9 @@
 	): Promise<boolean> {
 		const quiet = options?.quiet === true;
 		/* Always allow */ 
-	const inline = findInlineHighlight(info.cfiRange);
+	const inline = await findInlineHighlight(info.cfiRange);
 	if (inline) {
-		updateInlineHighlight(inline.key, inline.arr.filter((_, i) => i !== inline.idx));
+		await saveInlineHighlights(inline.arr.filter((_, i) => i !== inline.idx));
 	}
 	readerService.removeHighlight(info.cfiRange);
 	highlightToolbarInfo = null;
@@ -2210,7 +2233,7 @@
 			return;
 		}
 		if (newColor === info.color) return;
-		updateInlineHighlightFields(info.cfiRange, { color: newColor });
+		void updateInlineHighlightFields(info.cfiRange, { color: newColor });
 		readerService.addHighlight({
 			cfiRange: info.cfiRange,
 			color: newColor,
@@ -2233,7 +2256,7 @@
 	) {
 		/* Always allow (gate removed) */
 		if (newStyle === info.style) return;
-		updateInlineHighlightFields(info.cfiRange, { style: newStyle });
+		void updateInlineHighlightFields(info.cfiRange, { style: newStyle });
 		readerService.addHighlight({
 			cfiRange: info.cfiRange,
 			color: info.color,
@@ -2262,10 +2285,10 @@
 		}
 		commentEditorSaving = true;
 		try {
-			const inline = findInlineHighlight(info.cfiRange);
+			const inline = await findInlineHighlight(info.cfiRange);
 			if (inline) {
 				inline.item.commentText = commentEditorDraft;
-				updateInlineHighlight(inline.key, inline.arr);
+				await saveInlineHighlights(inline.arr);
 			}
 			readerService.addHighlight({
 				cfiRange: info.cfiRange,
@@ -2321,7 +2344,7 @@
 
 	/** 创建状态「想法」：默认下划线标注并持久化，随即打开想法输入框。 */
 	function handleCommentCreateOnSelection(text: string, cfiRange: string, color: string) {
-		persistInlineHighlight(cfiRange, text, color || 'yellow', 'underline');
+		void persistInlineHighlight(cfiRange, text, color || 'yellow', 'underline');
 		const info = readerService.getHighlightClickInfo?.(cfiRange) || {
 			cfiRange,
 			color: color || 'yellow',
@@ -2370,36 +2393,24 @@
 		const allHighlights: ReaderHighlight[] = [];
 		try {
 			if (book?.id) {
-				const key = 'weave-inline-hl-' + book.id;
-				const raw = vaultStorage.getItem(key) || '[]';
-				const inlineItems = JSON.parse(raw);
-				if (Array.isArray(inlineItems)) {
-					let migrated = false;
-					for (const item of inlineItems) {
-						if (!item || typeof item.cfiRange !== 'string') {
-							continue;
-						}
-						if (!item.excerptId) {
-							item.excerptId = generateBlockID();
-							migrated = true;
-						}
-						allHighlights.push({
-							cfiRange: item.cfiRange,
-							color: item.color,
-							style: item.style,
-							text: item.text,
-							commentText: item.commentText || '',
-							hasCommentDivider: !!(item.commentText),
-							createdTime: item.createdTime,
-							excerptId: item.excerptId,
-							sourceFile: '__inline__',
-							sourceRef: '',
-							presentation: 'highlight',
-						});
+				const inlineItems = await loadInlineHighlights();
+				for (const item of inlineItems) {
+					if (!item || typeof item.cfiRange !== 'string') {
+						continue;
 					}
-					if (migrated) {
-						vaultStorage.setItem(key, JSON.stringify(inlineItems));
-					}
+					allHighlights.push({
+						cfiRange: item.cfiRange,
+						color: item.color,
+						style: item.style,
+						text: item.text,
+						commentText: item.commentText || '',
+						hasCommentDivider: !!(item.commentText),
+						createdTime: item.createdTime,
+						excerptId: item.excerptId,
+						sourceFile: item.sourceFile || '__inline__',
+						sourceRef: item.sourceRef || '',
+						presentation: 'highlight',
+					});
 				}
 			}
 		} catch (_e) {

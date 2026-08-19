@@ -88,6 +88,13 @@ import {
 	type WeaveDataDocument,
 	type WeaveDataStore,
 } from "./weave-data-store";
+import { getSchemaV2Store, type SchemaV2Store } from "./schema-v2-store";
+import {
+	createEmptyEpubBookNotes,
+	toEpubBook,
+	toEpubBookAggregate,
+} from "./epub-v2-book-mapping";
+import type { EpubStoredHighlight } from "./schema-v2";
 
 export interface EpubBookshelfSettings {
 	lastScanAt?: number;
@@ -204,6 +211,11 @@ export class EpubStorageService {
 		return getWeaveDataStore(this.app, () => this.resolveDataPath());
 	}
 
+	/** schema v2 数据存储（weave-data.json，schemaVersion=2）——v2 起为唯一权威。 */
+	private getV2Store(): SchemaV2Store {
+		return getSchemaV2Store(this.app, () => this.resolveDataPath());
+	}
+
 	async ensureDirectories(): Promise<void> {
 		const store = this.getDataStore();
 		await DirectoryUtils.ensureDirForFile(this.app.vault.adapter, store.getFilePath());
@@ -218,12 +230,16 @@ export class EpubStorageService {
 			}
 			return this._booksCache;
 		}
-		const { books: localBooks } = await this.readBooksFromUnifiedLocalData();
-		this._booksCache = localBooks;
+		const aggregates = await this.getV2Store().getBooks();
+		const books: Record<string, EpubBook> = {};
+		for (const aggregate of aggregates) {
+			books[aggregate.id] = toEpubBook(aggregate);
+		}
+		this._booksCache = books;
 		if (shouldHydrateStates) {
 			await this.ensureBooksCacheHydrated();
 		}
-		return localBooks;
+		return books;
 	}
 
 	private async ensureBooksCacheHydrated(): Promise<void> {
@@ -249,41 +265,16 @@ export class EpubStorageService {
 			this._booksCache = books;
 			this._booksCacheHydrated = false;
 			this._booksCacheHydrationTask = null;
-			await this.updateUnifiedLocalReaderData((localData) => {
-				const existingRecords = localData.books || {};
-				const nextRecords: Record<string, EpubReaderLocalBookRecord> = {};
-
-				for (const [bookId, record] of Object.entries(existingRecords)) {
-					if (Object.prototype.hasOwnProperty.call(books, bookId)) {
-						continue;
-					}
-
-					const retained: EpubReaderLocalBookRecord = { ...record };
-					retained.descriptor = undefined;
-					if (this.hasRetainedLocalBookData(retained)) {
-						nextRecords[bookId] = retained;
-					}
-				}
-
-				for (const [bookId, book] of Object.entries(books)) {
-					const current = existingRecords[bookId] || {};
-					const nextRecord: EpubReaderLocalBookRecord = {
-						...current,
-						descriptor: this.toStoredBookDescriptor(book),
-					};
-					nextRecord.state = undefined;
-					nextRecords[bookId] = nextRecord;
-				}
-
-				localData.bookCatalogStoredLocally = true;
-				localData.books = nextRecords;
-			});
-
+			const store = this.getV2Store();
 			for (const book of Object.values(books)) {
-				await this.writeBookState(book.id, {
-					currentPosition: book.currentPosition,
-					readingStats: book.readingStats,
-				});
+				const existing = await store.getBook(book.id);
+				store.upsertBook(
+					toEpubBookAggregate(book, {
+						notes: existing?.notes,
+						lastPosition: existing?.reading?.lastPosition,
+						ui: existing?.ui,
+					})
+				);
 			}
 		};
 		this._booksWriteLock = this._booksWriteLock.then(doWrite, doWrite);
@@ -620,21 +611,6 @@ export class EpubStorageService {
 		return normalizeLocalBookRecord(value);
 	}
 
-	private async readBooksFromUnifiedLocalData(): Promise<{
-		books: Record<string, EpubBook>;
-	}> {
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		const books: Record<string, EpubBook> = {};
-		for (const [bookId, record] of Object.entries(unifiedData.books || {})) {
-			const descriptor = record.descriptor;
-			if (!descriptor) {
-				continue;
-			}
-			books[descriptor.id || bookId] = this.toBookFromDescriptor(descriptor, record.state);
-		}
-		return { books };
-	}
-
 	private normalizeLocalReaderData(value: unknown): EpubReaderLocalDataFile {
 		return normalizeLocalReaderData(value);
 	}
@@ -752,8 +728,6 @@ export class EpubStorageService {
 
 		const migrationPromise = (async () => {
 			await this.retireLegacyStorageFiles();
-			await this.migrateUnifiedDataToCanonicalBookIdentities();
-			await this.reconcileMissingBookshelfDescriptors();
 			this._booksCache = null;
 			this._booksCacheHydrated = false;
 			this._booksCacheHydrationTask = null;
@@ -786,300 +760,6 @@ export class EpubStorageService {
 			currentPosition: { chapterIndex: 0, cfi: "", percent: 0 },
 			readingStats: { totalReadTime: 0, lastReadTime: 0, createdTime: 0 },
 		};
-	}
-
-	private buildBookFromBookmarkSnapshot(snapshot: {
-		bookPath: string;
-		bookTitle?: string;
-		bookAuthor?: string;
-		bookId?: string;
-		readingState?: EpubBookmarkReadingState | null;
-	}): EpubBook {
-		const filePath = normalizePath(snapshot.bookPath || "");
-		const readingState = snapshot.readingState ?? null;
-		return {
-			id: this.buildStableBookId({
-				sourceId:
-					snapshot.bookId && !this.isEphemeralBookId(snapshot.bookId)
-						? snapshot.bookId
-						: undefined,
-				filePath,
-			}),
-			filePath,
-			metadata: {
-				title:
-					String(snapshot.bookTitle || "").trim() ||
-					stripSupportedBookExtension(filePath.split("/").pop() || "") ||
-					"书籍",
-				author: String(snapshot.bookAuthor || "").trim() || "",
-				chapterCount: 0,
-			},
-			currentPosition: readingState?.currentPosition ?? {
-				chapterIndex: 0,
-				cfi: "",
-				percent: 0,
-			},
-			readingStats: readingState?.readingStats ?? {
-				totalReadTime: 0,
-				lastReadTime: 0,
-				createdTime: 0,
-			},
-		};
-	}
-
-	private async reconcileMissingBookshelfDescriptors(): Promise<void> {
-		const unifiedData = this.cloneLocalReaderData(await this.readUnifiedLocalReaderData());
-		if (!unifiedData.bookCatalogStoredLocally) {
-			return;
-		}
-
-		const membership = unifiedData.bookshelfMembership;
-		if (!membership?.length) {
-			return;
-		}
-
-		const descriptorPaths = new Set<string>();
-		for (const record of Object.values(unifiedData.books || {})) {
-			const filePath = record.descriptor?.filePath;
-			if (filePath) {
-				descriptorPaths.add(normalizePath(filePath));
-			}
-		}
-
-		const reconciledBooks: EpubBook[] = [];
-		for (const member of membership) {
-			const memberPath = normalizePath(member.path || "");
-			if (!memberPath || descriptorPaths.has(memberPath)) {
-				continue;
-			}
-			const snapshot = await this.getBookmarkService().findBookmarkSnapshotByBookPath(memberPath);
-			if (!snapshot) {
-				continue;
-			}
-			reconciledBooks.push(this.buildBookFromBookmarkSnapshot(snapshot));
-		}
-
-		if (reconciledBooks.length === 0) {
-			return;
-		}
-
-		await this.updateUnifiedLocalReaderData((localData) => {
-			localData.books = localData.books || {};
-			for (const book of reconciledBooks) {
-				localData.books[book.id] = {
-					...localData.books[book.id],
-					descriptor: this.toStoredBookDescriptor(book),
-				};
-			}
-
-			for (const [bookId, record] of Object.entries({ ...(localData.books || {}) })) {
-				if (record.descriptor) {
-					continue;
-				}
-				if (reconciledBooks.some((book) => book.id === bookId)) {
-					continue;
-				}
-				delete localData.books[bookId];
-			}
-		});
-
-		if (!this._booksCache) {
-			this._booksCache = {};
-		}
-		for (const book of reconciledBooks) {
-			this._booksCache[book.id] = book;
-		}
-	}
-
-	private async migrateUnifiedDataToCanonicalBookIdentities(): Promise<void> {
-		const initialUnifiedData = this.cloneLocalReaderData(await this.readUnifiedLocalReaderData());
-		const initialBooks = initialUnifiedData.books || {};
-		if (Object.keys(initialBooks).length === 0) {
-			return;
-		}
-
-		const nextBooks: Record<string, EpubReaderLocalBookRecord> = {};
-		const oldToNewBookIds = new Map<string, string>();
-		let booksChanged = false;
-
-		for (const [legacyBookId, record] of Object.entries(initialBooks)) {
-			const descriptor = record.descriptor;
-			if (!descriptor) {
-				nextBooks[legacyBookId] = record;
-				continue;
-			}
-
-			let nextDescriptor = { ...descriptor };
-			const preferredSourceId = String(nextDescriptor.sourceFingerprint || "").trim()
-				? this.generateSourceId(nextDescriptor.sourceFingerprint)
-				: String(nextDescriptor.sourceId || "").trim() || undefined;
-			const sourceEntry = await this.ensureSourceIdentity(nextDescriptor.filePath, {
-				preferredSourceId,
-				preferredSourceFingerprint: nextDescriptor.sourceFingerprint,
-			});
-			if (sourceEntry) {
-				nextDescriptor = {
-					...nextDescriptor,
-					filePath: sourceEntry.filePath,
-					sourceId: sourceEntry.sourceId,
-					sourceFingerprint: sourceEntry.sourceFingerprint,
-					sourceSize: sourceEntry.sourceSize,
-					sourceMtime: sourceEntry.sourceMtime,
-				};
-			} else if (preferredSourceId) {
-				nextDescriptor = {
-					...nextDescriptor,
-					sourceId: preferredSourceId,
-				};
-			}
-
-			const canonicalBookId = this.buildStableBookId({
-				sourceId: nextDescriptor.sourceId,
-				sourceFingerprint: nextDescriptor.sourceFingerprint,
-				filePath: nextDescriptor.filePath,
-			});
-			nextDescriptor.id = canonicalBookId;
-
-			const nextRecord: EpubReaderLocalBookRecord = {
-				...record,
-				descriptor: nextDescriptor,
-			};
-			nextBooks[canonicalBookId] = this.mergeLocalBookRecord(
-				nextBooks[canonicalBookId],
-				nextRecord
-			);
-			oldToNewBookIds.set(legacyBookId, canonicalBookId);
-			this.bookIdAliasMap.set(legacyBookId, canonicalBookId);
-
-			if (
-				canonicalBookId !== legacyBookId ||
-				nextDescriptor.id !== descriptor.id ||
-				nextDescriptor.sourceId !== descriptor.sourceId ||
-				nextDescriptor.sourceFingerprint !== descriptor.sourceFingerprint ||
-				nextDescriptor.filePath !== descriptor.filePath
-			) {
-				booksChanged = true;
-			}
-		}
-
-		const latestUnifiedData = this.cloneLocalReaderData(await this.readUnifiedLocalReaderData());
-		const nextUnifiedData: EpubReaderLocalDataFile = {
-			...latestUnifiedData,
-			books: nextBooks,
-		};
-
-		let changed = booksChanged;
-
-		const currentSourceRegistry = await this.loadSourceRegistry();
-		const canonicalSourceRegistry = this.canonicalizeSourceRegistryEntries(currentSourceRegistry);
-		if (
-			this.haveSourceRegistryEntriesChanged(currentSourceRegistry, canonicalSourceRegistry)
-		) {
-			await this.saveSourceRegistry(canonicalSourceRegistry);
-		}
-
-		if (changed) {
-			nextUnifiedData.bookCatalogStoredLocally =
-				Object.keys(nextUnifiedData.books || {}).length > 0
-					? true
-					: nextUnifiedData.bookCatalogStoredLocally;
-			await this.writeUnifiedLocalReaderData(nextUnifiedData);
-		}
-	}
-
-	private mergeLocalBookRecord(
-		existing: EpubReaderLocalBookRecord | undefined,
-		incoming: EpubReaderLocalBookRecord
-	): EpubReaderLocalBookRecord {
-		if (!existing) {
-			return incoming;
-		}
-
-		const existingLastRead = existing.state?.readingStats?.lastReadTime ?? 0;
-		const incomingLastRead = incoming.state?.readingStats?.lastReadTime ?? 0;
-		const preferredState =
-			incoming.state && incomingLastRead >= existingLastRead
-				? incoming.state
-				: existing.state || incoming.state;
-		const existingSavedAt = existing.lastOpenBookmark?.savedAt ?? 0;
-		const incomingSavedAt = incoming.lastOpenBookmark?.savedAt ?? 0;
-		const preferredLastOpen =
-			incoming.lastOpenBookmark && incomingSavedAt >= existingSavedAt
-				? incoming.lastOpenBookmark
-				: existing.lastOpenBookmark || incoming.lastOpenBookmark;
-
-		return {
-			descriptor: incoming.descriptor || existing.descriptor,
-			state: preferredState,
-			lastOpenBookmark: preferredLastOpen,
-			readingReferencePoint:
-				existing.readingReferencePoint || incoming.readingReferencePoint,
-		};
-	}
-
-	private canonicalizeSourceRegistryEntries(
-		entries: EpubSourceRegistryEntry[] | undefined
-	): EpubSourceRegistryEntry[] {
-		const merged = new Map<string, EpubSourceRegistryEntry>();
-		for (const entry of entries || []) {
-			const canonicalSourceId =
-				String(entry.sourceFingerprint || "").trim()
-					? this.generateSourceId(entry.sourceFingerprint)
-					: String(entry.sourceId || "").trim();
-			if (!canonicalSourceId) {
-				continue;
-			}
-
-			const existing = merged.get(canonicalSourceId);
-			const normalizedEntry: EpubSourceRegistryEntry = {
-				...entry,
-				sourceId: canonicalSourceId,
-				legacySourceIds: this.normalizeLegacySourceIds(
-					[
-						...(entry.legacySourceIds || []),
-						...(entry.sourceId !== canonicalSourceId ? [entry.sourceId] : []),
-					],
-					canonicalSourceId
-				),
-			};
-			if (!existing) {
-				merged.set(canonicalSourceId, normalizedEntry);
-				continue;
-			}
-
-			merged.set(canonicalSourceId, {
-				...existing,
-				...normalizedEntry,
-				filePath: existing.filePath || normalizedEntry.filePath,
-				sourceFingerprint: existing.sourceFingerprint || normalizedEntry.sourceFingerprint,
-				legacySourceIds: this.normalizeLegacySourceIds(
-					[
-						...(existing.legacySourceIds || []),
-						...(normalizedEntry.legacySourceIds || []),
-					],
-					canonicalSourceId
-				),
-				sourceSize: existing.sourceSize ?? normalizedEntry.sourceSize,
-				sourceMtime: existing.sourceMtime ?? normalizedEntry.sourceMtime,
-				lastSeenAt: Math.max(existing.lastSeenAt || 0, normalizedEntry.lastSeenAt || 0),
-				lastKnownPath:
-					String(normalizedEntry.lastKnownPath || "").trim() ||
-					existing.lastKnownPath ||
-					normalizedEntry.filePath ||
-					existing.filePath,
-			});
-		}
-
-		return Array.from(merged.values()).sort((left, right) =>
-			left.sourceId.localeCompare(right.sourceId, "zh-CN")
-		);
-	}
-
-	private haveSourceRegistryEntriesChanged(
-		current: EpubSourceRegistryEntry[] | undefined,
-		next: EpubSourceRegistryEntry[]
-	): boolean {
-		return JSON.stringify(current || []) !== JSON.stringify(next);
 	}
 
 	private async readCachedScanIndex(): Promise<EpubScanIndexEntry[] | null> {
@@ -1391,16 +1071,14 @@ export class EpubStorageService {
 		bookId: string
 	): Promise<Pick<EpubBook, "currentPosition" | "readingStats"> | null> {
 		bookId = await this.resolveCanonicalBookId(bookId);
-		const book = await this.getBook(bookId);
-		if (!book) {
+		const aggregate = await this.getV2Store().getBook(bookId);
+		if (!aggregate?.reading) {
 			return null;
 		}
-		try {
-			return await this.getBookmarkService().readReadingState(book);
-		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to read reading state from bookmark file:", error);
-			return null;
-		}
+		return {
+			currentPosition: aggregate.reading.position,
+			readingStats: aggregate.reading.stats,
+		};
 	}
 
 	private async writeBookState(
@@ -1410,23 +1088,20 @@ export class EpubStorageService {
 		bookId = await this.resolveCanonicalBookId(bookId);
 		const previous = this._bookStateWriteLocks.get(bookId) || Promise.resolve();
 		const persist = async () => {
-			const book = await this.getBook(bookId);
+			const aggregate = await this.getV2Store().getBook(bookId);
+			if (!aggregate) {
+				return;
+			}
 			const normalizedStats = normalizeReadingPaceStats(data.readingStats);
-			const payload = {
-				currentPosition: data.currentPosition,
-				readingStats: normalizedStats,
-			};
-
-			if (book) {
-				try {
-					await this.getBookmarkService().writeReadingState(book, payload);
-					return;
-				} catch (error) {
-					logger.warn(
-						"[EpubStorageService] Failed to write reading state to bookmark file:",
-						error
-					);
-				}
+			this.getV2Store().saveReading(bookId, {
+				position: data.currentPosition,
+				lastPosition: aggregate.reading?.lastPosition ?? null,
+				stats: normalizedStats,
+			});
+			const cachedBook = this._booksCache?.[bookId];
+			if (cachedBook) {
+				cachedBook.currentPosition = data.currentPosition;
+				cachedBook.readingStats = normalizedStats;
 			}
 		};
 		const next = previous.then(persist, persist);
@@ -1451,50 +1126,9 @@ export class EpubStorageService {
 		book.readingStats = state.readingStats ?? book.readingStats;
 	}
 
-	private applyUnifiedBookStateFromRecord(
-		book: EpubBook,
-		record: EpubReaderLocalBookRecord | undefined
-	): boolean {
-		if (!record || !Object.prototype.hasOwnProperty.call(record, "state")) {
-			return false;
-		}
-
-		const state = record.state;
-		if (!state) {
-			return true;
-		}
-
-		book.currentPosition = state.currentPosition ?? book.currentPosition;
-		book.readingStats = state.readingStats ?? book.readingStats;
-		return true;
-	}
-
 	private async hydrateBookStates(books: Record<string, EpubBook>): Promise<void> {
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		const deferredBookmarkHydration: EpubBook[] = [];
-
-		for (const book of Object.values(books)) {
-			const canonicalBookId = this.resolveBookIdAlias(book.id);
-			if (this.applyUnifiedBookStateFromRecord(book, unifiedData.books?.[canonicalBookId])) {
-				continue;
-			}
-			deferredBookmarkHydration.push(book);
-		}
-
-		if (deferredBookmarkHydration.length === 0) {
-			return;
-		}
-
-		await Promise.all(
-			deferredBookmarkHydration.map(async (book) => {
-				const state = await this.readBookState(book.id);
-				if (!state) {
-					return;
-				}
-				book.currentPosition = state.currentPosition ?? book.currentPosition;
-				book.readingStats = state.readingStats ?? book.readingStats;
-			})
-		);
+		// v2：书目录本身已携带 reading（position/stats），无需逐书水合。
+		void books;
 	}
 
 	async saveBooks(books: Record<string, EpubBook>): Promise<void> {
@@ -2298,50 +1932,14 @@ export class EpubStorageService {
 			return null;
 		}
 
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		for (const record of Object.values(unifiedData.books || {})) {
-			const descriptor = record.descriptor;
-			if (!descriptor) {
-				continue;
-			}
-			if (normalizePath(descriptor.filePath) !== normalizedFilePath) {
-				continue;
-			}
-			const book = this.toBookFromDescriptor(descriptor, record.state);
-			if (!this._booksCache) {
-				this._booksCache = { [book.id]: book };
-			} else {
-				this._booksCache[book.id] = book;
-			}
-			await this.hydrateBookState(book.id);
-			return (await this.getBook(book.id)) ?? book;
+		const books = await this.loadBooks({ hydrateStates: false });
+		const catalogBook = this.findBookInCollectionByFilePath(books, normalizedFilePath);
+		if (catalogBook?.id) {
+			await this.hydrateBookState(catalogBook.id);
+			return (await this.getBook(catalogBook.id)) ?? catalogBook;
 		}
 
-		if (this._booksCache) {
-			const cached = this.findBookInCollectionByFilePath(this._booksCache, normalizedFilePath);
-			if (cached?.id) {
-				await this.hydrateBookState(cached.id);
-				return (await this.getBook(cached.id)) ?? cached;
-			}
-		}
-
-		if (!this._booksCache) {
-			const { books: localBooks } = await this.readBooksFromUnifiedLocalData();
-			if (Object.keys(localBooks).length > 0) {
-				this._booksCache = localBooks;
-			}
-		}
-
-		if (this._booksCache) {
-			const catalogBook = this.findBookInCollectionByFilePath(this._booksCache, normalizedFilePath);
-			if (catalogBook?.id) {
-				await this.hydrateBookState(catalogBook.id);
-				return (await this.getBook(catalogBook.id)) ?? catalogBook;
-			}
-		}
-
-		const membership =
-			unifiedData.bookshelfMembership ?? (await this.loadBookshelfMembership());
+		const membership = await this.loadBookshelfMembership();
 		const isMember = membership.some(
 			(entry) => normalizePath(entry.path || "") === normalizedFilePath
 		);
@@ -2391,7 +1989,6 @@ export class EpubStorageService {
 		}
 
 		await this.saveBook(nextBook, { ensureOnBookshelf: true });
-		await this.getBookmarkService().syncBookDisplayMetadata(nextBook);
 		return nextBook;
 	}
 
@@ -3042,6 +2639,27 @@ export class EpubStorageService {
 		};
 	}
 
+	/** v2：读取某书的高亮记录（books[id].notes.highlights）。 */
+	async loadBookHighlights(bookId: string): Promise<EpubStoredHighlight[]> {
+		const aggregate = await this.getV2Store().getBook(
+			await this.resolveCanonicalBookId(bookId)
+		);
+		return aggregate?.notes?.highlights ?? [];
+	}
+
+	/** v2：整组覆盖某书的高亮记录（书不存在时忽略）。 */
+	async saveBookHighlights(bookId: string, highlights: EpubStoredHighlight[]): Promise<void> {
+		bookId = await this.resolveCanonicalBookId(bookId);
+		const aggregate = await this.getV2Store().getBook(bookId);
+		if (!aggregate) {
+			return;
+		}
+		this.getV2Store().saveBookNotes(bookId, {
+			...aggregate.notes,
+			highlights,
+		});
+	}
+
 	async saveProgress(
 		bookId: string,
 		position: ReadingPosition,
@@ -3117,13 +2735,7 @@ export class EpubStorageService {
 			return hydratedBook.currentPosition;
 		}
 
-		const filePath = bookHint?.filePath || hydratedBook?.filePath;
-		if (!filePath) {
-			return null;
-		}
-
-		const readingState = await this.getBookmarkService().readReadingStateByBookPath(filePath);
-		return readingState?.currentPosition ?? null;
+		return null;
 	}
 
 	async markBookCompleted(bookId: string, completedAt = Date.now()): Promise<EpubBook | null> {
@@ -3167,19 +2779,9 @@ export class EpubStorageService {
 	async loadLastOpenBookmark(bookId: string): Promise<EpubLastOpenBookmark | null> {
 		bookId = await this.resolveCanonicalBookId(bookId);
 		await this.hydrateBookState(bookId);
-		const book = await this.getBook(bookId);
-
-		if (book?.currentPosition?.cfi) {
-			return this.lastOpenBookmarkFromReadingState(
-				{
-					currentPosition: book.currentPosition,
-					readingStats: book.readingStats,
-				},
-				book.metadata?.title
-			);
-		}
-
-		return null;
+		const aggregate = await this.getV2Store().getBook(bookId);
+		const lastPosition = aggregate?.reading?.lastPosition;
+		return lastPosition?.cfi ? lastPosition : null;
 	}
 
 	async saveLastOpenBookmark(bookId: string, bookmark: EpubLastOpenBookmark): Promise<void> {
@@ -3189,48 +2791,77 @@ export class EpubStorageService {
 			return;
 		}
 
-		const book = await this.getBook(bookId);
-		if (book) {
-			const payload = this.readingStateFromLastOpenBookmark(normalized, book.readingStats);
-			book.currentPosition = payload.currentPosition;
-			book.readingStats = payload.readingStats;
-			await this.writeBookState(bookId, payload);
+		const aggregate = await this.getV2Store().getBook(bookId);
+		if (!aggregate) {
 			return;
 		}
-
-		await this.updateUnifiedLocalReaderData((localData) => {
-			localData.books = localData.books || {};
-			const current = localData.books[bookId] || {};
-			localData.books[bookId] = {
-				...current,
-				lastOpenBookmark: normalized,
-			};
+		const stats = normalizeReadingPaceStats({
+			...(aggregate.reading?.stats ?? {
+				totalReadTime: 0,
+				lastReadTime: 0,
+				createdTime: 0,
+			}),
+			lastReadTime: normalized.savedAt,
 		});
+		const position: ReadingPosition = {
+			chapterIndex: normalized.chapterIndex,
+			cfi: normalized.cfi,
+			percent: normalized.percent,
+		};
+		this.getV2Store().saveReading(bookId, {
+			position,
+			lastPosition: normalized,
+			stats,
+		});
+		const cachedBook = this._booksCache?.[bookId];
+		if (cachedBook) {
+			cachedBook.currentPosition = position;
+			cachedBook.readingStats = stats;
+		}
 	}
 
 	async loadReadingReferencePoint(bookId: string): Promise<EpubReadingReferencePoint | null> {
 		bookId = await this.resolveCanonicalBookId(bookId);
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		const bookRecord = unifiedData.books?.[bookId];
-		if (
-			bookRecord &&
-			Object.prototype.hasOwnProperty.call(bookRecord, "readingReferencePoint")
-		) {
-			return bookRecord.readingReferencePoint ?? null;
+		const aggregate = await this.getV2Store().getBook(bookId);
+		const lastPosition = aggregate?.reading?.lastPosition;
+		if (!lastPosition?.cfi) {
+			return null;
 		}
-
-		return null;
+		return {
+			chapterIndex: lastPosition.chapterIndex,
+			cfi: lastPosition.cfi,
+			percent: lastPosition.percent,
+			title: lastPosition.title,
+			savedAt: lastPosition.savedAt,
+		};
 	}
 
 	async saveReadingReferencePoint(bookId: string, point: EpubReadingReferencePoint): Promise<void> {
 		bookId = await this.resolveCanonicalBookId(bookId);
-		await this.updateUnifiedLocalReaderData((localData) => {
-			localData.books = localData.books || {};
-			const current = localData.books[bookId] || {};
-			localData.books[bookId] = {
-				...current,
-				readingReferencePoint: this.normalizeReadingReferencePoint(point),
-			};
+		const normalized = this.normalizeReadingReferencePoint(point);
+		if (!normalized?.cfi) {
+			return;
+		}
+
+		const aggregate = await this.getV2Store().getBook(bookId);
+		if (!aggregate) {
+			return;
+		}
+		this.getV2Store().saveReading(bookId, {
+			position: aggregate.reading?.position ?? { chapterIndex: 0, cfi: "", percent: 0 },
+			lastPosition: {
+				chapterIndex: normalized.chapterIndex,
+				cfi: normalized.cfi,
+				percent: normalized.percent,
+				title: normalized.title,
+				preview: normalized.title,
+				savedAt: normalized.savedAt,
+			},
+			stats: aggregate.reading?.stats ?? {
+				totalReadTime: 0,
+				lastReadTime: 0,
+				createdTime: 0,
+			},
 		});
 	}
 
@@ -3330,16 +2961,18 @@ export class EpubStorageService {
 
 	async deleteReadingReferencePoint(bookId: string): Promise<void> {
 		bookId = await this.resolveCanonicalBookId(bookId);
-		await this.updateUnifiedLocalReaderData((localData) => {
-			localData.books = localData.books || {};
-			const current = localData.books[bookId];
-			if (!current) {
-				return;
-			}
-			localData.books[bookId] = {
-				...current,
-				readingReferencePoint: null,
-			};
+		const aggregate = await this.getV2Store().getBook(bookId);
+		if (!aggregate) {
+			return;
+		}
+		this.getV2Store().saveReading(bookId, {
+			position: aggregate.reading?.position ?? { chapterIndex: 0, cfi: "", percent: 0 },
+			lastPosition: null,
+			stats: aggregate.reading?.stats ?? {
+				totalReadTime: 0,
+				lastReadTime: 0,
+				createdTime: 0,
+			},
 		});
 	}
 
