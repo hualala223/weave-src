@@ -7,15 +7,15 @@
 		EpubBook,
 		EpubHighlightStyle,
 		EpubReaderEngine,
-		ReaderAnchorPoint,
-		ReaderFrame,
-		ReaderViewportRect,
+		HighlightClickInfo,
 	} from '../../services/epub';
+	import type { ReaderAnchorPoint, ReaderFrame, ReaderViewportRect } from '../../services/epub/reader-engine-types';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import {
 		computeToolbarPosition,
 		createEventBinder,
 		getEventTargetNode,
+		isEventOutsideToolbar,
 		shouldDismissToolbarOnPointerDown,
 		resolveMobileFloatingInsetBottom,
 	} from './toolbar-positioning';
@@ -38,6 +38,22 @@
 		mobileDockBottomOffset?: number;
 		externalSelection?: ExternalSelectionState | null;
 		onInsertToNote?: (text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) => void;
+		/** 编辑状态：点击既有标注时由宿主传入。 */
+		highlightInfo?: HighlightClickInfo | null;
+		deleting?: boolean;
+		onDelete?: (info: HighlightClickInfo) => void;
+		onTemporarilyReveal?: (info: HighlightClickInfo) => void;
+		onChangeColor?: (info: HighlightClickInfo, newColor: string) => void;
+		onChangeStyle?: (info: HighlightClickInfo, newStyle?: EpubHighlightStyle) => void;
+		onEditComment?: (info: HighlightClickInfo) => void;
+		onCopyText?: (info: HighlightClickInfo) => void;
+		onDismiss?: () => void;
+		/** 创建状态：「想法」默认下划线后在宿主侧持久化并打开想法输入框。 */
+		onCommentCreate?: (text: string, cfiRange: string, color: string) => void;
+		/** 创建状态：溯源复制 [[溯源路径|选中内容]]。 */
+		onCopyTraceLink?: (text: string, cfiRange: string) => void;
+		/** 调起 AI 面板（创建/编辑状态通用）。 */
+		onOpenAI?: (text: string, cfiRange: string) => void;
 	}
 
 	let {
@@ -49,10 +65,25 @@
 		boundsEl = null,
 		mobileDockBottomOffset = 0,
 		externalSelection = null,
-		onInsertToNote
+		onInsertToNote,
+		highlightInfo = null,
+		deleting = false,
+		onDelete,
+		onTemporarilyReveal,
+		onChangeColor,
+		onChangeStyle,
+		onEditComment,
+		onCopyText,
+		onDismiss,
+		onCommentCreate,
+		onCopyTraceLink,
+		onOpenAI,
 	}: Props = $props();
 	let toolbarEl: HTMLDivElement | undefined = $state(undefined);
+	let actionsShellEl: HTMLDivElement | undefined = $state(undefined);
+	let moreBtnEl: HTMLButtonElement | undefined = $state(undefined);
 	let isVisible = $state(false);
+	let editActive = $state(false);
 	let posTop = $state(0);
 	let posLeft = $state(0);
 	let isBelowSelection = $state(false);
@@ -60,9 +91,17 @@
 	let arrowOffset = $state(0);
 	let selectedText = $state('');
 	let currentCfiRange = $state('');
+	let lastUsedColor = $state('yellow');
+	let actionsOverflow = $state(false);
+	// 隐匿文本展示（conceal）在类型层面并未建模为单独值（ReaderHighlightPresentation 只有 "highlight"），
+	// 运行时由旧数据携带，这里以宽松比较识别。
+	const isConcealMode = $derived(
+		highlightInfo !== null && (highlightInfo.presentation as string | undefined) === 'conceal'
+	);
 	let iframeDoc: Document | null = null;
 	let teardownReaderTracking: (() => void) | null = null;
 	let teardownPositionTracking: (() => void) | null = null;
+	let teardownEditTracking: (() => void) | null = null;
 	let activeFrame: ReaderFrame | null = null;
 	let pendingSyncFrame: number | null = null;
 	let activeClearSelection: (() => void) | null = null;
@@ -70,6 +109,15 @@
 	let activeToolbarMenu: Menu | null = null;
 
 	const isMobileToolbar = Platform.isMobile || activeDocument.body.classList.contains('is-mobile');
+
+	const colors = ['yellow', 'blue', 'red', 'purple', 'green'] as const;
+	const colorLabels: Record<(typeof colors)[number], string> = {
+		yellow: '黄色',
+		blue: '蓝色',
+		red: '红色',
+		purple: '紫色',
+		green: '绿色',
+	};
 
 	function icon(node: HTMLElement, name: string) {
 		setIcon(node, name);
@@ -205,6 +253,11 @@
 		activeFrame = null;
 	}
 
+	function stopEditTracking() {
+		teardownEditTracking?.();
+		teardownEditTracking = null;
+	}
+
 	function dismissActiveToolbarMenu(): void {
 		if (!activeToolbarMenu) {
 			return;
@@ -240,6 +293,7 @@
 
 	async function handleHighlight(color: string, style?: EpubHighlightStyle) {
 		if (!book || !selectedText || !currentCfiRange) { clearAndHide(); return; }
+		lastUsedColor = color;
 		try {
 			readerService.addHighlight({ cfiRange: currentCfiRange, color, style, text: selectedText });
 		} catch (e) { logger.warn('[SelectionToolbar] Failed to apply highlight:', e); }
@@ -267,8 +321,17 @@
 		if (isMobileToolbar && event.type === 'touchstart' && hasNonCollapsedIframeSelection()) {
 			return;
 		}
+		if (editActive) {
+			untrack(() => onDismiss?.());
+		}
 		if (isVisible) {
 			clearAndHide();
+		}
+	}
+
+	function handleEditClickOutside(event: Event) {
+		if (untrack(() => Boolean(highlightInfo)) && isEventOutsideToolbar(toolbarEl, event)) {
+			untrack(() => onDismiss?.());
 		}
 	}
 
@@ -308,6 +371,15 @@
 		}
 		const rect = range.getBoundingClientRect();
 		return rect.width || rect.height ? [new DOMRect(rect.left, rect.top, rect.width, rect.height)] : [];
+	}
+
+	function measureActionsOverflow() {
+		const el = actionsShellEl;
+		if (!el) {
+			actionsOverflow = false;
+			return;
+		}
+		actionsOverflow = el.scrollWidth - el.clientWidth > 1;
 	}
 
 	async function positionToolbar(
@@ -361,6 +433,7 @@
 		posLeft = position.left;
 		isBelowSelection = position.isBelowAnchor;
 		arrowOffset = position.arrowOffset;
+		measureActionsOverflow();
 	}
 
 	function scheduleActiveSync() {
@@ -409,6 +482,12 @@
 	async function syncSelection(frame: ReaderFrame, cfiRange?: string) {
 		const repositionOnly = isVisible && Boolean(cfiRange);
 		try {
+			// 编辑状态优先：切换新选区需要先让宿主清掉编辑态。
+			if (untrack(() => Boolean(highlightInfo))) {
+				untrack(() => onDismiss?.());
+				return;
+			}
+
 			const iframeWindow = frame.window || frame.frameDocument?.defaultView;
 			if (!iframeWindow) {
 				if (!repositionOnly) {
@@ -463,6 +542,7 @@
 
 			startPositionTracking(frame);
 			await positionToolbar(geometry.rect, viewportEl, geometry.rects, geometry.anchorPoint);
+			measureActionsOverflow();
 		} catch (e) {
 			logger.warn('[SelectionToolbar] Failed to sync selection:', e);
 			if (!repositionOnly) {
@@ -471,15 +551,150 @@
 		}
 	}
 
+	async function positionForHighlight(info: HighlightClickInfo) {
+		stopEditTracking();
+		editActive = true;
+		await tick();
+
+		if (!toolbarEl || untrack(() => highlightInfo) !== info) {
+			return;
+		}
+
+		startEditTracking();
+
+		const viewportEl = toolbarEl.closest('.epub-reader-viewport') as HTMLElement | null
+			|| (activeDocument.querySelector('.epub-reader-viewport') as HTMLElement | null);
+		if (!viewportEl) {
+			return;
+		}
+
+		const containerRect = viewportEl.getBoundingClientRect();
+		const toRelativeRect = (rect: HighlightClickInfo['rect']) => ({
+			top: (rect.top - containerRect.top),
+			left: (rect.left - containerRect.left),
+			bottom: (rect.bottom - containerRect.top),
+			right: (rect.right - containerRect.left),
+			width: rect.width,
+			height: rect.height,
+		});
+
+		const position = computeToolbarPosition({
+			anchorRect: toRelativeRect(info.rect),
+			anchorRects: (info.rects || []).map((rect) => toRelativeRect(rect)),
+			anchorPoint: info.anchorPoint
+				? {
+					x: info.anchorPoint.x - containerRect.left,
+					y: info.anchorPoint.y - containerRect.top,
+				}
+				: undefined,
+			containerWidth: viewportEl.clientWidth,
+			containerHeight: viewportEl.clientHeight,
+			toolbarWidth: toolbarEl.offsetWidth || 296,
+			toolbarHeight: toolbarEl.offsetHeight || 78,
+			mobile: isMobileToolbar,
+			insetBottom: isMobileToolbar
+				? resolveMobileFloatingInsetBottom(mobileDockBottomOffset)
+				: 0,
+		});
+
+		toolbarMode = position.mode;
+		posTop = position.top;
+		posLeft = position.left;
+		isBelowSelection = position.isBelowAnchor;
+		arrowOffset = position.arrowOffset;
+		measureActionsOverflow();
+	}
+
+	function startEditTracking() {
+		stopEditTracking();
+		const binder = createEventBinder();
+		const visualViewport = window.visualViewport;
+		const dismiss = () => onDismiss?.();
+
+		const viewportEl = toolbarEl?.closest('.epub-reader-viewport') as HTMLElement | null;
+		const scrollHost = viewportEl?.querySelector('.epub-content-wrapper') as HTMLElement | null;
+
+		binder.bind(scrollHost, 'scroll', dismiss, { passive: true });
+		binder.bind(viewportEl, 'scroll', dismiss, { passive: true });
+		binder.bind(window, 'resize', () => {
+			dismiss();
+			measureActionsOverflow();
+		});
+		binder.bind(window, 'orientationchange', dismiss);
+		binder.bind(visualViewport, 'resize', dismiss);
+		binder.bind(visualViewport, 'scroll', dismiss);
+
+		for (const frame of readerService.getVisibleFrames()) {
+			if (frame?.frameDocument) {
+				binder.bind(frame.frameDocument, 'mousedown', handleEditClickOutside, { capture: true });
+				binder.bind(frame.frameDocument, 'touchstart', handleEditClickOutside, { capture: true, passive: true });
+			}
+		}
+		binder.bind(activeDocument, 'mousedown', handlePointerDownOutside, { capture: true });
+		binder.bind(activeDocument, 'touchstart', handlePointerDownOutside, { capture: true, passive: true });
+
+		teardownEditTracking = () => {
+			binder.dispose();
+		};
+	}
+
+	function handleCommentCreateAction() {
+		if (!book || !selectedText || !currentCfiRange) {
+			clearAndHide();
+			return;
+		}
+		onCommentCreate?.(selectedText, currentCfiRange, lastUsedColor || 'yellow');
+		clearAndHide();
+	}
+
+	function handleOpenAction(text: string, cfiRange: string) {
+		onOpenAI?.(text, cfiRange);
+		if (!untrack(() => Boolean(highlightInfo))) {
+			clearAndHide();
+		}
+	}
+
+	function openMoreMenu(event: MouseEvent) {
+		dismissActiveToolbarMenu();
+		const currentInfo = untrack(() => highlightInfo);
+		const editNow = Boolean(currentInfo);
+		const actionText = editNow ? currentInfo?.text || '' : selectedText;
+		const actionCfi = editNow ? currentInfo?.cfiRange || '' : currentCfiRange;
+
+		const menu = new Menu();
+		menu.addItem((item) => {
+			item.setTitle('复制');
+			item.setIcon('clipboard-copy');
+			item.onClick(() => {
+				if (editNow && currentInfo) {
+					onCopyText?.(currentInfo);
+				} else {
+					onCopyTraceLink?.(actionText, actionCfi);
+				}
+			});
+		});
+		menu.addItem((item) => {
+			item.setTitle('AI');
+			item.setIcon('bot');
+			item.onClick(() => handleOpenAction(actionText, actionCfi));
+		});
+		activeToolbarMenu = menu;
+		if (moreBtnEl) {
+			const rect = moreBtnEl.getBoundingClientRect();
+			menu.showAtPosition({ x: rect.right, y: rect.top });
+		} else {
+			menu.showAtMouseEvent(event);
+		}
+	}
+
 	$effect(() => {
 		const currentReaderService = readerService;
 
-		// Keep teardown handles out of the effect dependency graph to avoid
-		// self-triggered reruns when the toolbar updates its own subscriptions.
 		untrack(() => {
 			teardownReaderTracking?.();
 			teardownReaderTracking = () => {
 				stopPositionTracking();
+				stopEditTracking();
 			};
 		});
 
@@ -487,7 +702,9 @@
 			void syncSelection(frame, cfiRange);
 		});
 		const offHighlightClick = currentReaderService.onHighlightClick(() => {
-			hideToolbar();
+			if (!untrack(() => Boolean(highlightInfo))) {
+				hideToolbar();
+			}
 		});
 
 		untrack(() => {
@@ -495,6 +712,7 @@
 				offSelection();
 				offHighlightClick();
 				stopPositionTracking();
+				stopEditTracking();
 			};
 		});
 
@@ -510,6 +728,7 @@
 		const _readerVersion = readerVersion;
 		untrack(() => {
 			hideToolbar();
+			onDismiss?.();
 		});
 	});
 
@@ -547,15 +766,36 @@
 		void positionToolbar(selection.rect, viewportEl, selection.rects || [selection.rect]);
 	});
 
+	$effect(() => {
+		const info = highlightInfo;
+		if (!info) {
+			untrack(() => {
+				editActive = false;
+				stopEditTracking();
+				stopPositionTracking();
+			});
+			return;
+		}
+		untrack(() => {
+			stopPositionTracking();
+		});
+		void positionForHighlight(info);
+	});
+
 	onMount(() => {
 		activeDocument.addEventListener('mousedown', handlePointerDownOutside, { capture: true });
 		activeDocument.addEventListener('touchstart', handlePointerDownOutside, { capture: true, passive: true });
+		window.addEventListener('resize', measureActionsOverflow);
+		window.addEventListener('orientationchange', measureActionsOverflow);
 		return () => {
 			activeDocument.removeEventListener('mousedown', handlePointerDownOutside, { capture: true });
 			activeDocument.removeEventListener('touchstart', handlePointerDownOutside, { capture: true });
+			window.removeEventListener('resize', measureActionsOverflow);
+			window.removeEventListener('orientationchange', measureActionsOverflow);
 			teardownReaderTracking?.();
 			teardownReaderTracking = null;
 			stopPositionTracking();
+			stopEditTracking();
 			clearPendingSync();
 			clearPendingExternalSelectionHide();
 		};
@@ -563,34 +803,139 @@
 </script>
 
 <div
-	class="epub-selection-toolbar epub-glass-panel"
-	class:visible={isVisible}
+	class="epub-selection-toolbar epub-highlight-toolbar epub-glass-panel"
+	class:visible={editActive || isVisible}
 	class:below-selection={isBelowSelection}
 	class:mobile-docked={toolbarMode === 'docked'}
+	class:is-edit={editActive}
+	class:is-create={!editActive && isVisible}
 	style={`top: ${posTop}px; left: ${posLeft}px; --toolbar-arrow-offset: ${arrowOffset}px; --toolbar-bottom-offset: ${Math.max(0, mobileDockBottomOffset)}px;`}
 	bind:this={toolbarEl}
 >
-	<div class="selection-main-row">
-		<div class="selection-top-row">
-			<div class="toolbar-row colors-row selection-color-row selection-primary-row">
-				<button class="color-btn yellow" onclick={() => handleHighlight('yellow')}><span class="color-btn-core"></span></button>
-				<button class="color-btn blue" onclick={() => handleHighlight('blue')}><span class="color-btn-core"></span></button>
-				<button class="color-btn red" onclick={() => handleHighlight('red')}><span class="color-btn-core"></span></button>
-				<button class="color-btn purple" onclick={() => handleHighlight('purple')}><span class="color-btn-core"></span></button>
-				<button class="color-btn green" onclick={() => handleHighlight('green')}><span class="color-btn-core"></span></button>
-			</div>
-			<div class="selection-style-shell">
-				<div class="toolbar-row selection-style-row">
-					<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'underline')} title="下划线"><span class="action-icon style-icon underline-style-icon" use:icon={'underline'}></span></button>
-					<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'strikethrough')} title="删除线"><span class="action-icon style-icon strikethrough-style-icon" use:icon={'strikethrough'}></span></button>
-					<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'wavy')} title="波浪线"><span class="action-icon style-icon wavy-style-icon" use:icon={'pen-tool'}></span></button>
+	{#if editActive && highlightInfo}
+		{#if isConcealMode}
+			<div class="selection-main-row">
+				<div class="selection-actions-shell">
+					<div class="toolbar-row actions-row selection-actions-row highlight-actions-row concealment-actions">
+						<button class="clickable-icon action-item" onclick={() => onTemporarilyReveal?.(highlightInfo)} title={'暂时显示隐藏文本'}>
+							<span class="action-icon" use:icon={'eye'}></span>
+							<span class="action-label">{'暂显'}</span>
+						</button>
+						<button class="clickable-icon action-item" onclick={() => onCopyText?.(highlightInfo)} title={'复制隐藏文本'}>
+							<span class="action-icon" use:icon={'clipboard-copy'}></span>
+							<span class="action-label">{'复制'}</span>
+						</button>
+						<button class="clickable-icon action-item accent concealment-reset" onclick={() => onDelete?.(highlightInfo)} title={'恢复文本显示'}>
+							<span class="action-icon" use:icon={'eye'}></span>
+							<span class="action-label">{'恢复'}</span>
+						</button>
+					</div>
 				</div>
+			</div>
+		{:else}
+			<div class="selection-main-row">
+				<div class="selection-top-row">
+					<div class="selection-style-shell">
+						<div class="toolbar-row selection-style-row">
+							<div class="toolbar-row colors-row selection-color-row selection-primary-row">
+								{#each colors as c}
+									<button
+										class="color-btn {c}"
+										class:active={c === highlightInfo?.color}
+										onclick={() => { lastUsedColor = c; onChangeColor?.(highlightInfo, c); }}
+										title={`切换为${colorLabels[c]}`}
+										aria-label={`切换为${colorLabels[c]}颜色`}
+									>
+										<span class="color-btn-core"></span>
+									</button>
+								{/each}
+							</div>
+							<span class="row-divider" aria-hidden="true"></span>
+							<button class="clickable-icon action-item icon-only style-action-item" class:accent={highlightInfo?.style === 'underline'} onclick={() => onChangeStyle?.(highlightInfo, highlightInfo?.style === 'underline' ? undefined : 'underline')} title={'下划线'} aria-label={'下划线'}>
+								<span class="action-icon style-icon underline-style-icon" use:icon={'underline'}></span>
+							</button>
+							<button class="clickable-icon action-item icon-only style-action-item" class:accent={highlightInfo?.style === 'strikethrough'} onclick={() => onChangeStyle?.(highlightInfo, highlightInfo?.style === 'strikethrough' ? undefined : 'strikethrough')} title={'删除线'} aria-label={'删除线'}>
+								<span class="action-icon style-icon strikethrough-style-icon" use:icon={'strikethrough'}></span>
+							</button>
+							<button class="clickable-icon action-item icon-only style-action-item" class:accent={highlightInfo?.style === 'wavy'} onclick={() => onChangeStyle?.(highlightInfo, highlightInfo?.style === 'wavy' ? undefined : 'wavy')} title={'波浪线'} aria-label={'波浪线'}>
+								<span class="action-icon style-icon wavy-style-icon" use:icon={'pen-tool'}></span>
+							</button>
+						</div>
+					</div>
+				</div>
+				<div class="selection-actions-shell">
+					<div class="toolbar-row actions-row selection-actions-row highlight-actions-row" bind:this={actionsShellEl}>
+						<button class="clickable-icon action-item comment-action" class:accent={Boolean(highlightInfo.hasCommentDivider)} onclick={() => onEditComment?.(highlightInfo)} title={'编辑想法'} aria-label={'编辑想法'}>
+							<span class="action-icon" use:icon={'message-square'}></span>
+							<span class="action-label">{'想法'}</span>
+						</button>
+						{#if !actionsOverflow}
+							<button class="clickable-icon action-item copy-action" onclick={() => onCopyText?.(highlightInfo)} title={'复制文本'}>
+								<span class="action-icon" use:icon={'clipboard-copy'}></span>
+								<span class="action-label">{'复制'}</span>
+							</button>
+							<button class="clickable-icon action-item ai" onclick={() => handleOpenAction(highlightInfo.text || '', highlightInfo.cfiRange || '')} title={'AI 查词 / 解释 / 翻译'}>
+								<span class="action-icon" use:icon={'bot'}></span>
+								<span class="action-label">{'AI'}</span>
+							</button>
+						{/if}
+						{#if actionsOverflow}
+							<button class="clickable-icon action-item icon-only" bind:this={moreBtnEl} onclick={openMoreMenu} title={'更多'}>
+								<span class="action-icon" use:icon={'more-horizontal'}></span>
+							</button>
+						{/if}
+						<span class="row-divider" aria-hidden="true"></span>
+						<button class="clickable-icon action-item delete delete-action" disabled={deleting} onclick={() => onDelete?.(highlightInfo)} title={'删除高亮'}>
+							<span class="action-icon" use:icon={'trash-2'}></span>
+							<span class="action-label">{'删除'}</span>
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
+	{:else if isVisible}
+		<div class="selection-main-row">
+			<div class="selection-top-row">
+				<div class="selection-style-shell">
+					<div class="toolbar-row selection-style-row">
+						<div class="toolbar-row colors-row selection-color-row selection-primary-row">
+							{#each colors as c}
+								<button class="color-btn {c}" onclick={() => void handleHighlight(c)} title={colorLabels[c]} aria-label={`添加${colorLabels[c]}颜色`}>
+									<span class="color-btn-core"></span>
+								</button>
+							{/each}
+						</div>
+						<span class="row-divider" aria-hidden="true"></span>
+						<button class="clickable-icon action-item icon-only style-action-item" onclick={() => void handleHighlight('yellow', 'underline')} title="下划线"><span class="action-icon style-icon underline-style-icon" use:icon={'underline'}></span></button>
+						<button class="clickable-icon action-item icon-only style-action-item" onclick={() => void handleHighlight('yellow', 'strikethrough')} title="删除线"><span class="action-icon style-icon strikethrough-style-icon" use:icon={'strikethrough'}></span></button>
+						<button class="clickable-icon action-item icon-only style-action-item" onclick={() => void handleHighlight('yellow', 'wavy')} title="波浪线"><span class="action-icon style-icon wavy-style-icon" use:icon={'pen-tool'}></span></button>
+					</div>
+				</div>
+			</div>
+			<div class="selection-actions-shell">
+				<div class="toolbar-row actions-row selection-actions-row" bind:this={actionsShellEl}>
+					<button class="clickable-icon action-item comment-action" onclick={handleCommentCreateAction} title={'默认下划线并打开想法输入框'}>
+						<span class="action-icon" use:icon={'message-square'}></span>
+						<span class="action-label">{'想法'}</span>
+					</button>
+					{#if !actionsOverflow}
+						<button class="clickable-icon action-item copy-action" onclick={() => onCopyTraceLink?.(selectedText, currentCfiRange)} title={'复制溯源链接'}>
+							<span class="action-icon" use:icon={'clipboard-copy'}></span>
+							<span class="action-label">{'复制'}</span>
+						</button>
+						<button class="clickable-icon action-item ai" onclick={() => handleOpenAction(selectedText, currentCfiRange)} title={'AI 查词 / 解释 / 翻译'}>
+							<span class="action-icon" use:icon={'bot'}></span>
+							<span class="action-label">{'AI'}</span>
+						</button>
+					{/if}
+					{#if actionsOverflow}
+						<button class="clickable-icon action-item icon-only" bind:this={moreBtnEl} onclick={openMoreMenu} title={'更多'}>
+							<span class="action-icon" use:icon={'more-horizontal'}></span>
+						</button>
+					{/if}
+				</div>
+			</div>
 		</div>
-		</div>
-	</div>
-	<div class="selection-actions-shell">
-		<div class="toolbar-row actions-row selection-actions-row">
-		</div>
-	</div>
+	{/if}
 	<div class="toolbar-arrow"></div>
 </div>

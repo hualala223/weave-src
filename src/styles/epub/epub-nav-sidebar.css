@@ -975,31 +975,31 @@ body.is-mobile .epub-highlight-toolbar:not(.mobile-docked) {
 }
 
 .epub-selection-toolbar .selection-color-row {
-	position: absolute;
-	top: 7px;
-	right: calc(100% + 10px);
-	padding: 0;
+	position: static;
+	top: auto;
+	right: auto;
+	padding: 0 0 0 6px;
 	align-self: auto;
 	background: transparent;
 	border: none;
 	box-shadow: none;
 	backdrop-filter: none;
 	-webkit-backdrop-filter: none;
-	z-index: 1;
+	z-index: auto;
 }
 
 .epub-highlight-toolbar .highlight-color-row {
-	position: absolute;
-	top: 7px;
-	right: calc(100% + 10px);
-	padding: 0;
+	position: static;
+	top: auto;
+	right: auto;
+	padding: 0 0 0 6px;
 	align-self: auto;
 	background: transparent;
 	border: none;
 	box-shadow: none;
 	backdrop-filter: none;
 	-webkit-backdrop-filter: none;
-	z-index: 1;
+	z-index: auto;
 }
 
 .epub-selection-toolbar .selection-color-row .color-btn {
@@ -1176,7 +1176,6 @@ body.is-mobile .epub-highlight-toolbar:not(.mobile-docked) {
 	padding: 2px 8px;
 	border: none;
 	background: transparent;
-	color: var(--epub-text-faint);
 	cursor: pointer;
 	border-radius: 8px;
 	transition: background 0.12s, color 0.12s;
@@ -1579,8 +1578,9 @@ body.is-mobile .epub-highlight-toolbar:not(.mobile-docked) {
 	min-width: 46px;
 }
 
-.epub-selection-toolbar .action-item.ai {
-	color: #BA68C8;
+.epub-selection-toolbar .action-item.ai,
+.epub-highlight-toolbar .action-item.ai {
+	color: var(--text-accent);
 }
 
 .epub-selection-toolbar .toolbar-row.canvas {

@@ -633,6 +633,13 @@ export const setIcon = vi.fn((element: HTMLElement, iconName: string) => {
 
 export const requestUrl = vi.fn();
 
+export class MarkdownRenderer {
+  static async render(): Promise<unknown> {
+    return null;
+  }
+  static unrender(): void {}
+}
+
 // Mock constants
 export const Platform = {
   isMobile: false,
@@ -671,6 +678,7 @@ export default {
   sanitizeHTMLToDom,
   setIcon,
   requestUrl,
+  MarkdownRenderer,
   Platform,
   mockApp,
   abstractInputSuggestInstances

@@ -55,6 +55,7 @@ const TEST_GLOBS = [
 	"components/settings/*.test.ts",
 	"views/**/*.test.ts",
 	"views/*.test.ts",
+	"services/ai/*.test.ts",
 	"services/epub/__tests__/**/*.{test,spec}.ts",
 	"services/navigation/__tests__/**/*.{test,spec}.ts",
 	"services/obsidian/__tests__/*.test.ts",

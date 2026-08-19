@@ -7,7 +7,7 @@
 	import BottomNav from './BottomNav.svelte';
 	import EpubLoadingState from './EpubLoadingState.svelte';
 	import SelectionToolbar from './SelectionToolbar.svelte';
-	import EpubHighlightToolbar from './EpubHighlightToolbar.svelte';
+	import EpubAIPanel from './EpubAIPanel.svelte';
 	import EpubCommentEditorPopover from './EpubCommentEditorPopover.svelte';
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
 	import { createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress } from '../../services/epub';
@@ -194,6 +194,7 @@
 	let scrolledNavResizeObserver: ResizeObserver | null = null;
 	let highlightToolbarInfo = $state<HighlightClickInfo | null>(null);
 	let commentEditorInfo = $state<HighlightClickInfo | null>(null);
+	let aiPanelInfo = $state<{ text: string; cfiRange: string } | null>(null);
 	let footnotePreviewInfo = $state<ReaderFootnotePreviewInfo | null>(null);
 	let commentEditorDraft = $state('');
 	let commentEditorSaving = $state(false);
@@ -2296,10 +2297,48 @@
 			undefined,
 			book?.sourceId,
 			info.excerptId,
-			{ includeText: false, includeChapter: false, preferCompactLocator: false }
+			{ includeText: false, includeChapter: false, preferCompactLocator: false, alias: info.text }
 		);
 		await copyTextToClipboard(link);
 		highlightToolbarInfo = null;
+	}
+
+	/** 创建状态「复制」：溯源复制 [[溯源路径|选中内容]]。 */
+	function handleCopyTraceSelection(text: string, cfiRange: string) {
+		const link = linkService.buildEpubLink(
+			filePath,
+			cfiRange,
+			text,
+			undefined,
+			undefined,
+			undefined,
+			book?.sourceId,
+			undefined,
+			{ includeText: false, includeChapter: false, preferCompactLocator: false, alias: text }
+		);
+		void copyTextToClipboard(link);
+	}
+
+	/** 创建状态「想法」：默认下划线标注并持久化，随即打开想法输入框。 */
+	function handleCommentCreateOnSelection(text: string, cfiRange: string, color: string) {
+		persistInlineHighlight(cfiRange, text, color || 'yellow', 'underline');
+		const info = readerService.getHighlightClickInfo?.(cfiRange) || {
+			cfiRange,
+			color: color || 'yellow',
+			style: 'underline' as EpubHighlightStyle,
+			text,
+			commentText: '',
+			sourceFile: '__inline__',
+			sourceRef: '',
+			rect: { top: 0, left: 0, bottom: 0, right: 0, width: 0, height: 0 },
+			presentation: 'highlight',
+		};
+		openCommentEditor(info);
+	}
+
+	/** 调起 AI 面板（创建/编辑状态通用）。 */
+	function handleOpenAI(text: string, cfiRange: string) {
+		aiPanelInfo = { text, cfiRange };
 	}
 
 	async function reloadHighlights(options?: HighlightReloadOptions) {
@@ -2819,18 +2858,6 @@
 				</div>
 			{/if}
 
-			<EpubHighlightToolbar
-				readerService={readerService}
-				info={hasExcerptNotesCapability() ? highlightToolbarInfo : null}
-				deleting={highlightDeleting}
-				onDelete={handleHighlightDelete}
-				onChangeColor={handleHighlightChangeColor}
-				onChangeStyle={handleHighlightChangeStyle}
-				onCopyText={handleHighlightCopyText}
-				onEditComment={handleHighlightEditComment}
-				onDismiss={() => highlightToolbarInfo = null}
-			/>
-
 			<EpubCommentEditorPopover
 				open={hasExcerptNotesCapability() && commentEditorInfo !== null}
 				info={hasExcerptNotesCapability() ? commentEditorInfo : null}
@@ -2857,6 +2884,24 @@
 				boundsEl={viewportEl}
 				{autoInsert}
 				onInsertToNote={handleInsertToNote}
+				highlightInfo={hasExcerptNotesCapability() ? highlightToolbarInfo : null}
+				deleting={highlightDeleting}
+				onDelete={handleHighlightDelete}
+				onChangeColor={handleHighlightChangeColor}
+				onChangeStyle={handleHighlightChangeStyle}
+				onCopyText={handleHighlightCopyText}
+				onEditComment={handleHighlightEditComment}
+				onDismiss={() => highlightToolbarInfo = null}
+				onCommentCreate={handleCommentCreateOnSelection}
+				onCopyTraceLink={handleCopyTraceSelection}
+				onOpenAI={handleOpenAI}
+			/>
+
+			<EpubAIPanel
+				open={aiPanelInfo !== null}
+				{app}
+				text={aiPanelInfo?.text ?? ''}
+				onClose={() => aiPanelInfo = null}
 			/>
 
 			{#if typographyPopoverOpen}

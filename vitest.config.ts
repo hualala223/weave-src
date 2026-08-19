@@ -29,6 +29,7 @@ export default defineConfig({
       'src/views/**/*.test.ts',
       'src/services/epub/__tests__/**/*.{test,spec}.{js,ts}',
       'src/services/navigation/__tests__/**/*.{test,spec}.{js,ts}',
+      'src/services/ai/*.test.ts',
       'src/utils/__tests__/source-path-matcher.epub-links.test.ts',
       'src/utils/__tests__/yaml-utils.epub-source.test.ts',
       'src/utils/__tests__/license-sync-bridge.test.ts',

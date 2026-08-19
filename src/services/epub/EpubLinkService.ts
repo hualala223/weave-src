@@ -28,6 +28,8 @@ export interface EpubLinkWriteOptions {
 	includeText?: boolean;
 	includeChapter?: boolean;
 	preferCompactLocator?: boolean;
+	/** 自定义链接显示名（如「选中内容」）；缺省用书名。 */
+	alias?: string;
 }
 
 interface EpubLocatorSubpathInput {
@@ -815,7 +817,9 @@ export class EpubLinkService {
 		excerptId?: string,
 		writeOptions?: EpubLinkWriteOptions
 	): string {
-		const displayText = EpubLinkService.buildDisplayAlias(filePath);
+		const displayText = writeOptions?.alias?.trim()
+			? writeOptions.alias.trim().replace(/\|/g, "\\|")
+			: EpubLinkService.buildDisplayAlias(filePath);
 		const linkPath = this.resolveEpubLinkBookPath(filePath, sourcePath);
 		const subpath = EpubLinkService.buildLocatorSubpath({
 			cfi,
