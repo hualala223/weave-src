@@ -3539,4 +3539,68 @@ describe("FoliateReaderService", () => {
 			service.destroy();
 		}
 	});
+
+	/* eslint-disable @typescript-eslint/no-explicit-any */
+	it("falls back to nextChapter when a paginated nextPage flip throws on the same chapter", async () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any) as any;
+		try {
+			service.currentFlowMode = "paginated";
+			service.currentPosition = {
+				chapterIndex: 0,
+				cfi: "epubcfi(/6/2!/4)",
+				percent: 0,
+			};
+			service.foliateView = {
+				goRight: vi.fn(async () => {
+					throw new Error("foliate cross-section flip failed");
+				}),
+				removeEventListener: vi.fn(),
+				close: vi.fn(),
+				remove: vi.fn(),
+			};
+			const nextChapterSpy = vi
+				.spyOn(service, "nextChapter")
+				.mockResolvedValue(true);
+
+			await service.nextPage();
+
+			// goRight 抛错且本章未移动 → 显式跳下一章，点按不“失效”。
+			expect(nextChapterSpy).toHaveBeenCalledTimes(1);
+		} finally {
+			service.destroy();
+		}
+	});
+
+	it("does not fall back when the paginated flip moved to another chapter before throwing", async () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any) as any;
+		try {
+			service.currentFlowMode = "paginated";
+			service.currentPosition = {
+				chapterIndex: 0,
+				cfi: "epubcfi(/6/2!/4)",
+				percent: 0,
+			};
+			service.foliateView = {
+				goRight: vi.fn(async () => {
+					throw new Error("flip threw after relocating");
+				}),
+				removeEventListener: vi.fn(),
+				close: vi.fn(),
+				remove: vi.fn(),
+			};
+			const nextChapterSpy = vi
+				.spyOn(service, "nextChapter")
+				.mockResolvedValue(true);
+
+			// 模拟 goRight 抛错前 relocate 已推进到第 1 章。
+			vi.spyOn(service, "getCurrentChapterIndex").mockReturnValueOnce(0).mockReturnValue(1);
+
+			await service.nextPage(true);
+
+			expect(nextChapterSpy).not.toHaveBeenCalled();
+		} finally {
+			service.destroy();
+		}
+	});
+	/* eslint-enable @typescript-eslint/no-explicit-any */
 });

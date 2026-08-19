@@ -1527,34 +1527,72 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	async prevPage(): Promise<void> {
-		await this.enqueueNavigation(async () => {
-			this.clearSelections();
-			if (!this.foliateView) {
-				return;
-			}
-			if (typeof this.foliateView.goLeft === "function") {
-				await this.foliateView.goLeft();
-				return;
-			}
-			await this.foliateView.prev();
-		}, "prevPage");
+		const previousChapterIndex = this.getCurrentChapterIndex();
+		try {
+			await this.enqueueNavigation(async () => {
+				this.clearSelections();
+				if (!this.foliateView) {
+					return;
+				}
+				if (typeof this.foliateView.goLeft === "function") {
+					await this.foliateView.goLeft();
+					return;
+				}
+				await this.foliateView.prev();
+			}, "prevPage");
+		} catch (error) {
+			logger.warn(
+				"[FoliateReaderService] Failed to flip to previous page, falling back to previous chapter:",
+				error
+			);
+			await this.recoverFlipWithChapterFallback(previousChapterIndex, "prev");
+		}
 	}
 
 	async nextPage(): Promise<void> {
 		if (await this.shouldBlockBookEndAdvance()) {
 			return;
 		}
-		await this.enqueueNavigation(async () => {
-			this.clearSelections();
-			if (!this.foliateView) {
-				return;
+		const previousChapterIndex = this.getCurrentChapterIndex();
+		try {
+			await this.enqueueNavigation(async () => {
+				this.clearSelections();
+				if (!this.foliateView) {
+					return;
+				}
+				if (typeof this.foliateView.goRight === "function") {
+					await this.foliateView.goRight();
+					return;
+				}
+				await this.foliateView.next();
+			}, "nextPage");
+		} catch (error) {
+			// 跨章/边界翻页失败：foliate 内部抛错（#turnPage 的锁已由
+			// patch-foliate-paginator 的 try/finally 保证释放）。稍候确认本章
+			// 确实未移动后，显式跳转下一章，避免该次点按“失效”。
+			logger.warn(
+				"[FoliateReaderService] Failed to flip to next page, falling back to next chapter:",
+				error
+			);
+			await this.recoverFlipWithChapterFallback(previousChapterIndex, "next");
+		}
+	}
+
+	/** 翻页抛错时的兜底：等待可能的 relocate 应用后，若仍未换章则显式跳相邻章。 */
+	private async recoverFlipWithChapterFallback(
+		previousChapterIndex: number,
+		direction: "next" | "prev"
+	): Promise<void> {
+		if (this.currentFlowMode === "paginated") {
+			await new Promise((resolve) => window.setTimeout(resolve, 60));
+		}
+		if (this.getCurrentChapterIndex() === previousChapterIndex) {
+			if (direction === "next") {
+				await this.nextChapter();
+			} else {
+				await this.prevChapter();
 			}
-			if (typeof this.foliateView.goRight === "function") {
-				await this.foliateView.goRight();
-				return;
-			}
-			await this.foliateView.next();
-		}, "nextPage");
+		}
 	}
 
 	async goToPage(pageNumber: number): Promise<void> {

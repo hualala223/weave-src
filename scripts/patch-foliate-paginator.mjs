@@ -15,6 +15,7 @@ const TOUCH_END_SELECTION_GUARD_MARKER = "weave-epub-reader touchend selection g
 const EXPAND_SELECTION_GUARD_MARKER = "weave-epub-reader expand selection guard";
 const SELECTION_SCROLL_FREEZE_MARKER = "weave-epub-reader selection scroll freeze";
 const VIEW_RELOCATE_REASON_MARKER = "weave-epub-reader relocate reason passthrough";
+const PAGINATOR_LOCK_RELEASE_MARKER = "weave-epub-reader paginator lock release";
 
 const SCROLLED_RENDER_GUARD_PATCHES = [
 	{
@@ -528,6 +529,63 @@ function patchViewRelocateReason() {
 	return true;
 }
 
+function patchPaginatorLockRelease() {
+	if (!fs.existsSync(paginatorPath)) {
+		return false;
+	}
+
+	const source = fs.readFileSync(paginatorPath, "utf8");
+	if (source.includes(PAGINATOR_LOCK_RELEASE_MARKER)) {
+		return false;
+	}
+
+	const OLD_TURN_PAGE = `    async #turnPage(dir, distance) {
+        if (this.#locked) return
+        this.#locked = true
+        const prev = dir === -1
+        const shouldGo = await (prev ? this.#scrollPrev(distance) : this.#scrollNext(distance))
+        if (shouldGo) await this.#goTo({
+            index: this.#adjacentIndex(dir),
+            anchor: prev ? () => 1 : () => 0,
+        })
+        if (shouldGo || !this.hasAttribute('animated')) await wait(100)
+        this.#locked = false
+    }`;
+
+	const NEW_TURN_PAGE = `    async #turnPage(dir, distance) {
+        if (this.#locked) return
+        this.#locked = true
+        try {
+            const prev = dir === -1
+            const shouldGo = await (prev ? this.#scrollPrev(distance) : this.#scrollNext(distance))
+            if (shouldGo) await this.#goTo({
+                index: this.#adjacentIndex(dir),
+                anchor: prev ? () => 1 : () => 0,
+            })
+            if (shouldGo || !this.hasAttribute('animated')) await wait(100)
+        // ${PAGINATOR_LOCK_RELEASE_MARKER}: guard the navigation lock with try/finally
+        // so a throw during a cross-chapter page turn (e.g. #afterScroll while the
+        // previous section document is unloading) can never leave the paginator
+        // locked — previously that froze every subsequent tap until reopening.
+        } finally {
+            this.#locked = false
+        }
+    }`;
+
+	if (!source.includes(OLD_TURN_PAGE)) {
+		console.error(
+			"[patch-foliate-paginator] Unexpected foliate-js/paginator.js #turnPage contents; lock release patch not applied"
+		);
+		process.exit(1);
+	}
+
+	fs.writeFileSync(paginatorPath, source.replace(OLD_TURN_PAGE, NEW_TURN_PAGE), "utf8");
+	console.log(
+		`[patch-foliate-paginator] Patched foliate-js/paginator.js ${PAGINATOR_LOCK_RELEASE_MARKER}`
+	);
+	return true;
+}
+
 function patchFile(filePath, oldText, newText, label) {
 	if (!fs.existsSync(filePath)) {
 		console.warn(`[patch-foliate-paginator] Skipped missing file: ${filePath}`);
@@ -671,6 +729,10 @@ if (patchPaginatorSelectionScrollFreeze()) {
 }
 
 if (patchViewRelocateReason()) {
+	changed = true;
+}
+
+if (patchPaginatorLockRelease()) {
 	changed = true;
 }
 
