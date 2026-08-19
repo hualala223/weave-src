@@ -1564,6 +1564,58 @@ body.is-mobile .epub-highlight-toolbar:not(.mobile-docked) {
 	background: rgba(15, 23, 42, 0.1);
 }
 
+/* ========================================
+   浅色主题：选区批注工具栏（selection）统一为深色玻璃 + 亮色文字/图标
+   创建模式的 actions 行只有 selection-actions-row（无 highlight-actions-row），
+   此前未覆盖到文字色，导致深色玻璃底上仍用 --text-normal 深色字，
+   在墨水屏浅色下与背景融为一体。这里补齐与编辑模式一致的亮色处理。
+   ======================================== */
+
+.epub-reader-root[data-host-theme="light"] .epub-selection-toolbar .action-item {
+	background: rgba(255, 255, 255, 0.06);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+	color: rgba(248, 250, 252, 0.95);
+}
+
+.epub-reader-root[data-host-theme="light"]
+	.epub-selection-toolbar
+	.action-item
+	.action-icon,
+.epub-reader-root[data-host-theme="light"]
+	.epub-selection-toolbar
+	.action-item
+	.action-icon
+	.svg-icon,
+.epub-reader-root[data-host-theme="light"]
+	.epub-selection-toolbar
+	.action-item
+	.action-label {
+	color: inherit;
+}
+
+.epub-reader-root[data-host-theme="light"] .epub-selection-toolbar .action-item:hover {
+	background: rgba(255, 255, 255, 0.1);
+	color: #ffffff;
+}
+
+.epub-reader-root[data-host-theme="light"] .epub-selection-toolbar .action-item.accent {
+	background: rgba(255, 255, 255, 0.06);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+	color: color-mix(in srgb, var(--epub-accent) 58%, white 42%);
+}
+
+.epub-reader-root[data-host-theme="light"] .epub-selection-toolbar .action-item.ai {
+	background: rgba(255, 255, 255, 0.06);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+	color: color-mix(in srgb, var(--text-accent) 58%, white 42%);
+}
+
+.epub-reader-root[data-host-theme="light"] .epub-selection-toolbar .toolbar-arrow,
+.epub-reader-root[data-host-theme="light"] .epub-selection-toolbar.below-selection .toolbar-arrow {
+	border-top-color: rgba(15, 23, 42, 0.92);
+	border-bottom-color: rgba(15, 23, 42, 0.92);
+}
+
 .epub-selection-toolbar .action-item.icon-only .action-label,
 .epub-highlight-toolbar .action-item.icon-only .action-label {
 	display: none;
