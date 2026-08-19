@@ -36,9 +36,7 @@ const ENTRY_FILES = [
 	"modals/weaveSuggestModalTheme.ts",
 	"components/modals/EpubBookshelfImportModal.ts",
 	"data/epub-bridge-types.ts",
-	"types/license.ts",
 	"types/utility-types.ts",
-	"types/plugin-settings.d.ts",
 	"types/obsidian-extensions.ts",
 	"types/obsidian-runtime-globals.d.ts",
 	"types/foliate-js.d.ts",
@@ -65,10 +63,7 @@ const TEST_GLOBS = [
 	"utils/__tests__/epub-author-color-sanitizer.test.ts",
 	"utils/__tests__/vault-local-storage.test.ts",
 	"utils/__tests__/locale-resolver.test.ts",
-	"utils/__tests__/source-path-matcher.epub-links.test.ts",
 	"utils/__tests__/yaml-utils.epub-source.test.ts",
-							"utils/__tests__/device-fingerprint.test.ts",
-	"utils/__tests__/mobile-edit-viewport.test.ts",
 	"utils/__tests__/mobile-floating-viewport.test.ts",
 	"utils/__tests__/mobile-reading-viewport-lock.test.ts",
 	"utils/__tests__/epub-reader-keyboard-guards.test.ts",
@@ -79,11 +74,8 @@ const TEST_GLOBS = [
 ];
 
 const UI_COMPONENTS_FOR_TESTS = [
-	"components/ui/EnhancedModal.svelte",
-	"components/ui/EnhancedButton.svelte",
 	"components/ui/EnhancedIcon.svelte",
 	"components/ui/FloatingMenu.svelte",
-	"components/ui/Icon.svelte",
 	"components/ui/ObsidianIcon.svelte",
 	"components/ui/TabNavigation.svelte",
 	"components/ui/VirtualScroll.svelte",

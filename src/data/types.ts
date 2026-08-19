@@ -1,5 +1,4 @@
-export type { ApiResponse, Card, Deck, Rating } from "./epub-bridge-types";
-export { Rating as CardRating } from "./epub-bridge-types";
+export type { Card } from "./epub-bridge-types";
 
 export interface CardFsrsState {
 	state?: number;
