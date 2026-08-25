@@ -389,5 +389,12 @@ export interface EpubReaderEngine {
 		text: string,
 		marks: ReaderFontMark[]
 	): FontMarkSegment[];
+	/**
+	 * 字色标记：返回「完整落在给定选区范围内」的既有标记 cfiRange 列表。
+	 * 用于创建新标记时的替换语义——宿主据此先移除选区内既有标记再 upsert 新标记，
+	 * 避免同一选区叠加多条标记（真实数据中曾出现「别」蓝 + 「别具」红重叠共存）。
+	 * 无法解析选区/无可见帧时返回空数组（不染色即不替换，保守安全）。
+	 */
+	getFontMarksContainedInSelection?(cfiRange: string): string[];
 	destroy(): void;
 }

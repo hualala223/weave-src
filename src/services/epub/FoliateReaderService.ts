@@ -151,6 +151,7 @@ import {
 import { findFontMarkAtCaret, type FontMarkHitCandidate } from "./font-mark-hit-test";
 import {
 	buildExcerptDecorationSegments,
+	computeRangeTextOffsets,
 	FONT_MARK_COLOR_TOKENS,
 	isFontMarkColorToken,
 	type FontMarkColorToken,
@@ -1937,6 +1938,72 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 	}
 
+	/**
+	 * 字色标记替换语义（票 07）：返回「完整落在给定选区范围内」的既有标记 cfiRange。
+	 * - 选区与标记都只在可见帧章节文档内解析；标记仅取与选区同节的（异节不参与，防错判）；
+	 * - 以文档级文本偏移判定包含（mark ⊆ selection 才计入，部分重叠不删）；
+	 * - 任何解析失败保守返回空数组（不替换，绝不误删）。
+	 * 宿主（EpubReaderApp）在创建新标记前调用本方法，先移除选区内全部既有标记再 upsert。
+	 */
+	getFontMarksContainedInSelection(selectionCfiRange: string): string[] {
+		const trimmed = String(selectionCfiRange || "").trim();
+		if (!trimmed || this.fontMarksByCfiKey.size === 0) {
+			return [];
+		}
+		const visibleFrames = this.getVisibleFramesWithIndex();
+		if (!visibleFrames.length) {
+			return [];
+		}
+		const targetSectionIndex = this.parser.getSectionIndexForCfi(trimmed);
+		const frame =
+			visibleFrames.find((item) => item.index === targetSectionIndex) ?? visibleFrames[0];
+		if (!frame) {
+			return [];
+		}
+		const frameDoc = frame.frameDocument;
+		const selectionRange = this.parser.resolveRangeInLoadedSection(
+			trimmed,
+			frameDoc,
+			frame.index
+		);
+		if (!selectionRange) {
+			return [];
+		}
+		const selectionSpan = computeRangeTextOffsets(frameDoc, selectionRange);
+		if (!selectionSpan) {
+			return [];
+		}
+		const contained: string[] = [];
+		for (const mark of this.fontMarksByCfiKey.values()) {
+			try {
+				const markSectionIndex = this.parser.getSectionIndexForCfi(mark.cfiRange);
+				if (markSectionIndex === null || markSectionIndex !== targetSectionIndex) {
+					continue;
+				}
+				const markRange = this.parser.resolveRangeInLoadedSection(
+					mark.cfiRange,
+					frameDoc,
+					frame.index,
+					mark.text
+				);
+				if (!markRange) {
+					continue;
+				}
+				const markSpan = computeRangeTextOffsets(frameDoc, markRange);
+				if (
+					markSpan &&
+					markSpan.start >= selectionSpan.start &&
+					markSpan.end <= selectionSpan.end
+				) {
+					contained.push(mark.cfiRange);
+				}
+			} catch {
+				// 单条解析失败不影响其他标记；保守跳过（不删除）。
+			}
+		}
+		return contained;
+	}
+
 	/** 写入单个标记（同 cfiRange 视为改色语义：整条替换）。非法输入静默忽略。 */
 	private storeFontMark(mark: ReaderFontMark): boolean {
 		const cfiRange = String(mark?.cfiRange || "").trim();
@@ -2006,6 +2073,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 
 		this.schedulePaginatedLayoutRecovery();
+		// 位置变更（翻页/跳转/章节切换）后补一次字色渲染刷新：注册幂等，直接全量重建。
+		// 仅依赖章节 load 事件会在部分书/部分导航路径下漏掉刷新，导致整本书的字色
+		// 一直不显示；翻页后可见帧变化，必须在 relocate 时重新对齐注册。
+		this.refreshFontMarkRendering();
 		const positionOperationToken = this.sessionGuard.startPositionOperation();
 		void this.syncCurrentPositionFromTarget(target, undefined, positionOperationToken).finally(() => {
 			this.scheduleAnnotationSyncAfterRelocate();
@@ -2746,10 +2817,12 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (!visibleFrames.length) {
 			return;
 		}
+		const allMarks =
+			this.fontMarksByCfiKey.size > 0 ? Array.from(this.fontMarksByCfiKey.values()) : [];
 		const sectionGroups =
-			this.fontMarksByCfiKey.size > 0
+			allMarks.length > 0
 				? groupFontMarksBySectionIndex(
-						Array.from(this.fontMarksByCfiKey.values()),
+						allMarks,
 						(cfiRange) => this.parser.getSectionIndexForCfi(cfiRange)
 					)
 				: { grouped: new Map<number, ReaderFontMark[]>(), dropped: [] as ReaderFontMark[] };
@@ -2762,7 +2835,12 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 		for (const frame of visibleFrames) {
 			try {
-				this.renderFontMarksInFrame(frame.index, frame.frameDocument, sectionGroups.grouped);
+				this.renderFontMarksInFrame(
+					frame.index,
+					frame.frameDocument,
+					sectionGroups.grouped,
+					allMarks
+				);
 			} catch (error) {
 				logger.warn("[FoliateReaderService] Failed to render font marks in frame:", error);
 			}
@@ -2772,7 +2850,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private renderFontMarksInFrame(
 		sectionIndex: number,
 		doc: Document,
-		sectionGroups: Map<number, ReaderFontMark[]>
+		sectionGroups: Map<number, ReaderFontMark[]>,
+		allMarks: ReaderFontMark[]
 	): void {
 		const frameWindow = doc.defaultView;
 		if (!frameWindow || !supportsCustomHighlight(frameWindow)) {
@@ -2790,14 +2869,81 @@ export class FoliateReaderService implements EpubReaderEngine {
 		for (const token of FONT_MARK_COLOR_TOKENS) {
 			registry.delete(getFontMarkHighlightName(token));
 		}
-		const marks = sectionGroups.get(sectionIndex);
-		if (!marks?.length) {
-			return;
+		const groupedMarks = sectionGroups.get(sectionIndex);
+		// 主路径：与划线同节分组的标记（既有语义，保留同节 textHint 兜底）。
+		const registered = this.registerFontMarkRangesInFrame(
+			registry,
+			frameWindow,
+			doc,
+			sectionIndex,
+			groupedMarks ?? []
+		);
+		// 兜底路径：主路径整组落空（parser 节号与可见帧索引不一致）时，用「纯 CFI + 文本验证」
+		// 对全书标记尝试本帧注册——覆盖「书内字色完全不显示」的根因之一；文本验证拒绝
+		// 错位 Range，异节标记绝不会因此染到本帧的其它词上。
+		if (registered === 0 && allMarks.length > 0) {
+			const rescued = this.registerFontMarkRangesInFrame(
+				registry,
+				frameWindow,
+				doc,
+				sectionIndex,
+				allMarks,
+				false
+			);
+			if (rescued > 0) {
+				logger.warn(
+					`[FoliateReaderService] Font mark render rescue: frame ${sectionIndex} registered ${rescued} mark(s) via verified CFI fallback (section-index mismatch suspected)`
+				);
+			}
+		}
+	}
+
+	/**
+	 * 在单个帧文档内解析并注册标记的 Custom Highlight Range（共享渲染入口）。
+	 * - textHint 兜底只允许用于「与本节一致的标记」：异节标记若按文本全文搜索，
+	 *   会被钉到本帧首次出现的同文处，造成没标过的词被染色；
+	 * - 文本验证（Range 必须覆盖标记文本）为注册的最后一道闸：跨节错位 Range
+	 *   或文本兜底误配都会被拒绝；
+	 * - 返回实际注册的标记数（供兜底路径判断"整组落空"）。
+	 */
+	private registerFontMarkRangesInFrame(
+		registry: FrameHighlightRegistry,
+		frameWindow: Window,
+		doc: Document,
+		sectionIndex: number,
+		marks: ReaderFontMark[],
+		allowSectionTextHint = true
+	): number {
+		if (!marks.length) {
+			return 0;
 		}
 		const rangesByToken = new Map<FontMarkColorToken, Range[]>();
+		let registered = 0;
 		for (const mark of marks) {
-			const range = this.resolveFontMarkRange(mark, doc, sectionIndex);
+			let markSection: number | null = null;
+			try {
+				markSection = this.parser.getSectionIndexForCfi(mark.cfiRange);
+			} catch {
+				markSection = null;
+			}
+			const textHint =
+				allowSectionTextHint && markSection === sectionIndex ? mark.text : undefined;
+			let range: Range | null = null;
+			try {
+				range = this.parser.resolveRangeInLoadedSection(
+					mark.cfiRange,
+					doc,
+					sectionIndex,
+					textHint
+				);
+			} catch {
+				range = null;
+			}
 			if (!range) {
+				continue;
+			}
+			// 文本验证：Range 必须覆盖标记文本才允许注册（防跨节错位 Range / 文本兜底误配）。
+			if (mark.text && !resolvedRangeCoversHighlightText(range, mark.text)) {
 				continue;
 			}
 			const bucket = rangesByToken.get(mark.color);
@@ -2806,6 +2952,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			} else {
 				rangesByToken.set(mark.color, [range]);
 			}
+			registered += 1;
 		}
 		for (const [token, ranges] of rangesByToken) {
 			if (!ranges.length) {
@@ -2817,6 +2964,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 				logger.warn("[FoliateReaderService] Failed to register font mark highlights:", error);
 			}
 		}
+		return registered;
 	}
 
 	private resolveFontMarkRange(
@@ -6667,7 +6815,19 @@ export class FoliateReaderService implements EpubReaderEngine {
 	): unknown[] {
 		if (!hasUsableOverlayRects(suppliedRects)) {
 			const textHint = String(annotation.text || "").trim();
-			return textHint ? this.resolveHighlightOverlayRects(annotation) : [];
+			if (!textHint) {
+				return [];
+			}
+			const quoteRects = this.resolveHighlightOverlayRects(annotation);
+			// 划线/线颜色"时有时无"的诊断口：有文本却算不出任何可用几何时，线型标注
+			// 会整条不可见。不静默——落日志暴露触发条件（翻页/编辑/尺寸变化等）。
+			if (quoteRects.length === 0) {
+				logger.warn(
+					"[FoliateReaderService] Highlight overlay rects unresolvable; styled line may be missing on this page",
+					{ cfiRange: annotation.cfiRange, textLength: textHint.length }
+				);
+			}
+			return quoteRects;
 		}
 
 		const textHint = String(annotation.text || "").trim();

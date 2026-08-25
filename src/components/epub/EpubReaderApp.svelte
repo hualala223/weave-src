@@ -2807,9 +2807,16 @@
 		}
 		if (!book?.id || !fontMarkMutationQueue) return;
 		try {
-			// upsert 按归一化 key 折叠：与划线同款「同位置只留一条」，不再依赖严格相等去重。
+			// 替换语义（票 07）：选区内已有的标记先整体移除、再 upsert 一个新标记——
+			// 修复真实数据中「别」蓝 +「别具」红重叠共存、导出时一个词被劈成两色的问题。
+			// upsert 按归一化 key 折叠：与划线同款「同位置只留一条」。
+			const containedMarks =
+				typeof readerService.getFontMarksContainedInSelection === 'function'
+					? readerService.getFontMarksContainedInSelection(trimmedRange)
+					: [];
 			await fontMarkMutationQueue.enqueue((items) =>
 				applyFontMarkMutations(items, [
+					...containedMarks.map((cfiRange) => ({ type: 'remove' as const, cfiRange })),
 					{
 						type: 'upsert',
 						record: {
@@ -2822,6 +2829,11 @@
 					},
 				]).items
 			);
+			if (containedMarks.length > 0) {
+				logger.warn(
+					`[EpubReaderApp] Font mark replace: removed ${containedMarks.length} contained mark(s) before upsert`
+				);
+			}
 		} catch (_e) {
 			logger.warn('[EpubReaderApp] Failed to persist font mark:', _e);
 		}

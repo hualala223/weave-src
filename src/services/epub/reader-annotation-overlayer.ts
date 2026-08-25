@@ -1,6 +1,7 @@
 import type { EpubHighlightStyle } from "./types";
 import type { HighlightClickInfo, ReaderViewportRect } from "./reader-engine-types";
 import type { ReaderFoliateAnnotation } from "./reader-annotation-model";
+import { logger } from "../../utils/logger";
 import {
 	createAnchorPointFromRect,
 	createViewportRectFromRawRect,
@@ -132,6 +133,7 @@ export class ReaderAnnotationOverlayRenderer {
 	): SVGElement {
 		const group = activeDocument.createElementNS(SVG_NS, "g");
 		const strokeColor = this.ports.resolveHighlightTint(color);
+		let drawn = 0;
 
 		for (const rect of rects as RawViewportRect[]) {
 			if (rect.width <= 0 || rect.height <= 0) {
@@ -148,6 +150,15 @@ export class ReaderAnnotationOverlayRenderer {
 				continue;
 			}
 			group.appendChild(createWavyLineOverlay(rect, strokeColor));
+			drawn += 1;
+		}
+		// 线型标注在"有 rect 入参、却一根线都画不出"时整条线消失（症状：划线/线颜色
+		// 时有时无）。不静默：落日志暴露几何退化的具体形态，供运行期排查触发条件。
+		if (drawn === 0 && Array.isArray(rects) && rects.length > 0) {
+			logger.warn(
+				"[ReaderAnnotationOverlayRenderer] Styled annotation produced no drawable line (all rects degenerate); annotation likely invisible on this page",
+				{ style, color, rectCount: rects.length }
+			);
 		}
 		return group;
 	}

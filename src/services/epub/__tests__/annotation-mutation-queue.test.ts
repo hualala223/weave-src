@@ -98,6 +98,22 @@ describe("applyFontMarkMutations", () => {
 		const removed = applyFontMarkMutations(patched.items, [{ type: "remove", cfiRange: "a" }]);
 		expect(removed.items).toHaveLength(0);
 	});
+
+	it("替换语义：先移除选区内既有标记、再 upsert 新标记（不叠加共存）", () => {
+		// 真实数据形态：旧「别」蓝(4..5) 与 新「别具」红(4..6) 因缺替换语义重叠共存。
+		const items = [
+			mark({ cfiRange: "b-4-5", color: "blue", text: "别" }),
+			mark({ cfiRange: "x-other", color: "green", text: "无关" }),
+		];
+		const replaced = applyFontMarkMutations(items, [
+			{ type: "remove", cfiRange: "b-4-5" }, // 引擎报告的选区内既有标记
+			{ type: "upsert", record: mark({ cfiRange: "b-4-6", color: "red", text: "别具" }) },
+		]);
+		expect(replaced.items).toHaveLength(2); // 无关标记不受影响
+		expect(replaced.items.some((item) => item.cfiRange === "b-4-5")).toBe(false);
+		expect(replaced.items.some((item) => item.cfiRange === "b-4-6")).toBe(true);
+		expect(replaced.dropped).toBe(0);
+	});
 });
 
 describe("AnnotationMutationQueue", () => {

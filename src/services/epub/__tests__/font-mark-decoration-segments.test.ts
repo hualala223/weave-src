@@ -55,7 +55,7 @@ describe("buildExcerptDecorationSegments（导出装饰编排）", () => {
 		expect(segments).toEqual<FontMarkSegment[]>([{ start: 2, end: 4, color: "red" }]);
 	});
 
-	it("Range 解析失败时回退字符串查找", () => {
+	it("Range 解析失败时跳过该标记（严格包含性：不做字符串回退）", () => {
 		const doc = buildDoc("<p>今天天气真好啊</p>");
 		const { resolveRange } = makeParagraphRangeFactory(doc);
 		const marks: TestMark[] = [{ cfiRange: "broken", text: "天气", color: "blue" }];
@@ -67,7 +67,8 @@ describe("buildExcerptDecorationSegments（导出装饰编排）", () => {
 			resolveRange,
 		});
 
-		expect(segments).toEqual<FontMarkSegment[]>([{ start: 2, end: 4, color: "blue" }]);
+		// 标记 Range 无法解析 → 无法证明其落在划线内 → 不染色（宁可漏染，不可错染）。
+		expect(segments).toEqual<FontMarkSegment[]>([]);
 	});
 
 	it("Range 与字符串都失败时该项被跳过，剩余项仍生效", () => {
