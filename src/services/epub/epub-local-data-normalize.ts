@@ -347,6 +347,10 @@ export function normalizeExcerptSettings(value: unknown): EpubExcerptSettings {
 			typeof settings.showStrikethroughInSidebar === "boolean"
 				? settings.showStrikethroughInSidebar
 				: DEFAULT_EPUB_EXCERPT_SETTINGS.showStrikethroughInSidebar,
+		ideaAutoToNote:
+			typeof settings.ideaAutoToNote === "boolean"
+				? settings.ideaAutoToNote
+				: DEFAULT_EPUB_EXCERPT_SETTINGS.ideaAutoToNote,
 	};
 }
 

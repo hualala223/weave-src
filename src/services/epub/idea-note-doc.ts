@@ -1,0 +1,206 @@
+/**
+ * 想法入笔记 —— 文档变换纯服务（唯一新接缝）。
+ *
+ * 对「笔记文档全文文本」做纯文本进/出的变换：
+ * - 渲染带 💡 想法条目的摘录块（原文与想法同块、空引用行分隔）；
+ * - 按划线标识（eid）优先、CFI 兜底在文档中定位既有摘录块；
+ * - upsert 五态语义：created / appended / replaced / stripped / noop。
+ *
+ * 不含任何 Obsidian 依赖；补丁以编辑器行/列位置表达，调用方直接喂给
+ * 编辑器的 replaceRange。
+ *
+ * @module services/epub/idea-note-doc
+ */
+
+import { EpubLinkService } from "./EpubLinkService";
+
+/** 条目标签（粗体内含图标），后接可选的紧凑时间戳。 */
+export const IDEA_ENTRY_LABEL = "**💡 想法：**";
+
+export type IdeaNoteOutcome = "created" | "appended" | "replaced" | "stripped" | "noop";
+
+/** 一条想法条目的输入：想法正文 + 写入时刻（紧凑 MM-DD HH:mm）。 */
+export interface IdeaEntryInput {
+	text: string;
+	timestamp?: string;
+}
+
+export interface IdeaEditorPosition {
+	line: number;
+	ch: number;
+}
+
+/** 面向编辑器 replaceRange 的最小补丁。 */
+export interface IdeaBlockPatch {
+	from: IdeaEditorPosition;
+	to: IdeaEditorPosition;
+	text: string;
+}
+
+export interface IdeaNoteResult {
+	outcome: IdeaNoteOutcome;
+	doc: string;
+	patch?: IdeaBlockPatch;
+}
+
+/** 块身份：深链中的稳定划线标识优先，无标识历史块用 CFI 兜底。 */
+export interface IdeaBlockIdentity {
+	eid?: string;
+	cfi?: string;
+}
+
+interface LineSpan {
+	start: number;
+	end: number;
+}
+
+function decodeUriComponentSafe(value: string): string {
+	try {
+		return decodeURIComponent(value);
+	} catch {
+		return value;
+	}
+}
+
+function offsetToPos(doc: string, offset: number): IdeaEditorPosition {
+	const before = doc.slice(0, offset);
+	const line = (before.match(/\n/g) || []).length;
+	const lastBreak = before.lastIndexOf("\n");
+	return { line, ch: offset - (lastBreak + 1) };
+}
+
+function isCalloutLine(line: string): boolean {
+	return line.trimStart().startsWith(">");
+}
+
+/** 从块首行提取 `[[路径#子路径|别名]]` 的子路径部分。 */
+function extractLocatorSubpath(headerLine: string): string {
+	const inner = headerLine.match(/\[\[([^\]]+)\]\]/)?.[1];
+	if (!inner) {
+		return "";
+	}
+	const hashIdx = inner.indexOf("#");
+	if (hashIdx === -1) {
+		return "";
+	}
+	return inner.slice(hashIdx + 1).split("|")[0] || "";
+}
+
+function readExcerptIdFromSubpath(subpath: string): string | null {
+	const match = subpath.match(/(?:^|[&?])eid=([^&|\]]*)/);
+	return match ? decodeUriComponentSafe(match[1]) : null;
+}
+
+function identityMatchesBlock(identity: IdeaBlockIdentity, headerLine: string): boolean {
+	const subpath = extractLocatorSubpath(headerLine);
+	if (!subpath) {
+		return false;
+	}
+	if (identity.eid) {
+		const blockEid = readExcerptIdFromSubpath(subpath);
+		return Boolean(blockEid && blockEid.trim() === identity.eid.trim());
+	}
+	if (identity.cfi) {
+		let parsedCfi: string | undefined;
+		try {
+			parsedCfi = EpubLinkService.parseEpubLink(`#${subpath}`)?.cfi;
+		} catch {
+			parsedCfi = undefined;
+		}
+		if (parsedCfi) {
+			return parsedCfi.trim() === identity.cfi.trim();
+		}
+		return decodeUriComponentSafe(subpath).includes(identity.cfi.trim());
+	}
+	return false;
+}
+
+/**
+ * 定位文档中身份匹配的摘录块（`> [!EPUB` 开头的连续引用行）。
+ * 找不到返回 null。
+ */
+export function locateIdeaQuoteBlock(
+	doc: string,
+	identity: IdeaBlockIdentity
+): { start: IdeaEditorPosition; end: IdeaEditorPosition } | null {
+	if (!identity.eid && !identity.cfi) {
+		return null;
+	}
+	const lines = doc.split("\n");
+	for (let i = 0; i < lines.length; i += 1) {
+		const trimmed = lines[i].trimStart();
+		if (!trimmed.startsWith("> [!EPUB")) {
+			continue;
+		}
+		let end = i;
+		while (end + 1 < lines.length && isCalloutLine(lines[end + 1])) {
+			end += 1;
+		}
+		if (identityMatchesBlock(identity, lines[i])) {
+			return {
+				start: { line: i, ch: lines[i].length - trimmed.length },
+				end: { line: end, ch: lines[end].length },
+			};
+		}
+		i = end;
+	}
+	return null;
+}
+
+function renderEntryLines(entry: IdeaEntryInput): string[] {
+	const label = entry.timestamp ? `${IDEA_ENTRY_LABEL} ${entry.timestamp}` : IDEA_ENTRY_LABEL;
+	const bodyLines = String(entry.text ?? "").split("\n");
+	return [`> ${label}`, ...bodyLines.map((line) => `> ${line}`)];
+}
+
+/**
+ * 渲染完整块文本：摘录块（头部 + 原文）之下按序堆叠想法条目，
+ * 条目之间以及原文与首个条目之间以空引用行分隔。没有条目时原样返回。
+ */
+export function renderIdeaQuoteBlock(quoteBlock: string, entries: IdeaEntryInput[]): string {
+	if (!entries.length) {
+		return quoteBlock;
+	}
+	const base = quoteBlock.replace(/\n+$/, "");
+	const segmentLines: string[] = [];
+	for (const entry of entries) {
+		segmentLines.push(">");
+		segmentLines.push(...renderEntryLines(entry));
+	}
+	return `${base}\n${segmentLines.join("\n")}\n`;
+}
+
+/** 追加语义：把整块插入到文档末尾，与既有内容规范为恰好一个空行分隔。 */
+function appendBlockToDocEnd(doc: string, block: string): IdeaNoteResult {
+	const trailing = (doc.match(/\n*$/) || [""])[0].length;
+	const base = doc.slice(0, doc.length - trailing);
+	const inserted = (base ? "\n\n" : "") + block;
+	const at = offsetToPos(doc, doc.length);
+	return {
+		outcome: "created",
+		doc: base + inserted,
+		patch: { from: at, to: at, text: inserted },
+	};
+}
+
+export interface UpsertIdeaEntryOptions {
+	/** 由摘录块构建服务产出、携带真实划线标识的块文本（头部 + 原文）。 */
+	quoteBlock: string;
+}
+
+/**
+ * 想法入笔记 upsert：按身份定位旧块。
+ * - 找不到 → created：渲染带该条目的完整块追加到文档末尾；
+ * - 找到   → 票01 阶段保持 no-op（追加/改写/剥离在后续票中启用）。
+ */
+export function upsertIdeaEntry(
+	doc: string,
+	identity: IdeaBlockIdentity,
+	entry: IdeaEntryInput,
+	options: UpsertIdeaEntryOptions
+): IdeaNoteResult {
+	if (locateIdeaQuoteBlock(doc, identity)) {
+		return { outcome: "noop", doc };
+	}
+	return appendBlockToDocEnd(doc, renderIdeaQuoteBlock(options.quoteBlock, [entry]));
+}

@@ -13,6 +13,7 @@
 	import { createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress } from '../../services/epub';
 	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderImageTapInfo, ReaderTapEvent, ReadingPosition } from '../../services/epub';
 	import { insertIntoMarkdownEditor, NO_EDITOR_MESSAGE } from '../../services/epub/note-editor-insert';
+	import { renderIdeaQuoteBlock, upsertIdeaEntry } from '../../services/epub/idea-note-doc';
 	import { extractImageToNote } from '../../services/epub/image-note-extractor';
 	import { DirectoryUtils } from '../../utils/directory-utils';
 	import { resolveConfiguredDataPath, resolveImageAttachmentRoot } from '../../config/paths';
@@ -198,6 +199,8 @@
 	let scrolledNavResizeObserver: ResizeObserver | null = null;
 	let highlightToolbarInfo = $state<HighlightClickInfo | null>(null);
 	let commentEditorInfo = $state<HighlightClickInfo | null>(null);
+	/** 想法输入框的打开来源：create=选区「想法」新建，edit=点击已有划线编辑。 */
+	let commentEditorMode = $state<'create' | 'edit'>('edit');
 	let aiPanelInfo = $state<{ text: string; cfiRange: string } | null>(null);
 	let footnotePreviewInfo = $state<ReaderFootnotePreviewInfo | null>(null);
 	let imageTapInfo = $state<ReaderImageTapInfo | null>(null);
@@ -1792,7 +1795,8 @@
 		cfiRange: string,
 		color?: string,
 		style?: EpubHighlightStyle,
-		forEditorInsert = false
+		forEditorInsert = false,
+		excerptId?: string
 	): string {
 		const chapterIndex = readerService.getCurrentChapterIndex();
 		const chapterTitle = resolveExcerptChapterTitle();
@@ -1807,7 +1811,7 @@
 			timestamp,
 			resolveExcerptLinkSourcePath(forEditorInsert),
 			book?.sourceId,
-			undefined,
+			excerptId,
 			style,
 			resolveExcerptChapterLabelMaxLength()
 		);
@@ -1824,7 +1828,8 @@
 	}
 
 	function insertToEditor(content: string): string | null {
-		const result = insertIntoMarkdownEditor(content, 'cursor', {
+		// 自动插入固定追加到笔记文档末尾（规格：不再依赖光标位置）。
+		const result = insertIntoMarkdownEditor(content, 'end', {
 			resolveMarkdownView: resolveActiveMarkdownView,
 			notify: (message) => new Notice(message),
 		});
@@ -2174,10 +2179,11 @@
 		});
 	}
 
-	function openCommentEditor(info: HighlightClickInfo) {
+	function openCommentEditor(info: HighlightClickInfo, mode: 'create' | 'edit' = 'edit') {
 // Always allow (gate removed)
 		highlightToolbarInfo = null;
 		footnotePreviewInfo = null;
+		commentEditorMode = mode;
 		commentEditorInfo = info;
 		commentEditorDraft = resolveCommentDraftFromMemory(info);
 		commentEditorSaving = false;
@@ -2400,6 +2406,7 @@
 		if (!info || commentEditorSaving) {
 			return;
 		}
+		const draft = commentEditorDraft;
 		commentEditorSaving = true;
 		try {
 			const inline = await findInlineHighlight(info.cfiRange);
@@ -2422,9 +2429,49 @@
 			new Notice('想法已保存');
 			closeCommentEditor();
 			void reloadHighlights();
+			await syncIdeaToNoteDocument(info, draft);
 		} finally {
 			commentEditorSaving = false;
 		}
+	}
+
+	/** 紧凑条目时间戳（月-日 时:分），独立于「摘录时间戳」设置。 */
+	function formatShortTimestamp(date: Date): string {
+		const pad = (value: number) => String(value).padStart(2, '0');
+		return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+	}
+
+	/**
+	 * 想法入笔记（票01：创建路径首写）。
+	 * 把带 💡 条目的摘录块按 upsert 结果应用到最近激活的笔记文档末尾；
+	 * 无活动编辑器时兜底复制整块到剪贴板。编辑路径在票03 接入。
+	 */
+	async function syncIdeaToNoteDocument(info: HighlightClickInfo, ideaText: string) {
+		if (commentEditorMode !== 'create') {
+			return;
+		}
+		if (!ideaText.trim() || excerptSettings.ideaAutoToNote === false) {
+			return;
+		}
+		const entry = { text: ideaText, timestamp: formatShortTimestamp(new Date()) };
+		const quoteBlock = buildNoteContent(info.text, info.cfiRange, info.color, info.style, true, info.excerptId);
+		const view = resolveActiveMarkdownView();
+		if (!view?.editor) {
+			await copyTextToClipboard(renderIdeaQuoteBlock(quoteBlock, [entry]));
+			new Notice('未找到活动的 Markdown 编辑器，已复制到剪贴板');
+			return;
+		}
+		const identity = { eid: info.excerptId ? String(info.excerptId) : undefined, cfi: info.cfiRange };
+		const result = upsertIdeaEntry(view.editor.getValue(), identity, entry, { quoteBlock });
+		if (result.outcome === 'noop' || !result.patch) {
+			return;
+		}
+		view.editor.replaceRange(result.patch.text, result.patch.from, result.patch.to);
+		view.editor.setCursor({
+			line: result.patch.from.line + result.patch.text.split('\n').length,
+			ch: 0,
+		});
+		new Notice('想法已同步到笔记末尾');
 	}
 
 	async function handleHighlightCopyText(info: HighlightClickInfo) {
@@ -2473,7 +2520,7 @@
 			rect: { top: 0, left: 0, bottom: 0, right: 0, width: 0, height: 0 },
 			presentation: 'highlight',
 		};
-		openCommentEditor(info);
+		openCommentEditor(info, 'create');
 	}
 
 	/** 调起 AI 面板（创建/编辑状态通用）。 */

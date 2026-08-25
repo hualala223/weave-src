@@ -34,6 +34,7 @@ export interface WeaveUiMemory {
 		chapterLocationFormat: "root" | "leaf" | "full";
 		strikethroughDisplayMode: "strikethrough";
 		showStrikethroughInSidebar: boolean;
+		ideaAutoToNote?: boolean;
 	};
 }
 

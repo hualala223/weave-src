@@ -442,6 +442,17 @@ export class EpubView extends ItemView {
 	private populateExcerptNotesSettings(subMenu: Menu, excerptSettings: EpubExcerptSettings): void {
 		if (this.canUseExcerptNotes()) {
 			subMenu.addItem((item) => {
+				item.setTitle('想法自动入笔记');
+				item.setIcon("lightbulb");
+				item.setChecked(excerptSettings.ideaAutoToNote);
+				item.onClick(() => {
+					void this.actionHandlers.updateExcerptSettings?.({
+						ideaAutoToNote: !excerptSettings.ideaAutoToNote,
+					});
+				});
+			});
+
+			subMenu.addItem((item) => {
 				item.setTitle('摘录时间戳');
 				item.setIcon("clock");
 				item.setChecked(excerptSettings.addCreationTime);
