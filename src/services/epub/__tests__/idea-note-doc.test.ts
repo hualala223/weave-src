@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EpubLinkService } from "../EpubLinkService";
 import {
 	type IdeaBlockIdentity,
+	type IdeaNoteResult,
 	locateIdeaQuoteBlock,
 	mergeIdeaInlineRewrite,
 	renderIdeaQuoteBlock,
@@ -302,5 +303,86 @@ describe("stripLastIdeaEntry（票03：清空剥离语义）", () => {
 		expect(result.outcome).toBe("noop");
 		expect(result.doc).toBe(doc);
 		expect(result.patch).toBeUndefined();
+	});
+});
+
+describe("五态语义表序列（票04）", () => {
+	let doc: string;
+
+	function step(next: IdeaNoteResult) {
+		doc = next.doc;
+		return next;
+	}
+
+	it("「A1 → A2 → 改写A2 → 清空A2」序列各态正确且中间产物符合直觉", () => {
+		doc = "# 笔记\n";
+		const eid = "eid-seq";
+
+		// created
+		const c1 = step(upsertIdeaEntry(doc, { eid }, { text: "A1", timestamp: "01-01 22:10" }, {
+			quoteBlock: buildQuoteBlock(eid),
+		}));
+		expect(c1.outcome).toBe("created");
+		expect(doc).toContain("> **💡 想法：** 01-01 22:10");
+
+		// appended
+		const c2 = step(upsertIdeaEntry(doc, { eid }, { text: "A2", timestamp: "01-02 09:30" }, {
+			quoteBlock: buildQuoteBlock(eid),
+		}));
+		expect(c2.outcome).toBe("appended");
+		expect(doc).toContain("> A1");
+		expect(doc).toContain("> A2");
+
+		// 相同 → noop
+		const c3 = step(upsertIdeaEntry(doc, { eid }, { text: "A2", timestamp: "01-03 08:00" }, {
+			quoteBlock: buildQuoteBlock(eid),
+		}));
+		expect(c3.outcome).toBe("noop");
+
+		// replaced（编辑最后一条）
+		const c4 = step(rewriteLastIdeaEntry(doc, { eid }, { text: "A2改", timestamp: "01-03 08:00" }));
+		expect(c4.outcome).toBe("replaced");
+		expect(doc).toContain("> A2改");
+		expect(doc).toContain("> A1");
+		expect(doc).not.toContain("> **💡 想法：** 01-02 09:30");
+
+		// stripped（清空最后一条）
+		const c5 = step(stripLastIdeaEntry(doc, { eid }));
+		expect(c5.outcome).toBe("stripped");
+		expect(doc).toContain("> A1");
+		expect(doc).not.toContain("A2改");
+
+		// 只剩一条时再剥 → 退化为纯摘录块；再剥 → noop
+		const c6 = step(stripLastIdeaEntry(doc, { eid }));
+		expect(c6.outcome).toBe("stripped");
+		expect(doc).not.toContain("> A1");
+		expect(doc).not.toContain("**💡 想法：**");
+		const c7 = stripLastIdeaEntry(doc, { eid });
+		expect(c7.outcome).toBe("noop");
+	});
+
+	it("全部失配（块被删/在别处）→ 重新追加完整块，旧内容不动", () => {
+		const doc = "# 今天\n\n旧的段落\n";
+		const result = upsertIdeaEntry(doc, { eid: "eid-gone" }, { text: "新想法", timestamp: "02-02 10:00" }, {
+			quoteBlock: buildQuoteBlock("eid-gone"),
+		});
+		expect(result.outcome).toBe("created");
+		expect(result.doc).toContain("旧的段落");
+		expect(result.doc.indexOf("旧的段落") < result.doc.indexOf("[!EPUB")).toBe(true);
+	});
+
+	it("手动输出的随机标识旧块不被误认：编辑想法追加的是新规范块", () => {
+		// 手动输出的块带随机 eid（真实生产者行为），用 CFI 仅能定位但内容比对后按失配处理时
+		// 不得破坏旧块——这里验证以旧 CFI 追加时定位成功而非复制新块（片断在块内更新）。
+		const legacy = buildQuoteBlock(undefined); // 随机 eid
+		const doc = ["# 笔记", "", legacy.trimEnd(), ""].join("\n");
+		// 无 eid 身份时按 CFI 定位并追加首条想法
+		const result = rewriteLastIdeaEntry(doc, { cfi: "epubcfi(/6/4!/4/2/2,/1:0,/2:5)" }, {
+			text: "补的想法",
+			timestamp: "02-02 10:00",
+		}, { quoteBlock: buildQuoteBlock(undefined) });
+		expect(result.outcome).toBe("appended");
+		expect(result.doc).toContain("补的想法");
+		expect(result.doc).toContain(legacy.split("\n")[0]); // 旧块头仍在
 	});
 });
