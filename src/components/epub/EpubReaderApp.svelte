@@ -11,7 +11,8 @@
 	import EpubCommentEditorPopover from './EpubCommentEditorPopover.svelte';
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
 	import { createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress } from '../../services/epub';
-	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderImageTapInfo, ReaderTapEvent, ReadingPosition } from '../../services/epub';
+	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubStoredFontMark, FontMarkClickInfo, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderImageTapInfo, ReaderTapEvent, ReadingPosition } from '../../services/epub';
+	import { decorateExcerptText, type FontMarkColorToken } from '../../services/epub/font-mark-decoration';
 	import { insertIntoMarkdownEditor, NO_EDITOR_MESSAGE } from '../../services/epub/note-editor-insert';
 	import {
 	renderIdeaQuoteBlock,
@@ -73,6 +74,7 @@
 		type EpubDisplayHighlight,
 	} from '../../services/epub/EpubHighlightViewSnapshotService';
 	import { createEpubNavigationController } from './useEpubNavigation';
+	import { generateBlockID } from '../../services/identifier/WeaveIDGenerator';
 	import { resolveReadingViewportLockTarget } from '../../utils/mobile-reading-viewport-lock';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import { shouldDismissToolbarOnPointerDown } from './toolbar-positioning';
@@ -205,6 +207,8 @@
 	let scrolledNavSyncFrame = 0;
 	let scrolledNavResizeObserver: ResizeObserver | null = null;
 	let highlightToolbarInfo = $state<HighlightClickInfo | null>(null);
+	/** 字色标记编辑态工具条（与划线编辑态互斥，票 04）。 */
+	let fontMarkToolbarInfo = $state<FontMarkClickInfo | null>(null);
 	let commentEditorInfo = $state<HighlightClickInfo | null>(null);
 	/** 想法输入框的打开来源：create=选区「想法」新建，edit=点击已有划线编辑。 */
 	let commentEditorMode = $state<'create' | 'edit'>('edit');
@@ -229,6 +233,9 @@
 	let pendingLoadedHighlights: ReaderHighlight[] | null = null;
 	let highlightReloadToken = 0;
 	let highlightReloading = $state(false);
+	// 字色标记（Font mark）：阅读器就绪前的暂存集合，与划线的 pending 加载同型。
+	let pendingLoadedFontMarks: EpubStoredFontMark[] | null = null;
+	let fontMarkReloadToken = 0;
 	let annotationRevision = $state(0);
 	let bookmarkRevision = $state(0);
 	let migratedLocationBookIds = new Set<string>();
@@ -580,6 +587,18 @@
 			return;
 		}
 		const nextRevision = annotationRevision + 1;
+		// 面板卡片预览的彩色摘要：对每条划线做字色装饰（复用导出同款助手），
+		// 无标记时装饰结果与原文本一致——只记录有差异的，避免塞冗余字段。
+		const quoteHtmlByCfiRange = new Map<string, string>();
+		for (const highlight of highlights) {
+			if (!highlight.cfiRange || !highlight.text) {
+				continue;
+			}
+			const decorated = decorateExcerptForOutput(highlight.text, highlight.cfiRange);
+			if (decorated !== highlight.text) {
+				quoteHtmlByCfiRange.set(highlight.cfiRange, decorated);
+			}
+		}
 		highlightViewSnapshotService.publishFromHighlights({
 			bookId: book.id,
 			filePath,
@@ -587,6 +606,7 @@
 			revision: nextRevision,
 			highlights,
 			readerService,
+			quoteHtmlByCfiRange,
 		});
 		annotationRevision = nextRevision;
 		epubActiveDocumentStore.setSharedState({ annotationRevision });
@@ -976,6 +996,7 @@
 			}
 
 			void reloadHighlights();
+			void reloadFontMarks();
 			prefetchAnnotationIndexForBook(loadedBook, targetFilePath, { priority: 'immediate' });
 		} catch (error) {
 			logger.warn('[EpubReaderApp] Deferred book persistence failed:', error);
@@ -1008,7 +1029,9 @@
 		readerReady = false;
 		highlightReloading = false;
 		pendingLoadedHighlights = null;
+		pendingLoadedFontMarks = null;
 		highlightToolbarInfo = null;
+		fontMarkToolbarInfo = null;
 		commentEditorInfo = null;
 		footnotePreviewInfo = null;
 		commentEditorDraft = '';
@@ -1837,7 +1860,8 @@
 	}
 
 	function insertToEditor(content: string): string | null {
-		const result = insertIntoMarkdownEditor(content, 'cursor', {
+		// 自动插入写死追加到笔记文档末尾（规格硬约束，不加设置项）；末行非空由插入工具补换行。
+		const result = insertIntoMarkdownEditor(content, 'end', {
 			resolveMarkdownView: resolveActiveMarkdownView,
 			notify: (message) => new Notice(message),
 		});
@@ -1857,9 +1881,33 @@
 		}
 	}
 
+	/**
+	 * 划线输出的字色装饰（票 05）：把落在划线范围内的彩词包成行内 HTML span。
+	 * 只用于构造引用块正文；persistInlineHighlight 的持久化文本、复制溯源链接、
+	 * AI 问读仍用纯文本原文——标注身份与深链文本参数都依赖未装饰文本，不可混用。
+	 * 字色只是增强：任何失败退化为纯文本，不阻塞导出。
+	 */
+	function decorateExcerptForOutput(text: string, cfiRange: string): string {
+		try {
+			if (!text || !pendingLoadedFontMarks?.length) {
+				return text;
+			}
+			if (typeof readerService.getExcerptFontMarkSegments !== 'function') {
+				return text;
+			}
+			const segments = readerService.getExcerptFontMarkSegments(cfiRange, text, pendingLoadedFontMarks);
+			if (!segments?.length) {
+				return text;
+			}
+			return decorateExcerptText(text, segments);
+		} catch (_e) {
+			return text;
+		}
+	}
+
 	function outputNote(text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) {
-		/* Always allow output */ 
-		const content = buildNoteContent(text, cfiRange, color, style, autoInsert);
+		/* Always allow output */
+		const content = buildNoteContent(decorateExcerptForOutput(text, cfiRange), cfiRange, color, style, autoInsert);
 		if (autoInsert) {
 			insertToEditorAndTrack(content);
 		} else {
@@ -2144,7 +2192,23 @@
 				return;
 			}
 			closeCommentEditor();
+			// 互斥：打开划线编辑态时清掉字色编辑态。
+			fontMarkToolbarInfo = null;
 			highlightToolbarInfo = info;
+		});
+	}
+
+	/** 字色标记点击命中（服务侧已做 caret/Range 判定）：弹出该标记的编辑态工具条。 */
+	function setupFontMarkClickHandler() {
+		if (typeof readerService.onFontMarkClick !== 'function') {
+			return;
+		}
+		readerService.onFontMarkClick((info: FontMarkClickInfo) => {
+			footnotePreviewInfo = null;
+			closeCommentEditor();
+			// 互斥：打开字色编辑态时清掉普通划线编辑态。
+			highlightToolbarInfo = null;
+			fontMarkToolbarInfo = info;
 		});
 	}
 
@@ -2160,6 +2224,7 @@
 			}
 			footnotePreviewInfo = null;
 			highlightToolbarInfo = null;
+			fontMarkToolbarInfo = null;
 			imageTapInfo = info;
 		});
 	}
@@ -2185,7 +2250,7 @@
 				footnotePreviewInfo = null;
 				return;
 			}
-			if (highlightToolbarInfo || commentEditorInfo) {
+			if (highlightToolbarInfo || fontMarkToolbarInfo || commentEditorInfo) {
 				footnotePreviewInfo = null;
 				return;
 			}
@@ -2196,6 +2261,7 @@
 	function openCommentEditor(info: HighlightClickInfo, mode: 'create' | 'edit' = 'edit') {
 // Always allow (gate removed)
 		highlightToolbarInfo = null;
+		fontMarkToolbarInfo = null;
 		footnotePreviewInfo = null;
 		commentEditorMode = mode;
 		commentEditorInfo = info;
@@ -2613,6 +2679,119 @@
 		return allHighlights;
 	}
 
+	/** 加载并应用当前书的字色标记（与划线 reload 同型：阅读器未就绪时先暂存）。 */
+	async function reloadFontMarks() {
+		if (!book || componentDisposed) return;
+		const reloadToken = ++fontMarkReloadToken;
+		try {
+			const fontMarks = await storageService.loadBookFontMarks(book.id);
+			if (componentDisposed || reloadToken !== fontMarkReloadToken) {
+				return;
+			}
+			pendingLoadedFontMarks = fontMarks;
+			if (readerReady && readerService.applyFontMarks) {
+				await readerService.applyFontMarks(fontMarks);
+			}
+		} catch (_e) {
+			logger.warn('[EpubReaderApp] Failed to reload font marks:', _e);
+		}
+	}
+
+	/**
+	 * 字色标记持久化共用出口：整组合并进存储 → 更新宿主状态 → 应用到引擎。
+	 * 三个增删改 handler 共用同一「读→改→存→刷新」形状，收敛到一处。
+	 */
+	async function persistFontMarks(nextMarks: EpubStoredFontMark[]) {
+		if (!book?.id) return;
+		await storageService.saveBookFontMarks(book.id, nextMarks);
+		if (componentDisposed) return;
+		pendingLoadedFontMarks = nextMarks;
+		if (readerReady && readerService.applyFontMarks) {
+			await readerService.applyFontMarks(nextMarks);
+		}
+	}
+
+	/**
+	 * 创建字色标记：同 cfiRange 已存在则替换（改色语义），否则追加；
+	 * 落盘后整组应用到阅读器刷新书内渲染。字色标记不进笔记面板、不触发摘录输出。
+	 */
+	async function handleCreateFontMark(text: string, cfiRange: string, color: FontMarkColorToken) {
+		const trimmedRange = String(cfiRange || '').trim();
+		if (!book?.id || !trimmedRange) return;
+		try {
+			const existing = await storageService.loadBookFontMarks(book.id);
+			if (componentDisposed) return;
+			await persistFontMarks([
+				...existing.filter((mark) => mark.cfiRange !== trimmedRange),
+				{
+					id: generateBlockID(),
+					cfiRange: trimmedRange,
+					color,
+					text,
+					createdTime: Date.now(),
+				},
+			]);
+		} catch (_e) {
+			logger.warn('[EpubReaderApp] Failed to persist font mark:', _e);
+		}
+	}
+
+	/**
+	 * 字色标记换色（票 04）：同 cfiRange 改存储记录的 color，再走引擎的定点改色刷新；
+	 * 不整组 applyFontMarks，避免无谓的全量重建。同色点击视为 noop（与划线换色一致）。
+	 */
+	async function handleChangeFontMarkColor(info: FontMarkClickInfo, color: FontMarkColorToken) {
+		if (!book?.id) return;
+		const cfiRange = String(info.cfiRange || '').trim();
+		if (!cfiRange || color === info.color) return;
+		fontMarkToolbarInfo = null;
+		try {
+			const existing = await storageService.loadBookFontMarks(book.id);
+			if (componentDisposed) return;
+			let changed = false;
+			const nextMarks = existing.map((mark) => {
+				if (mark.cfiRange !== cfiRange) return mark;
+				changed = true;
+				return { ...mark, color };
+			});
+			if (changed) {
+				await persistFontMarks(nextMarks);
+			} else {
+				pendingLoadedFontMarks = existing;
+			}
+			if (typeof readerService.updateFontMarkColor === 'function') {
+				// 存储缺记录（此前落盘失败）时也照样改运行态：即时反馈优先，重开书才回退。
+				readerService.updateFontMarkColor(cfiRange, color);
+			}
+		} catch (_e) {
+			logger.warn('[EpubReaderApp] Failed to update font mark color:', _e);
+		}
+	}
+
+	/** 字色标记删除（票 04）：从存储数组移除 + 引擎按 cfiRange 摘除书内渲染。 */
+	async function handleDeleteFontMark(info: FontMarkClickInfo) {
+		if (!book?.id) return;
+		const cfiRange = String(info.cfiRange || '').trim();
+		if (!cfiRange) return;
+		fontMarkToolbarInfo = null;
+		try {
+			const existing = await storageService.loadBookFontMarks(book.id);
+			if (componentDisposed) return;
+			const nextMarks = existing.filter((mark) => mark.cfiRange !== cfiRange);
+			if (nextMarks.length !== existing.length) {
+				await persistFontMarks(nextMarks);
+			} else {
+				pendingLoadedFontMarks = existing;
+			}
+			if (typeof readerService.removeFontMark === 'function') {
+				// 存储缺记录时也摘除运行态渲染，避免留下「删不掉的幽灵颜色」。
+				readerService.removeFontMark(cfiRange);
+			}
+		} catch (_e) {
+			logger.warn('[EpubReaderApp] Failed to delete font mark:', _e);
+		}
+	}
+
 	async function migrateLegacyStoredLocations(options?: {
 		requireReaderReady?: boolean;
 		targetBook?: EpubBook | null;
@@ -2744,6 +2923,7 @@
 		flushPendingLocateFromProps();
 
 		setupHighlightClickHandler();
+		setupFontMarkClickHandler();
 		setupImageTapHandler();
 		setupFootnotePreviewHandler();
 		trackHighlightSourceChanges();
@@ -3016,6 +3196,11 @@
 						} else if (book) {
 							void reloadHighlights();
 						}
+						if (pendingLoadedFontMarks && readerService.applyFontMarks) {
+							void readerService.applyFontMarks(pendingLoadedFontMarks);
+						} else if (book) {
+							void reloadFontMarks();
+						}
 						epubNavigation.flushPendingBookLocate();
 						void migrateLegacyStoredLocations();
 						syncScrolledChapterNavVisibility();
@@ -3101,14 +3286,21 @@
 				{autoInsert}
 				onInsertToNote={handleInsertToNote}
 				highlightInfo={hasExcerptNotesCapability() ? highlightToolbarInfo : null}
+				fontMarkInfo={fontMarkToolbarInfo}
 				deleting={highlightDeleting}
 				onDelete={handleHighlightDelete}
 				onChangeColor={handleHighlightChangeColor}
 				onChangeStyle={handleHighlightChangeStyle}
+				onChangeFontMarkColor={(info, color) => void handleChangeFontMarkColor(info, color)}
+				onDeleteFontMark={(info) => void handleDeleteFontMark(info)}
 				onCopyText={handleHighlightCopyText}
 				onEditComment={handleHighlightEditComment}
-				onDismiss={() => highlightToolbarInfo = null}
+				onDismiss={() => {
+					highlightToolbarInfo = null;
+					fontMarkToolbarInfo = null;
+				}}
 				onCommentCreate={handleCommentCreateOnSelection}
+				onCreateFontMark={(text, cfiRange, color) => void handleCreateFontMark(text, cfiRange, color)}
 				onCopyTraceLink={handleCopyTraceSelection}
 				onOpenAI={handleOpenAI}
 			/>

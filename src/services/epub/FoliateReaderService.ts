@@ -2,11 +2,13 @@ import type { App } from "obsidian";
 import type {
 	EpubBookFootnotesDraft,
 	EpubReaderEngine,
+	FontMarkClickInfo,
 	HighlightSourceLocator,
 	HighlightClickInfo,
 	NavigateAndHighlightOptions,
 	ReaderAppearanceOptions,
 	ReaderFootnotePreviewInfo,
+	ReaderFontMark,
 	ReaderFrame,
 	ReaderHighlight,
 	ReaderHighlightInput,
@@ -141,6 +143,19 @@ import {
 	resolvedRangeCoversHighlightText,
 } from "./highlight/highlight-identity";
 import { EpubLinkService } from "./EpubLinkService";
+import {
+	buildFontMarkHighlightCss,
+	getFontMarkHighlightName,
+	groupFontMarksBySectionIndex,
+} from "./font-mark-render";
+import { findFontMarkAtCaret, type FontMarkHitCandidate } from "./font-mark-hit-test";
+import {
+	buildExcerptDecorationSegments,
+	FONT_MARK_COLOR_TOKENS,
+	isFontMarkColorToken,
+	type FontMarkColorToken,
+	type FontMarkSegment,
+} from "./font-mark-decoration";
 
 function logFootnoteDiag(message: string): void {
 	logger.debugWithTag("FootnoteDiag", message);
@@ -165,6 +180,40 @@ type FoliateRenderer = HTMLElement & {
 	viewSize?: number;
 	end?: number;
 };
+
+/** 章节 iframe 的 Custom Highlight 注册表（按窗口 realm 各自独立）。 */
+type FrameHighlightRegistry = {
+	delete(name: string): unknown;
+	set(name: string, highlight: unknown): unknown;
+};
+
+/**
+ * 字色标记渲染的特性检测：'highlights' in CSS && typeof Highlight === 'function'，
+ * 必须取章节 iframe 自己的 realm（宿主支持不代表 iframe 支持）。
+ * 不支持的环境静默跳过渲染（约定降级），标记照常保存。
+ */
+function supportsCustomHighlight(frameWindow: Window): boolean {
+	const cssObject = (frameWindow as unknown as { CSS?: object }).CSS;
+	if (!cssObject || !("highlights" in cssObject)) {
+		return false;
+	}
+	return typeof (frameWindow as unknown as { Highlight?: unknown }).Highlight === "function";
+}
+
+function getFrameHighlightRegistry(frameWindow: Window): FrameHighlightRegistry | null {
+	const cssObject = (
+		frameWindow as unknown as { CSS?: { highlights?: FrameHighlightRegistry } }
+	).CSS;
+	return cssObject?.highlights ?? null;
+}
+
+/** 用章节窗口自己的 Highlight 构造器创建注册组（跨 realm 实例不可靠）。 */
+function createFrameHighlight(frameWindow: Window, ranges: Range[]): unknown {
+	const HighlightConstructor = (frameWindow as unknown as {
+		Highlight: new (...ranges: Range[]) => unknown;
+	}).Highlight;
+	return new HighlightConstructor(...ranges);
+}
 
 type FoliateViewElement = HTMLElement & {
 	open: (...args: unknown[]) => unknown;
@@ -363,6 +412,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 	});
 	private highlightClickCallbacks = new Set<(info: HighlightClickInfo) => void>();
 	private referenceBadgeClickCallbacks = new Set<(info: HighlightClickInfo) => void>();
+	/** 字色标记点击命中回调（宿主据此弹出编辑态工具条）。 */
+	private fontMarkClickCallbacks = new Set<(info: FontMarkClickInfo) => void>();
 	private highlightDataMap = new Map<string, ReaderHighlight>();
 	private temporaryHighlightDataMap = new Map<string, ReaderHighlight>();
 	private highlightAnchorResolutionByKey = new Map<string, Promise<string>>();
@@ -379,6 +430,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private documentImageTapCleanups = new Map<Document, () => void>();
 	private imageTapCallbacks = new Set<(info: ReaderImageTapInfo) => void>();
 	private documentStyleElements = new WeakMap<Document, HTMLStyleElement>();
+	private fontMarkStyleElements = new WeakMap<Document, HTMLStyleElement>();
+	/** 字色标记运行态：按规范化 cfiRange 键控（与 highlight identity 的规范化一致）。 */
+	private fontMarksByCfiKey = new Map<string, ReaderFontMark>();
 	private loadedDocumentSectionIndexes = new WeakMap<Document, number>();
 	private lastSelectionByDocument = new WeakMap<Document, string>();
 	private overlayerModulePromise: Promise<FoliateOverlayerModule> | null = null;
@@ -1676,6 +1730,13 @@ export class FoliateReaderService implements EpubReaderEngine {
 		};
 	}
 
+	onFontMarkClick(callback: (info: FontMarkClickInfo) => void): () => void {
+		this.fontMarkClickCallbacks.add(callback);
+		return () => {
+			this.fontMarkClickCallbacks.delete(callback);
+		};
+	}
+
 	getHighlightClickInfo(
 		cfiRange: string,
 		interactionTarget: HighlightClickInfo["interactionTarget"] = "highlight",
@@ -1777,6 +1838,118 @@ export class FoliateReaderService implements EpubReaderEngine {
 		void this.queueAnnotationSync(true);
 	}
 
+	async applyFontMarks(marks: ReaderFontMark[]): Promise<void> {
+		this.fontMarksByCfiKey.clear();
+		for (const mark of Array.isArray(marks) ? marks : []) {
+			this.storeFontMark(mark);
+		}
+		this.refreshFontMarkRendering();
+	}
+
+	removeFontMark(cfiRange: string): void {
+		const key = this.normalizeLocationKey(cfiRange);
+		if (!key || !this.fontMarksByCfiKey.delete(key)) {
+			return;
+		}
+		this.refreshFontMarkRendering();
+	}
+
+	updateFontMarkColor(cfiRange: string, color: FontMarkColorToken): void {
+		const key = this.normalizeLocationKey(cfiRange);
+		const existing = key ? this.fontMarksByCfiKey.get(key) : undefined;
+		if (!existing || !isFontMarkColorToken(color) || existing.color === color) {
+			return;
+		}
+		this.fontMarksByCfiKey.set(key, { ...existing, color });
+		this.refreshFontMarkRendering();
+	}
+
+	/**
+	 * 摘录导出的字色切段（票 05）：把落在划线范围内的标记换算成摘录文本偏移。
+	 * 只在可见帧的章节 doc 里做精确 Range 解析——同一章节才能算出可靠偏移；
+	 * 解析失败由编排函数回退字符串匹配，再失败该标记被跳过。
+	 * 无可见帧/无标记/任何异常一律返回 []：字色只是增强，导出永不因它阻塞。
+	 */
+	getExcerptFontMarkSegments(
+		highlightCfiRange: string,
+		text: string,
+		marks: ReaderFontMark[]
+	): FontMarkSegment[] {
+		try {
+			if (!text || !Array.isArray(marks) || marks.length === 0) {
+				return [];
+			}
+			const visibleFrames = this.getVisibleFramesWithIndex();
+			if (!visibleFrames.length) {
+				return [];
+			}
+			// 优先取与划线同节的可见帧；找不到时用第一帧——跨节 CFI 解析必然失败，
+			// 自然落到编排内的字符串回退，属预期降级而非错误。
+			const highlightSectionIndex = this.parser.getSectionIndexForCfi(highlightCfiRange);
+			const frame =
+				visibleFrames.find((item) => item.index === highlightSectionIndex) ?? visibleFrames[0];
+			// 候选标记先按「与划线同节」过滤：异节标记绝不参与——即便 Range 解析失败，
+			// 编排内的字符串回退也会把它 indexOf 进摘录文本，造成跨章误染
+			// （规格：只保留落在划线范围内的彩词）。划线节解析不出时保守退回当前帧节。
+			const targetSectionIndex = highlightSectionIndex ?? frame.index;
+			const sameSectionMarks = marks.filter((mark) => {
+				try {
+					return this.parser.getSectionIndexForCfi(mark.cfiRange) === targetSectionIndex;
+				} catch {
+					return false;
+				}
+			});
+			if (sameSectionMarks.length === 0) {
+				return [];
+			}
+			const resolveRange = (cfiRange: string): Range | null => {
+				try {
+					const sectionIndex = this.parser.getSectionIndexForCfi(cfiRange);
+					// 节号不匹配绝不进 resolveRangeInLoadedSection：否则解析器会把
+					// 其它节的结构锚点执行到本文档上，得到看似成功的错位 Range。
+					if (sectionIndex === null || sectionIndex !== frame.index) {
+						return null;
+					}
+					// 不传 textHint：字符串回退由编排函数按摘录文本执行，
+					// 比在整章文档里全文搜索更贴近「标记必须落在摘录内」的语义。
+					return this.parser.resolveRangeInLoadedSection(
+						cfiRange,
+						frame.frameDocument,
+						sectionIndex
+					);
+				} catch (error) {
+					logger.warn("[FoliateReaderService] Failed to resolve excerpt font mark range:", {
+						cfiRange,
+						error,
+					});
+					return null;
+				}
+			};
+			return buildExcerptDecorationSegments({
+				text,
+				highlightCfiRange,
+				marks: sameSectionMarks,
+				resolveRange,
+			});
+		} catch (error) {
+			logger.warn("[FoliateReaderService] Failed to build excerpt font mark segments:", error);
+			return [];
+		}
+	}
+
+	/** 写入单个标记（同 cfiRange 视为改色语义：整条替换）。非法输入静默忽略。 */
+	private storeFontMark(mark: ReaderFontMark): boolean {
+		const cfiRange = String(mark?.cfiRange || "").trim();
+		if (!cfiRange || !isFontMarkColorToken(mark?.color)) {
+			return false;
+		}
+		this.fontMarksByCfiKey.set(this.normalizeLocationKey(cfiRange), {
+			...mark,
+			cfiRange,
+		});
+		return true;
+	}
+
 	private removeStoredHighlightByKey(key: string): void {
 		this.highlightDataMap.delete(key);
 		this.temporaryHighlightDataMap.delete(key);
@@ -1854,6 +2027,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.loadedDocumentSectionIndexes.set(doc, index);
 		this.maybeInvalidateParagraphCacheForSection(index, doc);
 		this.normalizeDocument(doc);
+		// 新章节帧就绪后恢复字色标记渲染（注册幂等，直接全量重建当前集合）。
+		this.refreshFontMarkRendering();
 		this.attachSelectionListeners(doc);
 		this.attachHighlightClickListeners(doc);
 		this.attachWheelListeners(doc);
@@ -2559,6 +2734,115 @@ export class FoliateReaderService implements EpubReaderEngine {
 		mountPoint.appendChild(styleElement);
 
 		this.attachFootnotePreviewListeners(doc);
+	}
+
+	/**
+	 * 字色标记（Font mark）渲染刷新：对每个可见帧全量重建 Custom Highlight 注册。
+	 * 注册是幂等 set，无需 render signature/diff；集合变化与章节加载共用本入口。
+	 * 每次刷新只按 cfi 解析一次节索引，供所有可见帧复用。
+	 */
+	private refreshFontMarkRendering(): void {
+		const visibleFrames = this.getVisibleFramesWithIndex();
+		if (!visibleFrames.length) {
+			return;
+		}
+		const sectionGroups =
+			this.fontMarksByCfiKey.size > 0
+				? groupFontMarksBySectionIndex(
+						Array.from(this.fontMarksByCfiKey.values()),
+						(cfiRange) => this.parser.getSectionIndexForCfi(cfiRange)
+					)
+				: new Map<number, ReaderFontMark[]>();
+		for (const frame of visibleFrames) {
+			try {
+				this.renderFontMarksInFrame(frame.index, frame.frameDocument, sectionGroups);
+			} catch (error) {
+				logger.warn("[FoliateReaderService] Failed to render font marks in frame:", error);
+			}
+		}
+	}
+
+	private renderFontMarksInFrame(
+		sectionIndex: number,
+		doc: Document,
+		sectionGroups: Map<number, ReaderFontMark[]>
+	): void {
+		const frameWindow = doc.defaultView;
+		if (!frameWindow || !supportsCustomHighlight(frameWindow)) {
+			return;
+		}
+		// 全书无标记时只做注册清理，不注入样式元素（避免给无标记的书塞空样式）。
+		if (this.fontMarksByCfiKey.size > 0) {
+			this.injectFontMarkHighlightStyle(doc);
+		}
+
+		const registry = getFrameHighlightRegistry(frameWindow);
+		if (!registry) {
+			return;
+		}
+		for (const token of FONT_MARK_COLOR_TOKENS) {
+			registry.delete(getFontMarkHighlightName(token));
+		}
+		const marks = sectionGroups.get(sectionIndex);
+		if (!marks?.length) {
+			return;
+		}
+		const rangesByToken = new Map<FontMarkColorToken, Range[]>();
+		for (const mark of marks) {
+			const range = this.resolveFontMarkRange(mark, doc, sectionIndex);
+			if (!range) {
+				continue;
+			}
+			const bucket = rangesByToken.get(mark.color);
+			if (bucket) {
+				bucket.push(range);
+			} else {
+				rangesByToken.set(mark.color, [range]);
+			}
+		}
+		for (const [token, ranges] of rangesByToken) {
+			if (!ranges.length) {
+				continue;
+			}
+			try {
+				registry.set(getFontMarkHighlightName(token), createFrameHighlight(frameWindow, ranges));
+			} catch (error) {
+				logger.warn("[FoliateReaderService] Failed to register font mark highlights:", error);
+			}
+		}
+	}
+
+	private resolveFontMarkRange(
+		mark: ReaderFontMark,
+		doc: Document,
+		sectionIndex: number
+	): Range | null {
+		try {
+			// 标记文本作为 textHint 兜底：CFI 解析失败时按文本引述找回范围。
+			return this.parser.resolveRangeInLoadedSection(mark.cfiRange, doc, sectionIndex, mark.text);
+		} catch (error) {
+			logger.warn("[FoliateReaderService] Failed to resolve font mark range:", {
+				cfiRange: mark.cfiRange,
+				error,
+			});
+			return null;
+		}
+	}
+
+	/** 向章节 head 注入独立的字色样式元素（内容静态：浅色基线 + data-weave-host-scheme 深色覆盖）。 */
+	private injectFontMarkHighlightStyle(doc: Document): void {
+		const mountPoint = doc.head || doc.documentElement;
+		if (!mountPoint) {
+			return;
+		}
+		let styleElement = this.fontMarkStyleElements.get(doc);
+		if (!styleElement || !styleElement.isConnected) {
+			styleElement = doc.createElement("style");
+			styleElement.setAttribute("data-weave-fontmark-style", "true");
+			styleElement.textContent = buildFontMarkHighlightCss();
+			mountPoint.appendChild(styleElement);
+			this.fontMarkStyleElements.set(doc, styleElement);
+		}
 	}
 
 	private sanitizeRuntimeAuthorColorOverrides(doc: Document): void {
@@ -5085,12 +5369,21 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return;
 		}
 
-		const highlight = this.findHighlightAtPointer(event.clientX, event.clientY, frame);
-		if (!highlight) {
+		if (this.hasActiveReaderSelection(doc)) {
 			return;
 		}
 
-		if (this.hasActiveReaderSelection(doc)) {
+		// 字色标记优先：词级命中比划线行级几何更精确，且两者互斥——
+		// 命中标记即走字色编辑态，不再触发普通划线的编辑工具条（票 04 约定）。
+		if (this.tryNotifyFontMarkClick(event, frame)) {
+			event.preventDefault();
+			event.stopPropagation();
+			this.clearSelections();
+			return;
+		}
+
+		const highlight = this.findHighlightAtPointer(event.clientX, event.clientY, frame);
+		if (!highlight) {
 			return;
 		}
 
@@ -5105,6 +5398,67 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.notifyHighlightClick(
 			buildHighlightClickInfo(highlight, geometry, "highlight")
 		);
+	}
+
+	/**
+	 * 字色标记点击命中：把点击点映射为 caret 位置后与已解析的标记 Range 判定。
+	 * 书内渲染走 CSS Custom Highlight（无 DOM/SVG 命中区），命中只能做在 Range 判定上；
+	 * 包含判定与候选筛选抽在 font-mark-hit-test 纯函数模块内直接单测。
+	 * 返回是否命中；命中时构造宿主视口几何并广播编辑信息。
+	 */
+	private tryNotifyFontMarkClick(event: MouseEvent, frame: VisibleFrameWithIndex): boolean {
+		const doc = frame.frameDocument;
+		const caretRange = this.createCaretRangeFromClientPoint(doc, event.clientX, event.clientY);
+		if (!caretRange) {
+			return false;
+		}
+
+		const candidates: FontMarkHitCandidate[] = [];
+		for (const mark of this.fontMarksByCfiKey.values()) {
+			// 先按节过滤再解析 Range：跨节 CFI 在本文档解析必然失败，省去无效解析。
+			if (this.parser.getSectionIndexForCfi(mark.cfiRange) !== frame.index) {
+				continue;
+			}
+			const range = this.resolveFontMarkRange(mark, doc, frame.index);
+			if (range) {
+				candidates.push({ mark, range });
+			}
+		}
+
+		const hit = findFontMarkAtCaret(
+			{ node: caretRange.startContainer, offset: caretRange.startOffset },
+			candidates
+		);
+		if (!hit) {
+			return false;
+		}
+
+		const rect = this.createViewportRect(frame, hit.range);
+		if (!rect) {
+			return false;
+		}
+		this.notifyFontMarkClick({
+			cfiRange: hit.mark.cfiRange,
+			color: hit.mark.color,
+			text: hit.mark.text || "",
+			rect,
+			rects: this.createViewportRectList(frame, hit.range) || undefined,
+			anchorPoint: createAnchorPointFromRect(rect),
+		});
+		return true;
+	}
+
+	private notifyFontMarkClick(info: FontMarkClickInfo): void {
+		for (const listener of [...this.fontMarkClickCallbacks]) {
+			try {
+				listener(info);
+			} catch (error) {
+				logger.warn("[FoliateReaderService] Font mark click listener failed:", {
+					cfiRange: info.cfiRange,
+					error,
+				});
+			}
+		}
 	}
 
 	private isClientPointInViewportRect(
@@ -7149,6 +7503,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.highlightAnchorResolutionByKey.clear();
 		this.savedHighlights = [];
 		this.renderedAnnotations.clear();
+		// 字色标记随书籍切换清空：新书的集合由宿主加载后经 applyFontMarks 注入。
+		this.fontMarksByCfiKey.clear();
 		this.resetAnnotationSyncState();
 	}
 

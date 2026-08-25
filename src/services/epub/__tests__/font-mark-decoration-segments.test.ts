@@ -1,0 +1,156 @@
+import { describe, expect, it } from "vitest";
+import {
+	buildExcerptDecorationSegments,
+	decorateExcerptText,
+	findFontMarkByText,
+	type FontMarkSegment,
+} from "../font-mark-decoration";
+
+function buildDoc(html: string): Document {
+	return new DOMParser().parseFromString(
+		`<!DOCTYPE html><html><body>${html}</body></html>`,
+		"text/html",
+	);
+}
+
+function makeParagraphRangeFactory(doc: Document) {
+	const paragraphs = doc.body.querySelectorAll("p");
+	return {
+		resolveRange: (cfi: string): Range | null => {
+			if (!cfi.startsWith('p')) {
+				return null;
+			}
+			const [, index, start, end] = cfi.split(":").map(Number);
+			const paragraph = paragraphs[index];
+			if (!paragraph || !paragraph.firstChild) {
+				return null;
+			}
+			const range = doc.createRange();
+			range.setStart(paragraph.firstChild, start);
+			range.setEnd(paragraph.firstChild, end);
+			return range;
+		},
+	};
+}
+
+interface TestMark {
+	cfiRange: string;
+	text: string;
+	color: FontMarkSegment["color"];
+}
+
+describe("buildExcerptDecorationSegments（导出装饰编排）", () => {
+	it("经 Range 解析把落在划线内的标记换算成偏移切段", () => {
+		const doc = buildDoc("<p>今天天气真好啊</p>");
+		const { resolveRange } = makeParagraphRangeFactory(doc);
+		const marks: TestMark[] = [{ cfiRange: "p:0:2:4", text: "天气", color: "red" }];
+
+		const segments = buildExcerptDecorationSegments({
+			text: "今天天气真好啊",
+			highlightCfiRange: "p:0:0:7",
+			marks,
+			resolveRange,
+		});
+
+		expect(segments).toEqual<FontMarkSegment[]>([{ start: 2, end: 4, color: "red" }]);
+	});
+
+	it("Range 解析失败时回退字符串查找", () => {
+		const doc = buildDoc("<p>今天天气真好啊</p>");
+		const { resolveRange } = makeParagraphRangeFactory(doc);
+		const marks: TestMark[] = [{ cfiRange: "broken", text: "天气", color: "blue" }];
+
+		const segments = buildExcerptDecorationSegments({
+			text: "今天天气真好啊",
+			highlightCfiRange: "p:0:0:7",
+			marks,
+			resolveRange,
+		});
+
+		expect(segments).toEqual<FontMarkSegment[]>([{ start: 2, end: 4, color: "blue" }]);
+	});
+
+	it("Range 与字符串都失败时该项被跳过，剩余项仍生效", () => {
+		const doc = buildDoc("<p>今天天气真好啊</p>");
+		const { resolveRange } = makeParagraphRangeFactory(doc);
+		const marks: TestMark[] = [
+			{ cfiRange: "broken", text: "不存在的词", color: "green" },
+			{ cfiRange: "p:0:6:7", text: "啊", color: "purple" },
+		];
+
+		const segments = buildExcerptDecorationSegments({
+			text: "今天天气真好啊",
+			highlightCfiRange: "p:0:0:7",
+			marks,
+			resolveRange,
+		});
+
+		expect(segments).toEqual<FontMarkSegment[]>([{ start: 6, end: 7, color: "purple" }]);
+	});
+
+	it("标记越界部分被裁剪；无重叠时返回空数组", () => {
+		const doc = buildDoc("<p>零一二三四五六七八九</p>");
+		const { resolveRange } = makeParagraphRangeFactory(doc);
+		const marks: TestMark[] = [
+			{ cfiRange: "p:0:0:9", text: "零一二三四五六七八九", color: "red" },
+			{ cfiRange: "p:0:8:10", text: "八九", color: "blue" },
+		];
+
+		const clipped = buildExcerptDecorationSegments({
+			text: "二三四五",
+			highlightCfiRange: "p:0:2:6",
+			marks,
+			resolveRange,
+		});
+		expect(clipped).toEqual<FontMarkSegment[]>([{ start: 0, end: 4, color: "red" }]);
+
+		const disjoint = buildExcerptDecorationSegments({
+			text: "二三四五",
+			highlightCfiRange: "p:0:2:6",
+			marks: [{ cfiRange: "p:0:8:10", text: "八九", color: "blue" }],
+			resolveRange,
+		});
+		expect(disjoint).toEqual<FontMarkSegment[]>([]);
+	});
+
+	it("编排结果可直接喂给装饰函数得到带色摘录", () => {
+		const doc = buildDoc("<p>今天天气真好啊</p>");
+		const { resolveRange } = makeParagraphRangeFactory(doc);
+		const segments = buildExcerptDecorationSegments({
+			text: "今天天气真好啊",
+			highlightCfiRange: "p:0:0:7",
+			marks: [
+				{ cfiRange: "p:0:2:4", text: "天气", color: "red" },
+				{ cfiRange: "p:0:6:7", text: "啊", color: "gold" },
+			],
+			resolveRange,
+		});
+
+		expect(decorateExcerptText("今天天气真好啊", segments)).toBe(
+			'今天<span style="color:#dc2626">天气</span>真好<span style="color:#b45309">啊</span>',
+		);
+	});
+});
+
+describe("辅助：空输入与容错", () => {
+	it("空文本/空标记/无解析器都不抛异常", () => {
+		const doc = buildDoc("<p>今天天气真好啊</p>");
+		const { resolveRange } = makeParagraphRangeFactory(doc);
+		expect(
+			buildExcerptDecorationSegments({
+				text: "",
+				highlightCfiRange: "p:0:0:7",
+				marks: [],
+				resolveRange,
+			}),
+		).toEqual([]);
+		expect(
+			buildExcerptDecorationSegments({
+				text: "今天天气真好啊",
+				highlightCfiRange: "",
+				marks: [],
+				resolveRange,
+			}),
+		).toEqual([]);
+	});
+});

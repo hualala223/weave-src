@@ -66,7 +66,8 @@ import {
 	toEpubBook,
 	toEpubBookAggregate,
 } from "./epub-v2-book-mapping";
-import type { EpubStoredHighlight, WeaveUiMemory } from "./schema-v2";
+import type { EpubStoredFontMark, EpubStoredHighlight, WeaveUiMemory } from "./schema-v2";
+import { normalizeEpubStoredFontMarks } from "./schema-v2";
 
 export interface EpubBookshelfSettings {
 	lastScanAt?: number;
@@ -1644,6 +1645,27 @@ export class EpubStorageService {
 		this.getV2Store().saveBookNotes(bookId, {
 			...aggregate.notes,
 			highlights,
+		});
+	}
+
+	/** v2：读取某书的字色标记（books[id].notes.fontMarks，缺省/坏数据兜底为空数组）。 */
+	async loadBookFontMarks(bookId: string): Promise<EpubStoredFontMark[]> {
+		const aggregate = await this.getV2Store().getBook(
+			await this.resolveCanonicalBookId(bookId)
+		);
+		return normalizeEpubStoredFontMarks(aggregate?.notes?.fontMarks ?? []);
+	}
+
+	/** v2：整组覆盖某书的字色标记（书不存在时忽略；落盘前做坏数据兜底）。 */
+	async saveBookFontMarks(bookId: string, marks: EpubStoredFontMark[]): Promise<void> {
+		bookId = await this.resolveCanonicalBookId(bookId);
+		const aggregate = await this.getV2Store().getBook(bookId);
+		if (!aggregate) {
+			return;
+		}
+		this.getV2Store().saveBookNotes(bookId, {
+			...aggregate.notes,
+			fontMarks: normalizeEpubStoredFontMarks(marks),
 		});
 	}
 

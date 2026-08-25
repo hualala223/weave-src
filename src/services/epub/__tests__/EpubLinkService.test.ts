@@ -438,6 +438,51 @@ describe('EpubLinkService legacy link compatibility', () => {
 		);
 	});
 
+	it('preserves 字色 span inside strikethrough ~~ wrapping (删除线与彩词嵌套兼容)', () => {
+		const service = new EpubLinkService({} as any);
+		const decorated = '前<span style="color:#dc2626">彩</span>后';
+
+		expect(EpubLinkService.formatQuotedExcerptText(decorated, 'strikethrough')).toBe(
+			'~~前<span style="color:#dc2626">彩</span>后~~'
+		);
+		expect(service.buildQuoteBlock(
+			'Books/demo.epub',
+			'readium:decorated',
+			decorated,
+			5,
+			'purple',
+			'第五章',
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			'strikethrough'
+		)).toMatch(
+			/^> \[!EPUB\|purple\+strikethrough\] \[\[Books\/demo\.epub#weave-cfi=readium:decorated(?:&[^|]+)*\|demo\]\] \[第五章\]\n> ~~前<span style="color:#dc2626">彩<\/span>后~~\n$/
+		);
+	});
+
+	it('背景涂色与字色并存：callout 元信息带背景色、正文带字色 span，两通道互不干扰', () => {
+		const service = new EpubLinkService({} as any);
+		const decorated = '萤光底 + <span style="color:#16a34a">绿字</span> 并存';
+
+		expect(service.buildQuoteBlock(
+			'Books/demo.epub',
+			'readium:overlay',
+			decorated,
+			3,
+			'yellow',
+			'第三章',
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			'underline'
+		)).toMatch(
+			/^> \[!EPUB\|yellow\+underline\] \[\[Books\/demo\.epub#weave-cfi=readium:overlay(?:&[^|]+)*\|demo\]\] \[第三章\]\n> 萤光底 \+ <span style="color:#16a34a">绿字<\/span> 并存\n$/
+		);
+	});
+
 	it('compresses long epubcfi locators with weave-loc payloads', () => {
 		const service = new EpubLinkService({} as any);
 		const longCfi =

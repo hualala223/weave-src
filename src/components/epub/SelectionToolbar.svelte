@@ -7,8 +7,10 @@
 		EpubBook,
 		EpubHighlightStyle,
 		EpubReaderEngine,
+		FontMarkClickInfo,
 		HighlightClickInfo,
 	} from '../../services/epub';
+	import type { FontMarkColorToken } from '../../services/epub/font-mark-decoration';
 	import type { ReaderAnchorPoint, ReaderFrame, ReaderViewportRect } from '../../services/epub/reader-engine-types';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import {
@@ -40,8 +42,14 @@
 		onInsertToNote?: (text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) => void;
 		/** 编辑状态：点击既有标注时由宿主传入。 */
 		highlightInfo?: HighlightClickInfo | null;
+		/** 编辑状态（字色标记）：点击已染色词时由宿主传入；与划线编辑互斥。 */
+		fontMarkInfo?: FontMarkClickInfo | null;
 		deleting?: boolean;
 		onDelete?: (info: HighlightClickInfo) => void;
+		/** 字色标记编辑：换色（宿主负责持久化与书内刷新）。 */
+		onChangeFontMarkColor?: (info: FontMarkClickInfo, color: FontMarkColorToken) => void;
+		/** 字色标记编辑：删除该标记。 */
+		onDeleteFontMark?: (info: FontMarkClickInfo) => void;
 		onTemporarilyReveal?: (info: HighlightClickInfo) => void;
 		onChangeColor?: (info: HighlightClickInfo, newColor: string) => void;
 		onChangeStyle?: (info: HighlightClickInfo, newStyle?: EpubHighlightStyle) => void;
@@ -50,6 +58,8 @@
 		onDismiss?: () => void;
 		/** 创建状态：「想法」默认下划线后在宿主侧持久化并打开想法输入框。 */
 		onCommentCreate?: (text: string, cfiRange: string, color: string) => void;
+		/** 创建状态：字色标记——点圆点即把所选文字染成该色（纯字色，无背景无线型）。 */
+		onCreateFontMark?: (text: string, cfiRange: string, color: FontMarkColorToken) => void;
 		/** 创建状态：溯源复制 [[溯源路径|选中内容]]。 */
 		onCopyTraceLink?: (text: string, cfiRange: string) => void;
 		/** 调起 AI 面板（创建/编辑状态通用）。 */
@@ -67,8 +77,11 @@
 		externalSelection = null,
 		onInsertToNote,
 		highlightInfo = null,
+		fontMarkInfo = null,
 		deleting = false,
 		onDelete,
+		onChangeFontMarkColor,
+		onDeleteFontMark,
 		onTemporarilyReveal,
 		onChangeColor,
 		onChangeStyle,
@@ -76,6 +89,7 @@
 		onCopyText,
 		onDismiss,
 		onCommentCreate,
+		onCreateFontMark,
 		onCopyTraceLink,
 		onOpenAI,
 	}: Props = $props();
@@ -118,6 +132,17 @@
 		purple: '紫色',
 		green: '绿色',
 	};
+
+	// 字色标记（Font mark）色板：红/金/蓝/绿/紫，与背景涂色行互为两套色板。
+	const fontMarkColors: readonly FontMarkColorToken[] = ['red', 'gold', 'blue', 'green', 'purple'];
+	const fontMarkColorLabels: Record<FontMarkColorToken, string> = {
+		red: '红色',
+		gold: '金色',
+		blue: '蓝色',
+		green: '绿色',
+		purple: '紫色',
+	};
+	let lastUsedFontColor = $state<FontMarkColorToken>('red');
 
 	function icon(node: HTMLElement, name: string) {
 		setIcon(node, name);
@@ -330,7 +355,7 @@
 	}
 
 	function handleEditClickOutside(event: Event) {
-		if (untrack(() => Boolean(highlightInfo)) && isEventOutsideToolbar(toolbarEl, event)) {
+		if (untrack(() => Boolean(highlightInfo || fontMarkInfo)) && isEventOutsideToolbar(toolbarEl, event)) {
 			untrack(() => onDismiss?.());
 		}
 	}
@@ -483,7 +508,7 @@
 		const repositionOnly = isVisible && Boolean(cfiRange);
 		try {
 			// 编辑状态优先：切换新选区需要先让宿主清掉编辑态。
-			if (untrack(() => Boolean(highlightInfo))) {
+			if (untrack(() => Boolean(highlightInfo || fontMarkInfo))) {
 				untrack(() => onDismiss?.());
 				return;
 			}
@@ -551,12 +576,19 @@
 		}
 	}
 
-	async function positionForHighlight(info: HighlightClickInfo) {
+	/** 编辑态锚点的最小几何形态：划线与字色标记两种编辑信息在此结构上一致。 */
+	type EditToolbarAnchor = {
+		rect: HighlightClickInfo['rect'];
+		rects?: HighlightClickInfo['rects'];
+		anchorPoint?: HighlightClickInfo['anchorPoint'];
+	};
+
+	async function positionForEdit(info: EditToolbarAnchor) {
 		stopEditTracking();
 		editActive = true;
 		await tick();
 
-		if (!toolbarEl || untrack(() => highlightInfo) !== info) {
+		if (!toolbarEl || untrack(() => fontMarkInfo ?? highlightInfo) !== info) {
 			return;
 		}
 
@@ -647,6 +679,15 @@
 		clearAndHide();
 	}
 
+	function handleCreateFontMark(color: FontMarkColorToken) {
+		if (!book || !selectedText || !currentCfiRange) {
+			return;
+		}
+		lastUsedFontColor = color;
+		onCreateFontMark?.(selectedText, currentCfiRange, color);
+		// 刻意不清选区、不隐藏工具条：方便连续给多个词染色（票 03 交互约定）。
+	}
+
 	function handleOpenAction(text: string, cfiRange: string) {
 		onOpenAI?.(text, cfiRange);
 		if (!untrack(() => Boolean(highlightInfo))) {
@@ -702,7 +743,8 @@
 			void syncSelection(frame, cfiRange);
 		});
 		const offHighlightClick = currentReaderService.onHighlightClick(() => {
-			if (!untrack(() => Boolean(highlightInfo))) {
+			// 编辑态（划线或字色）打开时交给宿主切换编辑目标；仅创建态需要就地隐藏。
+			if (!untrack(() => Boolean(highlightInfo || fontMarkInfo))) {
 				hideToolbar();
 			}
 		});
@@ -767,7 +809,8 @@
 	});
 
 	$effect(() => {
-		const info = highlightInfo;
+		// 划线与字色标记的编辑态共用同一工具条 DOM；宿主保证两者互斥，任一非空即编辑态。
+		const info = fontMarkInfo ?? highlightInfo;
 		if (!info) {
 			untrack(() => {
 				editActive = false;
@@ -779,7 +822,7 @@
 		untrack(() => {
 			stopPositionTracking();
 		});
-		void positionForHighlight(info);
+		void positionForEdit(info);
 	});
 
 	onMount(() => {
@@ -812,7 +855,37 @@
 	style={`top: ${posTop}px; left: ${posLeft}px; --toolbar-arrow-offset: ${arrowOffset}px; --toolbar-bottom-offset: ${Math.max(0, mobileDockBottomOffset)}px;`}
 	bind:this={toolbarEl}
 >
-	{#if editActive && highlightInfo}
+	{#if editActive && fontMarkInfo}
+		<div class="selection-main-row">
+			<div class="selection-top-row">
+				<div class="selection-style-shell">
+					<div class="toolbar-row selection-style-row">
+						<div class="toolbar-row colors-row selection-color-row selection-primary-row">
+							{#each fontMarkColors as c}
+								<button
+									class="color-btn fontmark-dot {c}"
+									class:active={c === fontMarkInfo.color}
+									onclick={() => onChangeFontMarkColor?.(fontMarkInfo, c)}
+									title={`切换为${fontMarkColorLabels[c]}`}
+									aria-label={`切换为${fontMarkColorLabels[c]}颜色`}
+								>
+									<span class="color-btn-core">{'A'}</span>
+								</button>
+							{/each}
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="selection-actions-shell">
+				<div class="toolbar-row actions-row selection-actions-row highlight-actions-row" bind:this={actionsShellEl}>
+					<button class="clickable-icon action-item delete delete-action" onclick={() => onDeleteFontMark?.(fontMarkInfo)} title={'删除字色'}>
+						<span class="action-icon" use:icon={'trash-2'}></span>
+						<span class="action-label">{'删除'}</span>
+					</button>
+				</div>
+			</div>
+		</div>
+	{:else if editActive && highlightInfo}
 		{#if isConcealMode}
 			<div class="selection-main-row">
 				<div class="selection-actions-shell">
@@ -933,6 +1006,21 @@
 							<span class="action-icon" use:icon={'more-horizontal'}></span>
 						</button>
 					{/if}
+				</div>
+			</div>
+			<div class="selection-fontmark-shell">
+				<div class="toolbar-row colors-row selection-fontmark-row">
+					{#each fontMarkColors as c}
+						<button
+							class="color-btn fontmark-dot {c}"
+							class:active={c === lastUsedFontColor}
+							onclick={() => handleCreateFontMark(c)}
+							title={`染成${fontMarkColorLabels[c]}`}
+							aria-label={`将所选文字染成${fontMarkColorLabels[c]}`}
+						>
+							<span class="color-btn-core">{'A'}</span>
+						</button>
+					{/each}
 				</div>
 			</div>
 		</div>

@@ -13,6 +13,7 @@ interface ReplaceCall {
 function createFakeEditor(
 	initialCursor = { line: 1, ch: 4 },
 	lineCount = 5,
+	lines?: string[],
 ): {
 	editor: Editor;
 	replaceCalls: ReplaceCall[];
@@ -20,12 +21,14 @@ function createFakeEditor(
 } {
 	const replaceCalls: ReplaceCall[] = [];
 	const setCursorCalls: Array<{ line: number; ch: number }> = [];
+	const docLines = lines ?? Array.from({ length: lineCount }, () => "");
 	const editor = {
 		getCursor: () => ({ ...initialCursor }),
 		setCursor: (pos: { line: number; ch: number }) => {
 			setCursorCalls.push({ ...pos });
 		},
-		lineCount: () => lineCount,
+		lineCount: () => docLines.length,
+		getLine: (line: number) => docLines[line] ?? "",
 		replaceRange: (replacement: string, from: { line: number; ch: number }) => {
 			replaceCalls.push({ replacement, from: { ...from } });
 		},
@@ -69,6 +72,38 @@ describe("insertIntoMarkdownEditor", () => {
 		});
 		expect(replaceCalls).toEqual([
 			{ replacement: "![[img.png]]\n\n", from: { line: 9, ch: 0 } },
+		]);
+	});
+
+	it("文末模式且最后一行非空时，先另起一行再追加（不与原内容挤在一行）", () => {
+		const { editor, replaceCalls, setCursorCalls } = createFakeEditor(
+			{ line: 0, ch: 0 },
+			1,
+			["已有内容"],
+		);
+		const result = insertIntoMarkdownEditor("> 新摘录\n", "end", {
+			resolveMarkdownView: () => createFakeView(editor),
+		});
+
+		expect(result.ok).toBe(true);
+		expect(replaceCalls).toEqual([
+			{ replacement: "\n> 新摘录\n\n", from: { line: 1, ch: 0 } },
+		]);
+		expect(setCursorCalls.at(-1)).toEqual({ line: 3, ch: 0 });
+	});
+
+	it("文末模式且文档以空行收尾时直接追加、不堆多余空行", () => {
+		const { editor, replaceCalls } = createFakeEditor(
+			{ line: 0, ch: 0 },
+			2,
+			["旧内容", ""],
+		);
+		insertIntoMarkdownEditor("> 新摘录\n", "end", {
+			resolveMarkdownView: () => createFakeView(editor),
+		});
+
+		expect(replaceCalls).toEqual([
+			{ replacement: "> 新摘录\n\n", from: { line: 2, ch: 0 } },
 		]);
 	});
 

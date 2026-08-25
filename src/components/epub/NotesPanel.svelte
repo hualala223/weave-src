@@ -875,7 +875,8 @@
 							onActivate={() => handleHighlightActivate(hl)}
 							onContextMenu={(event) => showHighlightContextMenu(event, hl)}
 							color={hl.color}
-							quoteText={hl.text}
+							quoteHtml={hl.quoteHtml}
+							quoteText={hl.quoteHtml ? undefined : hl.text}
 							commentText={hl.hasCommentDivider ? (hl.commentText || '想法为空') : getEmptyExcerptHint(hl.text)}
 							commentMuted={!hl.hasCommentDivider}
 							metaLeft={getSourceLabel(hl.sourceFile)}

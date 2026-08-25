@@ -13,6 +13,7 @@ import type {
 } from "./types";
 import type { EpubChapterLocationFormat } from "./epub-excerpt-settings";
 import type { ReaderTapEvent, ReaderTwoFingerTapEvent } from "./reader-tap-zones";
+import type { FontMarkColorToken, FontMarkSegment } from "./font-mark-decoration";
 
 export type EpubReaderEngineType = "foliate";
 
@@ -111,6 +112,32 @@ export interface ReaderHighlightInput {
 
 export interface ReaderHighlight extends ReaderHighlightInput {
 	temporary?: boolean;
+}
+
+/**
+ * 字色标记（Font mark）：独立轻量标注——只染字色的 CFI 范围。
+ * 不是划线的变体：不进笔记面板、不触发摘录输出（见 CONTEXT.md 领域词汇）。
+ */
+export interface ReaderFontMark {
+	id?: string;
+	cfiRange: string;
+	color: FontMarkColorToken;
+	text?: string;
+	createdTime?: number;
+}
+
+/**
+ * 字色标记点击命中信息（编辑态工具条的锚点数据）。
+ * 几何形态与 HighlightClickInfo 对齐（rect/rects/anchorPoint），
+ * 但字色标记没有线型/想法/来源字段，独立窄类型避免空值噪音。
+ */
+export interface FontMarkClickInfo {
+	cfiRange: string;
+	color: FontMarkColorToken;
+	text: string;
+	rect: ReaderViewportRect;
+	rects?: ReaderViewportRect[];
+	anchorPoint?: ReaderAnchorPoint;
 }
 
 export interface ReaderRenderOptions {
@@ -339,11 +366,28 @@ export interface EpubReaderEngine {
 	onSelectionChange(callback: (event: ReaderSelectionChange) => void): () => void;
 	onHighlightClick(callback: (info: HighlightClickInfo) => void): () => void;
 	onReferenceBadgeClick?(callback: (info: HighlightClickInfo) => void): () => void;
+	/** 字色标记：点击命中已有标记时回调（宿主弹出该标记的编辑态工具条）。 */
+	onFontMarkClick?(callback: (info: FontMarkClickInfo) => void): () => void;
 	applyHighlights(highlights: ReaderHighlight[]): Promise<void>;
 	refreshHighlights?(): Promise<void>;
 	addHighlight(highlight: ReaderHighlight): void;
 	addTemporaryHighlight(highlight: ReaderHighlightInput, durationMs?: number): void;
 	removeHighlight(cfiRange: string): void;
 	removeHighlightByIdentityKey(identityKey: string): void;
+	/** 字色标记：整组替换当前书的标记集合并刷新书内渲染。 */
+	applyFontMarks?(marks: ReaderFontMark[]): Promise<void>;
+	/** 字色标记：按 cfiRange 移除。 */
+	removeFontMark?(cfiRange: string): void;
+	/** 字色标记：仅改指定范围的颜色。 */
+	updateFontMarkColor?(cfiRange: string, color: FontMarkColorToken): void;
+	/**
+	 * 字色标记：导出装饰缝——计算落在划线范围内的标记在摘录文本中的偏移切段。
+	 * 失败（无可见帧/解析失败/异常）返回空数组，宿主据此退化为无色纯文本导出。
+	 */
+	getExcerptFontMarkSegments?(
+		highlightCfiRange: string,
+		text: string,
+		marks: ReaderFontMark[]
+	): FontMarkSegment[];
 	destroy(): void;
 }

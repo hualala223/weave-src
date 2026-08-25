@@ -7,6 +7,7 @@ export type {
 	EpubReaderEngine,
 	EpubReaderEngineType,
 	FlashStyle,
+	FontMarkClickInfo,
 	HighlightSourceLocator,
 	HighlightClickInfo,
 	NavigateAndHighlightOptions,
@@ -15,6 +16,7 @@ export type {
 	ReaderAppearanceOptions,
 	ReaderFootnotePreviewInfo,
 	ReaderFrame,
+	ReaderFontMark,
 	ReaderHighlight,
 	ReaderHighlightInput,
 	ReaderImageBytes,
@@ -46,6 +48,11 @@ export {
 } from "./EpubStorageService";
 export type { EpubExcerptSettings } from "./epub-excerpt-settings";
 export { DEFAULT_EPUB_EXCERPT_SETTINGS } from "./epub-excerpt-settings";
+export {
+	type FontMarkColorToken,
+	type FontMarkSegment,
+} from "./font-mark-decoration";
+export type { EpubStoredFontMark } from "./schema-v2";
 export {
 	EPUB_RUNTIME,
 	getEpubRuntime,

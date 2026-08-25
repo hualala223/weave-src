@@ -1149,6 +1149,89 @@ body.is-mobile .epub-highlight-toolbar:not(.mobile-docked) {
 .epub-selection-toolbar .color-btn.green .color-btn-core,
 .epub-highlight-toolbar .color-btn.green .color-btn-core { background: linear-gradient(180deg, #84f3a1 0%, #33c27a 100%); }
 
+/*
+ * 字色标记行（创建态第三行）：五个字色圆点。
+ * 与背景涂色行视觉可区分：空心色环 + 字母 A 前景（涂色行是实心渐变圆点）；
+ * 色值取字色标记的导出 hex（font-mark-decoration 单一事实来源），
+ * "黄"档即 gold 深金。行高紧凑，窄屏不挤爆。
+ */
+.epub-selection-toolbar .selection-fontmark-shell {
+	width: max-content;
+	max-width: 100%;
+	background: color-mix(in srgb, var(--background-primary) 86%, var(--background-secondary));
+	border: 1px solid color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
+	box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+	backdrop-filter: blur(14px);
+	-webkit-backdrop-filter: blur(14px);
+	border-radius: 0 0 12px 12px;
+	margin-top: -1px;
+	align-self: stretch;
+	overflow: hidden;
+}
+
+/* 第三行接管底部圆角后，操作行不再自带下圆角。 */
+.epub-selection-toolbar.is-create .selection-actions-shell {
+	border-radius: 0;
+}
+
+.epub-selection-toolbar .selection-fontmark-row {
+	gap: 9px;
+	padding: 3px 8px 5px;
+	min-height: 26px;
+	align-self: stretch;
+	flex-wrap: nowrap;
+	justify-content: flex-start;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+.epub-selection-toolbar .selection-fontmark-row::-webkit-scrollbar {
+	display: none;
+}
+
+.epub-selection-toolbar .color-btn.fontmark-dot {
+	--weave-fontmark-tint: rgba(255, 255, 255, 0.4);
+	background: transparent;
+	box-shadow: none;
+	border: 1.5px solid var(--weave-fontmark-tint);
+	width: 19px;
+	height: 19px;
+	min-width: 19px;
+	min-height: 19px;
+	flex: 0 0 19px;
+	color: var(--weave-fontmark-tint);
+	font-size: 10px;
+	line-height: 1;
+}
+
+.epub-selection-toolbar .color-btn.fontmark-dot .color-btn-core {
+	display: inline-block;
+	width: auto;
+	height: auto;
+	min-width: 0;
+	min-height: 0;
+	flex: 0 0 auto;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	color: inherit;
+	font-size: 10px;
+	line-height: 1;
+	font-weight: 700;
+	letter-spacing: 0;
+}
+
+.epub-selection-toolbar .color-btn.fontmark-dot.red { --weave-fontmark-tint: #dc2626; }
+.epub-selection-toolbar .color-btn.fontmark-dot.gold { --weave-fontmark-tint: #b45309; }
+.epub-selection-toolbar .color-btn.fontmark-dot.blue { --weave-fontmark-tint: #2563eb; }
+.epub-selection-toolbar .color-btn.fontmark-dot.green { --weave-fontmark-tint: #16a34a; }
+.epub-selection-toolbar .color-btn.fontmark-dot.purple { --weave-fontmark-tint: #9333ea; }
+
+.epub-selection-toolbar .color-btn.fontmark-dot.active {
+	background: color-mix(in srgb, var(--weave-fontmark-tint) 22%, transparent);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--weave-fontmark-tint) 48%, transparent);
+}
+
 .epub-selection-toolbar .color-btn:hover,
 .epub-highlight-toolbar .color-btn:hover {
 	transform: scale(1.12);
@@ -1390,6 +1473,12 @@ body.is-mobile .epub-highlight-toolbar:not(.mobile-docked) {
 }
 
 .epub-reader-root[data-host-theme="light"] .epub-selection-toolbar .selection-color-row .color-btn {
+	background: transparent;
+	box-shadow: none;
+}
+
+/* 浅色主题下字色圆点保持空心色环（不吃浅灰底盘），金色档在浅底上仍可辨。 */
+.epub-reader-root[data-host-theme="light"] .epub-selection-toolbar .color-btn.fontmark-dot {
 	background: transparent;
 	box-shadow: none;
 }

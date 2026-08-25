@@ -25,6 +25,8 @@ export interface EpubDisplayHighlight {
 	sourceRef?: string;
 	excerptId?: string;
 	searchableValues: string[];
+	/** 摘要预览的彩色 HTML（字色标记装饰后），缺省时面板回退纯文本。 */
+	quoteHtml?: string;
 }
 
 export function buildEpubDisplayHighlightSelectionKey(
@@ -108,6 +110,8 @@ export class EpubHighlightViewSnapshotService {
 		revision: number;
 		highlights: ReaderHighlight[];
 		readerService?: EpubReaderEngine | null;
+		/** 划线 cfiRange → 摘要预览彩色 HTML（宿主算好的字色装饰）；缺省时卡片回退纯文本。 */
+		quoteHtmlByCfiRange?: ReadonlyMap<string, string>;
 	}): EpubHighlightRenderSnapshot {
 		const contextKey = this.buildContextKey(input);
 		const entry = this.getOrCreateEntry(contextKey);
@@ -126,7 +130,8 @@ export class EpubHighlightViewSnapshotService {
 			.map((highlight) =>
 				this.mapDisplayHighlight(
 					highlight,
-					previousPageLabels.get(String(highlight.cfiRange || ""))
+					previousPageLabels.get(String(highlight.cfiRange || "")),
+					input.quoteHtmlByCfiRange?.get(String(highlight.cfiRange || ""))
 				)
 			)
 			.sort((left, right) => (right.createdTime || 0) - (left.createdTime || 0));
@@ -215,9 +220,13 @@ export class EpubHighlightViewSnapshotService {
 
 			const previousSnapshot = entry.snapshot;
 			const previousPageLabels = new Map<string, string>();
+			const previousQuoteHtml = new Map<string, string>();
 			for (const highlight of previousSnapshot?.highlights || []) {
 				if (highlight.pageLabel) {
 					previousPageLabels.set(highlight.cfiRange, highlight.pageLabel);
+				}
+				if (highlight.quoteHtml) {
+					previousQuoteHtml.set(highlight.cfiRange, highlight.quoteHtml);
 				}
 			}
 
@@ -228,7 +237,8 @@ export class EpubHighlightViewSnapshotService {
 				.map((highlight) =>
 					this.mapDisplayHighlight(
 						highlight,
-						previousPageLabels.get(String(highlight.cfiRange || ""))
+						previousPageLabels.get(String(highlight.cfiRange || "")),
+						previousQuoteHtml.get(String(highlight.cfiRange || ""))
 					)
 				)
 				.sort((left, right) => (right.createdTime || 0) - (left.createdTime || 0));
@@ -364,7 +374,8 @@ export class EpubHighlightViewSnapshotService {
 
 	private mapDisplayHighlight(
 		highlight: ReaderHighlight,
-		pageLabel?: string
+		pageLabel?: string,
+		quoteHtml?: string
 	): EpubDisplayHighlight {
 		const color = this.normalizeColor(highlight.color);
 		const noteType = this.getHighlightNoteType(highlight.style);
@@ -373,6 +384,7 @@ export class EpubHighlightViewSnapshotService {
 		const mappedHighlight: EpubDisplayHighlight = {
 			cfiRange: highlight.cfiRange,
 			text: highlight.text || "",
+			quoteHtml: quoteHtml || undefined,
 			commentText: highlight.commentText || "",
 			hasCommentDivider,
 			commentStateLabel: hasCommentDivider

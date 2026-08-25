@@ -117,4 +117,60 @@ describe("EpubHighlightViewSnapshotService", () => {
 
 		expect(refreshedSnapshot.highlights[0]?.text).toBe("新摘录");
 	});
+
+	it("透传宿主算好的彩色摘要 quoteHtml（按 cfiRange 匹配）", async () => {
+		const service = new EpubHighlightViewSnapshotService();
+		const highlights = [
+			{
+				cfiRange: "epubcfi(/6/2)",
+				color: "yellow",
+				text: "今天天气真好啊",
+				sourceFile: "Notes/demo.md",
+				createdTime: 1,
+				presentation: "highlight",
+			},
+		] as any;
+		const quoteHtmlByCfiRange = new Map<string, string>([
+			["epubcfi(/6/2)", '今天<span style="color:#dc2626">天气</span>真好啊'],
+		]);
+
+		const snapshot = await service.publishFromHighlights({
+			bookId: "book-1",
+			filePath: "Books/demo.epub",
+			showStrikethroughHighlights: false,
+			revision: 1,
+			highlights,
+			readerService: null,
+			quoteHtmlByCfiRange,
+		});
+
+		expect(snapshot.highlights[0]?.text).toBe("今天天气真好啊");
+		expect(snapshot.highlights[0]?.quoteHtml).toBe(
+			'今天<span style="color:#dc2626">天气</span>真好啊',
+		);
+	});
+
+	it("无 quoteHtmlByCfiRange 时卡片回退纯文本（quoteHtml 为 undefined）", async () => {
+		const service = new EpubHighlightViewSnapshotService();
+
+		const snapshot = await service.publishFromHighlights({
+			bookId: "book-1",
+			filePath: "Books/demo.epub",
+			showStrikethroughHighlights: false,
+			revision: 1,
+			highlights: [
+				{
+					cfiRange: "epubcfi(/6/2)",
+					color: "yellow",
+					text: "纯文本摘录",
+					createdTime: 1,
+					presentation: "highlight",
+				},
+			] as any,
+			readerService: null,
+		});
+
+		expect(snapshot.highlights[0]?.quoteHtml).toBeUndefined();
+		expect(snapshot.highlights[0]?.text).toBe("纯文本摘录");
+	});
 });
