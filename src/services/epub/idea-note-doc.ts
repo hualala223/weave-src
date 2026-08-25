@@ -13,6 +13,7 @@
  */
 
 import { EpubLinkService } from "./EpubLinkService";
+import { generateBlockID } from "../identifier/WeaveIDGenerator";
 
 /** 条目标签（粗体内含图标），后接可选的紧凑时间戳。 */
 export const IDEA_ENTRY_LABEL = "**💡 想法：**";
@@ -49,6 +50,46 @@ export interface IdeaBlockIdentity {
 	cfi?: string;
 }
 
+/** 同 CFI 重写时的新值（仅文本/颜色/样式位）。 */
+export interface IdeaInlineRewriteInput {
+	cfiRange: string;
+	text: string;
+	color?: string;
+	style?: string;
+}
+
+/** 合并后的记录：沿用原身份与既有想法，更新文本/样式位。 */
+export interface IdeaMergedInlineRecord {
+	cfiRange: string;
+	text: string;
+	color: string;
+	style?: string;
+	commentText: string;
+	createdTime: number;
+	excerptId: string;
+}
+
+/**
+ * 同 CFI 重写合并规则（配套修复）：对同一句再次选字时，
+ * 不抹掉旧记录——沿用原 excerptId 与 createdTime、保留既有想法；
+ * 没有旧记录则等价新建（新身份、空想法）。
+ */
+export function mergeIdeaInlineRewrite(
+	existing: Partial<IdeaMergedInlineRecord> | undefined,
+	next: IdeaInlineRewriteInput
+): IdeaMergedInlineRecord {
+	const now = Date.now();
+	return {
+		cfiRange: next.cfiRange,
+		text: next.text,
+		color: next.color || existing?.color || "",
+		style: next.style || existing?.style,
+		commentText: existing?.commentText || "",
+		createdTime: existing?.createdTime || now,
+		excerptId: existing?.excerptId || generateBlockID(),
+	};
+}
+
 interface LineSpan {
 	start: number;
 	end: number;
@@ -67,6 +108,20 @@ function offsetToPos(doc: string, offset: number): IdeaEditorPosition {
 	const line = (before.match(/\n/g) || []).length;
 	const lastBreak = before.lastIndexOf("\n");
 	return { line, ch: offset - (lastBreak + 1) };
+}
+
+function lineStartOffsets(doc: string): number[] {
+	const offsets = [0];
+	for (let i = 0; i < doc.length; i += 1) {
+		if (doc[i] === "\n") {
+			offsets.push(i + 1);
+		}
+	}
+	return offsets;
+}
+
+function offsetOf(doc: string, pos: IdeaEditorPosition): number {
+	return lineStartOffsets(doc)[pos.line] + pos.ch;
 }
 
 function isCalloutLine(line: string): boolean {
@@ -153,6 +208,55 @@ function renderEntryLines(entry: IdeaEntryInput): string[] {
 	return [`> ${label}`, ...bodyLines.map((line) => `> ${line}`)];
 }
 
+const IDEA_LABEL_LINE_RE = /^>\s*\*\*💡 想法：\*\*/;
+
+/**
+ * 解析块内已存在的想法条目文本（按顺序）。空引用行（`>`）分隔条目，
+ * 首个条目之前的空白引用行不计。无法识别的块视为无条目。
+ */
+export function parseIdeaEntryTexts(blockText: string): string[] {
+	const entries: string[] = [];
+	let current: string[] | null = null;
+	const finalize = () => {
+		if (current !== null) {
+			const text = current.join("\n").trim();
+			if (text) {
+				entries.push(text);
+			}
+			current = null;
+		}
+	};
+	for (const line of blockText.split("\n")) {
+		if (IDEA_LABEL_LINE_RE.test(line)) {
+			finalize();
+			current = [];
+			continue;
+		}
+		if (!line.trimStart().startsWith(">")) {
+			finalize();
+			continue;
+		}
+		if (line.trim() === ">") {
+			finalize();
+			continue;
+		}
+		if (current !== null) {
+			current.push(line.replace(/^>\s?/, ""));
+		}
+	}
+	finalize();
+	return entries;
+}
+
+/**
+ * 追加到块末尾的补丁文本：前导换行承接口上行，随后是空引用行分隔 + 条目组；
+ * 不带尾换行（由文档既有换行收尾），避免与原块内容重复。
+ */
+function appendEntryPatchText(entry: IdeaEntryInput): string {
+	const entryLines = [">", ...renderEntryLines(entry)];
+	return `\n${entryLines.join("\n")}`;
+}
+
 /**
  * 渲染完整块文本：摘录块（头部 + 原文）之下按序堆叠想法条目，
  * 条目之间以及原文与首个条目之间以空引用行分隔。没有条目时原样返回。
@@ -191,7 +295,8 @@ export interface UpsertIdeaEntryOptions {
 /**
  * 想法入笔记 upsert：按身份定位旧块。
  * - 找不到 → created：渲染带该条目的完整块追加到文档末尾；
- * - 找到   → 票01 阶段保持 no-op（追加/改写/剥离在后续票中启用）。
+ * - 找到且最后一条想法与本次内容不同 → appended：新条目堆在既有条目之后；
+ * - 找到且内容与最后一条相同 → noop，文档一字不动。
  */
 export function upsertIdeaEntry(
 	doc: string,
@@ -199,8 +304,22 @@ export function upsertIdeaEntry(
 	entry: IdeaEntryInput,
 	options: UpsertIdeaEntryOptions
 ): IdeaNoteResult {
-	if (locateIdeaQuoteBlock(doc, identity)) {
+	const hit = locateIdeaQuoteBlock(doc, identity);
+	if (!hit) {
+		return appendBlockToDocEnd(doc, renderIdeaQuoteBlock(options.quoteBlock, [entry]));
+	}
+	const lines = doc.split("\n");
+	const blockText = lines.slice(hit.start.line, hit.end.line + 1).join("\n");
+	const existingEntries = parseIdeaEntryTexts(blockText);
+	const lastText = existingEntries.length
+		? existingEntries[existingEntries.length - 1].trim()
+		: "";
+	if (lastText === entry.text.trim()) {
 		return { outcome: "noop", doc };
 	}
-	return appendBlockToDocEnd(doc, renderIdeaQuoteBlock(options.quoteBlock, [entry]));
+	const at = { line: hit.end.line, ch: lines[hit.end.line].length };
+	const insertOffset = offsetOf(doc, at);
+	const patchText = appendEntryPatchText(entry);
+	const nextDoc = doc.slice(0, insertOffset) + patchText + doc.slice(insertOffset);
+	return { outcome: "appended", doc: nextDoc, patch: { from: at, to: at, text: patchText } };
 }

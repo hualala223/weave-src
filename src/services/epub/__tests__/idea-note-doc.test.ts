@@ -3,6 +3,7 @@ import { EpubLinkService } from "../EpubLinkService";
 import {
 	type IdeaBlockIdentity,
 	locateIdeaQuoteBlock,
+	mergeIdeaInlineRewrite,
 	renderIdeaQuoteBlock,
 	upsertIdeaEntry,
 } from "../idea-note-doc";
@@ -119,7 +120,7 @@ describe("upsertIdeaEntry (票01：创建语义)", () => {
 		expect(result.patch!.from).toEqual({ line: docLines.length - 1, ch: docLines[docLines.length - 1].length });
 	});
 
-	it("目标块已存在时（票01 阶段）保持 no-op，不改一字", () => {
+	it("目标块已存在时把新想法当作条目追加（appended），旧块内容保留", () => {
 		const doc = ["# 笔记", "", buildQuoteBlock("eid-here").trimEnd(), ""].join("\n");
 		const result = upsertIdeaEntry(
 			doc,
@@ -127,8 +128,94 @@ describe("upsertIdeaEntry (票01：创建语义)", () => {
 			{ text: "新想法", timestamp: "01-02 08:00" },
 			{ quoteBlock: buildQuoteBlock("eid-here") }
 		);
+		expect(result.outcome).toBe("appended");
+		expect(result.doc).toBe(
+			["# 笔记", "", renderIdeaQuoteBlock(buildQuoteBlock("eid-here"), [
+				{ text: "新想法", timestamp: "01-02 08:00" },
+			]).trimEnd(), ""].join("\n")
+		);
+	});
+});
+
+describe("mergeIdeaInlineRewrite（同 CFI 重写保留身份）", () => {
+	it("沿用原划线的 excerptId 与 createdTime，想法与分隔标记原样保留", () => {
+		const existing = {
+			cfiRange: "epubcfi(/6/4!)",
+			text: "旧文本",
+			color: "yellow",
+			style: "underline",
+			commentText: "既有想法",
+			createdTime: 111,
+			excerptId: "eid-stable",
+		};
+		const next = { cfiRange: "epubcfi(/6/4!)", text: "新文本", color: "red", style: "wavy" };
+		const merged = mergeIdeaInlineRewrite(existing, next);
+		expect(merged.excerptId).toBe("eid-stable");
+		expect(merged.createdTime).toBe(111);
+		expect(merged.commentText).toBe("既有想法");
+		expect(merged.text).toBe("新文本");
+		expect(merged.color).toBe("red");
+		expect(merged.style).toBe("wavy");
+	});
+
+	it("没有既有记录时行为等同新建（生成新身份、无想法）", () => {
+		const merged = mergeIdeaInlineRewrite(undefined, { cfiRange: "c", text: "T" });
+		expect(merged.cfiRange).toBe("c");
+		expect(merged.excerptId).toBeTruthy();
+		expect(merged.commentText).toBe("");
+	});
+});
+
+describe("upsertIdeaEntry 追加语义（票02）", () => {
+	const docWithBlock = (excerptId: string) =>
+		["# 笔记", "", renderIdeaQuoteBlock(buildQuoteBlock(excerptId), [
+			{ text: "A1", timestamp: "01-01 22:10" },
+		]).trimEnd(), ""].join("\n");
+
+	it("同一划线再写新想法：旧条目下方追加新条目，历史不动（appended）", () => {
+		const doc = docWithBlock("eid-A");
+		const result = upsertIdeaEntry(
+			doc,
+			{ eid: "eid-A" },
+			{ text: "A2", timestamp: "01-02 09:30" },
+			{ quoteBlock: buildQuoteBlock("eid-A") }
+		);
+		expect(result.outcome).toBe("appended");
+		expect(result.doc).toBe(
+			["# 笔记", "", renderIdeaQuoteBlock(buildQuoteBlock("eid-A"), [
+				{ text: "A1", timestamp: "01-01 22:10" },
+				{ text: "A2", timestamp: "01-02 09:30" },
+			]).trimEnd(), ""].join("\n")
+		);
+	});
+
+	it("新想法与最后一条完全相同时 no-op，文档一字不动", () => {
+		const doc = docWithBlock("eid-S");
+		const result = upsertIdeaEntry(
+			doc,
+			{ eid: "eid-S" },
+			{ text: "A1", timestamp: "01-03 08:00" },
+			{ quoteBlock: buildQuoteBlock("eid-S") }
+		);
 		expect(result.outcome).toBe("noop");
 		expect(result.doc).toBe(doc);
 		expect(result.patch).toBeUndefined();
+	});
+
+	it("追加补丁定位在块的最后一行之后而非文档末尾", () => {
+		const doc = ["# 笔记", "", renderIdeaQuoteBlock(buildQuoteBlock("eid-P"), [
+			{ text: "A1", timestamp: "01-01 22:10" },
+		]).trimEnd(), "", "结尾段落"].join("\n");
+		const result = upsertIdeaEntry(
+			doc,
+			{ eid: "eid-P" },
+			{ text: "A2", timestamp: "01-02 09:30" },
+			{ quoteBlock: buildQuoteBlock("eid-P") }
+		);
+		expect(result.outcome).toBe("appended");
+		const blockEndLine = result.patch!.from.line;
+		const lines = doc.split("\n");
+		expect(lines[blockEndLine]).toContain("A1");
+		expect(lines.slice(blockEndLine + 1)).toContain("结尾段落");
 	});
 });

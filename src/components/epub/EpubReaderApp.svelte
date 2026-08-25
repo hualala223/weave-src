@@ -13,7 +13,7 @@
 	import { createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress } from '../../services/epub';
 	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderImageTapInfo, ReaderTapEvent, ReadingPosition } from '../../services/epub';
 	import { insertIntoMarkdownEditor, NO_EDITOR_MESSAGE } from '../../services/epub/note-editor-insert';
-	import { renderIdeaQuoteBlock, upsertIdeaEntry } from '../../services/epub/idea-note-doc';
+	import { renderIdeaQuoteBlock, upsertIdeaEntry, mergeIdeaInlineRewrite, type IdeaMergedInlineRecord } from '../../services/epub/idea-note-doc';
 	import { extractImageToNote } from '../../services/epub/image-note-extractor';
 	import { DirectoryUtils } from '../../utils/directory-utils';
 	import { resolveConfiguredDataPath, resolveImageAttachmentRoot } from '../../config/paths';
@@ -68,7 +68,6 @@
 	import { resolveReadingViewportLockTarget } from '../../utils/mobile-reading-viewport-lock';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import { shouldDismissToolbarOnPointerDown } from './toolbar-positioning';
-	import { generateBlockID } from '../../services/identifier/WeaveIDGenerator';
 	import {
 		DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
 		normalizeContinuousReadingPositionAutoSaveEnabled,
@@ -2007,19 +2006,25 @@
 		try {
 			if (!book?.id) return;
 			const arr = await loadInlineHighlights();
-			const createdTime = Date.now();
-			const item = { cfiRange, color, style, text, commentText: '', createdTime, excerptId: generateBlockID() };
+			const existing = arr.find((x: { cfiRange?: string }) => x.cfiRange === cfiRange);
+			// 同 CFI 合并保留原身份与既有想法，避免重写瞬间抹掉旧记录。
+			const item = mergeIdeaInlineRewrite(existing as Partial<IdeaMergedInlineRecord> | undefined, {
+				cfiRange,
+				text,
+				color,
+				style,
+			});
 			const dedup = arr.filter((x: { cfiRange?: string }) => x.cfiRange !== cfiRange);
 			dedup.push(item);
 			await saveInlineHighlights(dedup);
 			const optimistic: ReaderHighlight = {
 				cfiRange,
-				color,
-				style,
-				text,
-				commentText: '',
-				hasCommentDivider: false,
-				createdTime,
+				color: item.color,
+				style: item.style as EpubHighlightStyle,
+				text: item.text,
+				commentText: item.commentText,
+				hasCommentDivider: Boolean(item.commentText),
+				createdTime: item.createdTime,
 				excerptId: item.excerptId,
 				sourceFile: '__inline__',
 				sourceRef: '',
