@@ -54,6 +54,8 @@
 		onChangeColor?: (info: HighlightClickInfo, newColor: string) => void;
 		onChangeStyle?: (info: HighlightClickInfo, newStyle?: EpubHighlightStyle) => void;
 		onEditComment?: (info: HighlightClickInfo) => void;
+		/** 追加一条新想法（宿主侧以追加语义同步入笔记，草稿留空）。 */
+		onAppendComment?: (info: HighlightClickInfo) => void;
 		onCopyText?: (info: HighlightClickInfo) => void;
 		onDismiss?: () => void;
 		/** 创建状态：「想法」默认下划线后在宿主侧持久化并打开想法输入框。 */
@@ -86,6 +88,7 @@
 		onChangeColor,
 		onChangeStyle,
 		onEditComment,
+		onAppendComment,
 		onCopyText,
 		onDismiss,
 		onCommentCreate,
@@ -505,7 +508,6 @@
 	}
 
 	async function syncSelection(frame: ReaderFrame, cfiRange?: string) {
-		const repositionOnly = isVisible && Boolean(cfiRange);
 		try {
 			// 编辑状态优先：切换新选区需要先让宿主清掉编辑态。
 			if (untrack(() => Boolean(highlightInfo || fontMarkInfo))) {
@@ -515,9 +517,7 @@
 
 			const iframeWindow = frame.window || frame.frameDocument?.defaultView;
 			if (!iframeWindow) {
-				if (!repositionOnly) {
-					hideToolbar();
-				}
+				hideToolbar();
 				return;
 			}
 
@@ -530,26 +530,20 @@
 
 			const text = selection.toString().trim();
 			if (!text) {
-				if (!repositionOnly) {
-					hideToolbar();
-				}
+				hideToolbar();
 				return;
 			}
 
 			const range = selection.getRangeAt(0);
 			const resolvedCfiRange = cfiRange || frame.cfiFromRange(range);
 			if (!resolvedCfiRange) {
-				if (!repositionOnly) {
-					hideToolbar();
-				}
+				hideToolbar();
 				return;
 			}
 
 			const viewportEl = getViewportContainer(frame);
 			if (!viewportEl) {
-				if (!repositionOnly) {
-					hideToolbar();
-				}
+				hideToolbar();
 				return;
 			}
 
@@ -559,9 +553,7 @@
 
 			const geometry = resolveSelectionGeometry(resolvedCfiRange, frame, selection);
 			if (!geometry) {
-				if (!repositionOnly) {
-					hideToolbar();
-				}
+				hideToolbar();
 				return;
 			}
 
@@ -570,9 +562,9 @@
 			measureActionsOverflow();
 		} catch (e) {
 			logger.warn('[SelectionToolbar] Failed to sync selection:', e);
-			if (!repositionOnly) {
-				hideToolbar();
-			}
+			// 失败即收起工具栏并清除陈旧选中数据：绝不静默保留旧选区，
+			// 否则第二次标词会继续操作第一个词的残留数据（Q10=b 根因之一）。
+			hideToolbar();
 		}
 	}
 
@@ -681,11 +673,14 @@
 
 	function handleCreateFontMark(color: FontMarkColorToken) {
 		if (!book || !selectedText || !currentCfiRange) {
+			clearAndHide();
 			return;
 		}
 		lastUsedFontColor = color;
 		onCreateFontMark?.(selectedText, currentCfiRange, color);
-		// 刻意不清选区、不隐藏工具条：方便连续给多个词染色（票 03 交互约定）。
+		// 点色即关 + 清选区：弹窗消失即成功信号（Q22 定案）。
+		// 也杜绝「第一词标完后工具栏持守陈旧选中态、第二次标词失效」的残留状态。
+		clearAndHide();
 	}
 
 	function handleOpenAction(text: string, cfiRange: string) {
@@ -942,6 +937,12 @@
 							<span class="action-icon" use:icon={'message-square'}></span>
 							<span class="action-label">{'想法'}</span>
 						</button>
+						{#if onAppendComment}
+							<button class="clickable-icon action-item append-comment-action" onclick={() => onAppendComment?.(highlightInfo)} title={'追加一条新想法'} aria-label={'追加想法'}>
+								<span class="action-icon" use:icon={'plus'}></span>
+								<span class="action-label">{'追加想法'}</span>
+							</button>
+						{/if}
 						{#if !actionsOverflow}
 							<button class="clickable-icon action-item copy-action" onclick={() => onCopyText?.(highlightInfo)} title={'复制文本'}>
 								<span class="action-icon" use:icon={'clipboard-copy'}></span>

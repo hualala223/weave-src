@@ -1790,8 +1790,10 @@ describe("FoliateReaderService", () => {
 			vi.spyOn((service as any).parser, "getSectionIndexForCfi").mockReturnValue(12);
 			vi.spyOn((service as any).parser, "resolveRangeInLoadedSection").mockImplementation(
 				((...args: any[]) => {
-					const [_cfi, document, index, textHint] = args as [string, Document, number, string?];
-					if (index !== 12 || !textHint) {
+					const [_cfi, document, index] = args as [string, Document, number];
+					// 命中检测只传 CFI、不传 textHint（确定性）；mock 对应当前契约：
+					// 节号正确即可解析成功，无需文本提示。
+					if (index !== 12) {
 						return null;
 					}
 					const range = document.createRange();

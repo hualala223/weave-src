@@ -64,27 +64,33 @@ describe("groupFontMarksBySectionIndex（按节分组）", () => {
 			"epubcfi(/6/4!/4/8,/1:0,/1:1)": 0,
 			"epubcfi(/6/6!/4/2,/1:0,/1:3)": 1,
 		});
-		const grouped = groupFontMarksBySectionIndex(marks, resolver);
+		const { grouped } = groupFontMarksBySectionIndex(marks, resolver);
 		expect(grouped.get(0)?.map((mark) => mark.cfiRange)).toEqual([
 			"epubcfi(/6/4!/4/2,/1:0,/1:2)",
 			"epubcfi(/6/4!/4/8,/1:0,/1:1)",
 		]);
 		expect(grouped.get(1)?.map((mark) => mark.color)).toEqual(["gold"]);
+		expect(grouped.size).toBe(2);
 	});
 
-	it("解析不出节索引的标记被静默丢弃（渲染跳过语义）", () => {
+	it("解析不出节索引的标记不静默：进入 dropped 集合（供上层落日志排查）", () => {
 		const resolver = createSectionResolver({
 			"epubcfi(/6/4!/4/2,/1:0,/1:2)": 0,
 			"epubcfi(/6/4!/4/8,/1:0,/1:1)": null,
 			"epubcfi(/6/6!/4/2,/1:0,/1:3)": null,
 		});
-		const grouped = groupFontMarksBySectionIndex(marks, resolver);
+		const { grouped, dropped } = groupFontMarksBySectionIndex(marks, resolver);
 		expect(grouped.size).toBe(1);
 		expect(grouped.get(0)).toHaveLength(1);
+		expect(dropped.map((mark) => mark.cfiRange)).toEqual([
+			"epubcfi(/6/4!/4/8,/1:0,/1:1)",
+			"epubcfi(/6/6!/4/2,/1:0,/1:3)",
+		]);
 	});
 
-	it("空集合返回空映射", () => {
-		const grouped = groupFontMarksBySectionIndex([], () => 0);
+	it("空集合返回空分组与空 dropped 集合", () => {
+		const { grouped, dropped } = groupFontMarksBySectionIndex([], () => 0);
 		expect(grouped.size).toBe(0);
+		expect(dropped).toHaveLength(0);
 	});
 });

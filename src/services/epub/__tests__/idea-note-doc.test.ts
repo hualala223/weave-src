@@ -30,13 +30,13 @@ function buildQuoteBlock(excerptId?: string): string {
 }
 
 describe("renderIdeaQuoteBlock", () => {
-	it("在摘录块原文之下以空引用行分隔，引出带时间戳的 💡 想法条目", () => {
+	it("在摘录块原文之下以空引用行分隔，引出带时间戳的裸 💡 想法条目", () => {
 		const quoteBlock = buildQuoteBlock("eid-1");
 		const rendered = renderIdeaQuoteBlock(quoteBlock, [
 			{ text: "想法第一行\n想法第二行", timestamp: "01-01 22:10" },
 		]);
 		expect(rendered).toBe(
-			`${quoteBlock.replace(/\n+$/, "")}\n>\n> **💡 想法：** 01-01 22:10\n> 想法第一行\n> 想法第二行\n`
+			`${quoteBlock.replace(/\n+$/, "")}\n>\n> 💡 01-01 22:10\n> 想法第一行\n> 想法第二行\n`
 		);
 	});
 
@@ -47,7 +47,7 @@ describe("renderIdeaQuoteBlock", () => {
 			{ text: "A2", timestamp: "01-02 09:30" },
 		]);
 		expect(rendered).toBe(
-			`${quoteBlock.replace(/\n+$/, "")}\n>\n> **💡 想法：** 01-01 22:10\n> A1\n>\n> **💡 想法：** 01-02 09:30\n> A2\n`
+			`${quoteBlock.replace(/\n+$/, "")}\n>\n> 💡 01-01 22:10\n> A1\n>\n> 💡 01-02 09:30\n> A2\n`
 		);
 	});
 
@@ -273,7 +273,7 @@ describe("rewriteLastIdeaEntry（票03：改写语义）", () => {
 			{ quoteBlock: buildQuoteBlock(undefined) }
 		);
 		expect(result.outcome).toBe("appended");
-		expect(result.doc).toContain("**💡 想法：** 02-01 10:00");
+		expect(result.doc).toContain("> 💡 02-01 10:00");
 		expect(result.doc).toContain("给历史块补想法");
 	});
 
@@ -287,9 +287,9 @@ describe("rewriteLastIdeaEntry（票03：改写语义）", () => {
 		);
 		expect(result.outcome).toBe("created");
 		expect(result.doc).toContain("旧的段落");
-		expect(result.doc).toContain("> **💡 想法：** 02-02 10:00");
+		expect(result.doc).toContain("> 💡 02-02 10:00");
 		expect(result.doc.indexOf("旧的段落") < result.doc.indexOf("[!EPUB")).toBe(true);
-		expect(result.block).toContain("> **💡 想法：** 02-02 10:00");
+		expect(result.block).toContain("> 💡 02-02 10:00");
 	});
 });
 
@@ -342,7 +342,7 @@ describe("五态语义表序列（票04）", () => {
 			quoteBlock: buildQuoteBlock(eid),
 		}));
 		expect(c1.outcome).toBe("created");
-		expect(doc).toContain("> **💡 想法：** 01-01 22:10");
+		expect(doc).toContain("> 💡 01-01 22:10");
 
 		// appended
 		const c2 = step(upsertIdeaEntry(doc, { eid }, { text: "A2", timestamp: "01-02 09:30" }, {
@@ -363,7 +363,7 @@ describe("五态语义表序列（票04）", () => {
 		expect(c4.outcome).toBe("replaced");
 		expect(doc).toContain("> A2改");
 		expect(doc).toContain("> A1");
-		expect(doc).not.toContain("> **💡 想法：** 01-02 09:30");
+		expect(doc).not.toContain("> 💡 01-02 09:30");
 
 		// stripped（清空最后一条）
 		const c5 = step(stripLastIdeaEntry(doc, { eid }));
@@ -375,7 +375,7 @@ describe("五态语义表序列（票04）", () => {
 		const c6 = step(stripLastIdeaEntry(doc, { eid }));
 		expect(c6.outcome).toBe("stripped");
 		expect(doc).not.toContain("> A1");
-		expect(doc).not.toContain("**💡 想法：**");
+		expect(doc).not.toContain("💡");
 		const c7 = stripLastIdeaEntry(doc, { eid });
 		expect(c7.outcome).toBe("noop");
 	});
@@ -405,3 +405,63 @@ describe("五态语义表序列（票04）", () => {
 		expect(result.doc.match(/\[!EPUB/g)?.length).toBe(1); // 无第二份块
 	});
 });
+
+describe("upsertIdeaEntry 同句合并去重语义（票02）", () => {
+	it("带色块（无想法）+ 无色想法块并存：保留第一条、迁移条目、移除重复块", () => {
+		// 第一条命中块 = 自动插入的带色块（随机 eid 同 CFI，无想法）；
+		// 后一条 = 旧想法块（同 CFI，含想法 A1）。保存 A2 时应去重合并。
+		const colored = buildQuoteBlock(undefined); // 随机 eid，块头与原文一致
+		const ideaBlock = renderIdeaQuoteBlock(buildQuoteBlock(undefined), [
+			{ text: "A1", timestamp: "01-01 22:10" },
+		]);
+		const doc = ["# 笔记", "", colored.trimEnd(), "", ideaBlock.trimEnd(), ""].join("\n");
+		const result = upsertIdeaEntry(
+			doc,
+			{ cfi: "epubcfi(/6/4!/4/2/2,/1:0,/2:5)" },
+			{ text: "A2", timestamp: "01-02 09:30" },
+			{ quoteBlock: buildQuoteBlock(undefined) }
+		);
+		expect(result.outcome).toBe("appended");
+		expect(result.extraPatches?.length).toBe(1); // 移除重复块
+		expect(result.doc.match(/\[!EPUB/g)?.length).toBe(1); // 只剩一条
+		expect(result.doc).toContain("> A1");
+		expect(result.doc).toContain("> A2");
+		expect(result.doc).toContain("> 💡 01-01 22:10");
+		expect(result.doc).toContain("> 💡 01-02 09:30");
+		// 保留块以第一条的头部为基（含与原块一致的深链头）
+		expect(result.doc.split("\n").find((l) => l.includes("[!EPUB"))).toBe(colored.split("\n")[0]);
+		// 补丁按起点行号自后向前可安全应用：保留块替换 + 末尾去重删除
+		const applied = applyPatchesDesc(result, doc);
+		expect(applied).toBe(result.doc);
+	});
+
+	it("没有多余重复块时不产出 extraPatches，保持纯追加", () => {
+		const doc = ["# 笔记", "", renderIdeaQuoteBlock(buildQuoteBlock("eid-X"), [
+			{ text: "A1", timestamp: "01-01 22:10" },
+		]).trimEnd(), ""].join("\n");
+		const result = upsertIdeaEntry(
+			doc,
+			{ eid: "eid-X" },
+			{ text: "A2", timestamp: "01-02 09:30" },
+			{ quoteBlock: buildQuoteBlock("eid-X") }
+		);
+		expect(result.outcome).toBe("appended");
+		expect(result.extraPatches).toBeUndefined();
+	});
+});
+
+/** 模拟消费方按行号自后向前应用主补丁 + 附加补丁，返回应用后的文档。 */
+function applyPatchesDesc(result: IdeaNoteResult, originalDoc: string): string {
+	const patches = [
+		result.patch!,
+		...(result.extraPatches ?? []),
+	].sort((a, b) => b.from.line - a.from.line);
+	let doc = originalDoc;
+	for (const p of patches) {
+		const lines = doc.split("\n");
+		const fromOffset = lines.slice(0, p.from.line).join("\n").length + (p.from.line ? 1 : 0) + p.from.ch;
+		const toOffset = lines.slice(0, p.to.line).join("\n").length + (p.to.line ? 1 : 0) + p.to.ch;
+		doc = doc.slice(0, fromOffset) + p.text + doc.slice(toOffset);
+	}
+	return doc;
+}

@@ -58,16 +58,27 @@ export function buildFontMarkHighlightCss(): string {
 
 /**
  * 把字色标记按节索引分组（纯函数，节解析以回调注入便于单测）。
- * 解析不出节索引的标记被静默丢弃——渲染跳过语义，不影响保存与导出。
+ * 解析不出节索引的标记**不再无痕丢弃**：结果同时暴露 dropped 集合，
+ * 供上层落日志定位（书内渲染静默失效的排查入口）。渲染跳过语义不变——
+ * 未分组标记不渲染，但保存与导出不受影响。
  */
+export interface FontMarkGrouping {
+	/** 节索引 → 该节下的标记（按输入顺序）。 */
+	grouped: Map<number, ReaderFontMark[]>;
+	/** 解析不出节索引、本次不渲染的标记（供日志/诊断）。 */
+	dropped: ReaderFontMark[];
+}
+
 export function groupFontMarksBySectionIndex(
 	marks: readonly ReaderFontMark[],
 	resolveSectionIndex: (cfiRange: string) => number | null,
-): Map<number, ReaderFontMark[]> {
+): FontMarkGrouping {
 	const grouped = new Map<number, ReaderFontMark[]>();
+	const dropped: ReaderFontMark[] = [];
 	for (const mark of marks) {
 		const sectionIndex = resolveSectionIndex(mark.cfiRange);
 		if (typeof sectionIndex !== "number" || sectionIndex < 0) {
+			dropped.push(mark);
 			continue;
 		}
 		const bucket = grouped.get(sectionIndex);
@@ -77,5 +88,5 @@ export function groupFontMarksBySectionIndex(
 			grouped.set(sectionIndex, [mark]);
 		}
 	}
-	return grouped;
+	return { grouped, dropped };
 }

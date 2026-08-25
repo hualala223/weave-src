@@ -23,6 +23,11 @@
 	type IdeaMergedInlineRecord,
 	type IdeaNoteResult,
 } from '../../services/epub/idea-note-doc';
+	import {
+		AnnotationMutationQueue,
+		applyFontMarkMutations,
+		applyHighlightMutations,
+	} from '../../services/epub/annotation-mutation-queue';
 	import { extractImageToNote } from '../../services/epub/image-note-extractor';
 	import { DirectoryUtils } from '../../utils/directory-utils';
 	import { resolveConfiguredDataPath, resolveImageAttachmentRoot } from '../../config/paths';
@@ -211,7 +216,7 @@
 	let fontMarkToolbarInfo = $state<FontMarkClickInfo | null>(null);
 	let commentEditorInfo = $state<HighlightClickInfo | null>(null);
 	/** 想法输入框的打开来源：create=选区「想法」新建，edit=点击已有划线编辑。 */
-	let commentEditorMode = $state<'create' | 'edit'>('edit');
+	let commentEditorMode = $state<'create' | 'edit' | 'append'>('edit');
 	let aiPanelInfo = $state<{ text: string; cfiRange: string } | null>(null);
 	let footnotePreviewInfo = $state<ReaderFootnotePreviewInfo | null>(null);
 	let imageTapInfo = $state<ReaderImageTapInfo | null>(null);
@@ -236,6 +241,13 @@
 	// 字色标记（Font mark）：阅读器就绪前的暂存集合，与划线的 pending 加载同型。
 	let pendingLoadedFontMarks: EpubStoredFontMark[] | null = null;
 	let fontMarkReloadToken = 0;
+	// per-book 变更队列（新接缝）：划线 / 字色各一条串行队列，从根上消除
+	// 「全量读→变换→全量写」的并发覆盖（删除连坐根因）。load/save 绑定当前书；
+	// onFlush 在每轮排干末尾统一触发一次「读最新→重建」刷新合并。
+	// 划线记录形状较松（color 等字段 UI/引擎可扩展），沿用持久化边界的宽松类型
+	// （loadInlineHighlights 本就是 any[]）；字色记录字段与 UI 严格对齐，走强类型。
+	let highlightMutationQueue: AnnotationMutationQueue<any> | null = null;
+	let fontMarkMutationQueue: AnnotationMutationQueue<EpubStoredFontMark> | null = null;
 	let annotationRevision = $state(0);
 	let bookmarkRevision = $state(0);
 	let migratedLocationBookIds = new Set<string>();
@@ -1030,6 +1042,8 @@
 		highlightReloading = false;
 		pendingLoadedHighlights = null;
 		pendingLoadedFontMarks = null;
+		// 切换书：重建 per-book 变更队列（丢弃上一本书的在途变更，重新绑定当前书）。
+		createAnnotationMutationQueues();
 		highlightToolbarInfo = null;
 		fontMarkToolbarInfo = null;
 		commentEditorInfo = null;
@@ -2054,6 +2068,51 @@
 		} catch (_e) {}
 	}
 
+	/**
+	 * 重建两个 per-book 变更队列（划线 / 字色）：load 读存储全量、save 整组写回
+	 * （沿用 saveInlineHighlights / saveBookFontMarks 的既有补齐与兜底），
+	 * onFlush 在每轮排干末尾统一执行一次「读最新→重建」刷新合并——
+	 * 替代各 handler 各自 fire-and-forget 的 reloadHighlights / applyFontMarks。
+	 * 与既有 reloadHighlights 的交互：刷新即复用同一 reload 流程（令牌防重入/过期），
+	 * 只是触发时机收敛到队列排干末尾，行为不变量不变。
+	 */
+	function createAnnotationMutationQueues(): void {
+		highlightMutationQueue = new AnnotationMutationQueue<any>({
+			load: async () => {
+				if (!book?.id) return [];
+				return loadInlineHighlights();
+			},
+			save: async (items) => {
+				await saveInlineHighlights(items);
+			},
+			onFlush: async () => {
+				void reloadHighlights();
+			},
+			logger: (message) => logger.warn(`[EpubReaderApp] ${message}`),
+		});
+		fontMarkMutationQueue = new AnnotationMutationQueue<EpubStoredFontMark>({
+			load: async () => {
+				if (!book?.id) return [];
+				return storageService.loadBookFontMarks(book.id);
+			},
+			save: async (items) => {
+				if (!book?.id) return;
+				await storageService.saveBookFontMarks(book.id, items);
+			},
+			onFlush: async () => {
+				void reloadFontMarks();
+			},
+			logger: (message) => logger.warn(`[EpubReaderApp] ${message}`),
+		});
+	}
+
+	/**
+	 * 划线持久化（创建 / 同 CFI 重写）：构造 upsert 入队，由 per-book 队列串行消费，
+	 * 不再各自 fire-and-forget 地 load→save→reload。身份合并沿用 mergeIdeaInlineRewrite
+	 * 语义：merge 在队列串行边界内基于最新全量完成（重选同句保留原 excerptId /
+	 * createdTime / 既有想法），applyHighlightMutations 内置的身份合并与之方向一致、
+	 * 仅作兜底，不产生冲突。入队结果即落盘结果，乐观更新直接取本次写入的记录。
+	 */
 	async function persistInlineHighlight(
 		cfiRange: string,
 		text: string,
@@ -2062,27 +2121,41 @@
 	) {
 		try {
 			if (!book?.id) return;
-			const arr = await loadInlineHighlights();
-			const existing = arr.find((x: { cfiRange?: string }) => x.cfiRange === cfiRange);
-			// 同 CFI 合并保留原身份与既有想法，避免重写瞬间抹掉旧记录。
-			const item = mergeIdeaInlineRewrite(existing as Partial<IdeaMergedInlineRecord> | undefined, {
-				cfiRange,
-				text,
-				color,
-				style,
+			const trimmedRange = String(cfiRange || '').trim();
+			// 空/空白 CFI 即丢弃并落日志：不静默（spec「空 CFI 记录不静默丢弃」）。
+			if (!trimmedRange) {
+				logger.warn('[EpubReaderApp] Highlight upsert skipped: empty cfiRange');
+				return;
+			}
+			if (!highlightMutationQueue) return;
+			const nKey = () => EpubLinkService.normalizeCfi(trimmedRange);
+			const nextItems = await highlightMutationQueue.run((items) => {
+				// 在队列读取的「最新全量」里做既有 merge：existing 按归一化 key 命中
+				// （原代码先严格相等匹配再覆盖，编码同义会积累重复项；此处统一 key 语义）。
+				const existing = items.find(
+					(x: { cfiRange?: string }) =>
+						EpubLinkService.normalizeCfi(String(x?.cfiRange || '')) === nKey()
+				);
+				const item = mergeIdeaInlineRewrite(
+					existing as Partial<IdeaMergedInlineRecord> | undefined,
+					{ cfiRange: trimmedRange, text, color, style }
+				);
+				return applyHighlightMutations(items, [{ type: 'upsert', record: item as any }]).items;
 			});
-			const dedup = arr.filter((x: { cfiRange?: string }) => x.cfiRange !== cfiRange);
-			dedup.push(item);
-			await saveInlineHighlights(dedup);
+			const merged = nextItems.find(
+				(x: { cfiRange?: string }) =>
+					EpubLinkService.normalizeCfi(String(x?.cfiRange || '')) === nKey()
+			);
+			if (!merged) return;
 			const optimistic: ReaderHighlight = {
-				cfiRange,
-				color: item.color,
-				style: item.style as EpubHighlightStyle,
-				text: item.text,
-				commentText: item.commentText,
-				hasCommentDivider: Boolean(item.commentText),
-				createdTime: item.createdTime,
-				excerptId: item.excerptId,
+				cfiRange: merged.cfiRange,
+				color: merged.color,
+				style: merged.style as EpubHighlightStyle,
+				text: merged.text,
+				commentText: merged.commentText,
+				hasCommentDivider: Boolean(merged.commentText),
+				createdTime: merged.createdTime,
+				excerptId: merged.excerptId,
 				sourceFile: '__inline__',
 				sourceRef: '',
 				presentation: 'highlight',
@@ -2258,16 +2331,19 @@
 		});
 	}
 
-	function openCommentEditor(info: HighlightClickInfo, mode: 'create' | 'edit' = 'edit') {
+	function openCommentEditor(info: HighlightClickInfo, mode: 'create' | 'edit' | 'append' = 'edit') {
 // Always allow (gate removed)
 		highlightToolbarInfo = null;
 		fontMarkToolbarInfo = null;
 		footnotePreviewInfo = null;
 		commentEditorMode = mode;
 		commentEditorInfo = info;
-		commentEditorDraft = resolveCommentDraftFromMemory(info);
+		// 追加模式草稿留空（不预填现有想法），保存即 appended。
+		commentEditorDraft = mode === 'append' ? '' : resolveCommentDraftFromMemory(info);
 		commentEditorSaving = false;
-		void hydrateCommentEditorDraft(info);
+		if (mode !== 'append') {
+			void hydrateCommentEditorDraft(info);
+		}
 	}
 
 	async function hydrateCommentEditorDraft(info: HighlightClickInfo) {
@@ -2374,22 +2450,20 @@
 		return null;
 	}
 
+	/**
+	 * 划线改色/改样式：构造 patch 入队（按归一化 key 命中全部匹配——原代码用
+	 * normalizeCfi 找第一个匹配，语义经队列统一为同 key 全命中，消除编码同义重复）。
+	 * 落盘不在此处触发 reload：队列排干末尾的 onFlush 统一刷新合并。
+	 */
 	async function updateInlineHighlightFields(cfiRange: string, patch: Record<string, unknown>): Promise<void> {
 		try {
 			if (!book?.id) return;
-			const arr = await loadInlineHighlights();
-			const nCfi = EpubLinkService.normalizeCfi(cfiRange);
-			let changed = false;
-			for (let i = 0; i < arr.length; i++) {
-				if (EpubLinkService.normalizeCfi(arr[i]?.cfiRange) === nCfi) {
-					arr[i] = { ...arr[i], ...patch };
-					changed = true;
-					break;
-				}
-			}
-			if (changed) {
-				await saveInlineHighlights(arr);
-			}
+			if (!highlightMutationQueue) return;
+			await highlightMutationQueue.enqueue((items) =>
+				applyHighlightMutations(items, [
+					{ type: 'patch', cfiRange, patch: patch as any },
+				]).items
+			);
 		} catch (_e) {}
 	}
 
@@ -2413,19 +2487,22 @@
 		options?: { quiet?: boolean }
 	): Promise<boolean> {
 		const quiet = options?.quiet === true;
-		/* Always allow */ 
-	const inline = await findInlineHighlight(info.cfiRange);
-	if (inline) {
-		await saveInlineHighlights(inline.arr.filter((_, i) => i !== inline.idx));
+		/* Always allow */
+		// 删除入队（remove 按归一化 key 移除全部匹配）：不在队列外另做读改写，
+		// 与创建/改色等并发变更由队列串行化，杜绝整组读改写覆盖与连坐删除。
+		if (highlightMutationQueue) {
+			await highlightMutationQueue.enqueue((items) =>
+				applyHighlightMutations(items, [{ type: 'remove', cfiRange: info.cfiRange }]).items
+			);
+		}
+		readerService.removeHighlight(info.cfiRange);
+		highlightToolbarInfo = null;
+		if (!quiet) {
+			new Notice('高亮已删除');
+		}
+		// 刷新合并收敛到队列排干末尾的 onFlush（既有 reload 流程不变，此处不再单独 reload）。
+		return true;
 	}
-	readerService.removeHighlight(info.cfiRange);
-	highlightToolbarInfo = null;
-	if (!quiet) {
-		new Notice('高亮已删除');
-	}
-	void reloadHighlights();
-	return true;
-}
 
 	async function deleteDisplayHighlight(highlight: EpubDisplayHighlight, quiet = false): Promise<boolean> {
 		return handleHighlightDelete(buildHighlightClickInfoFromDisplay(highlight), { quiet });
@@ -2450,7 +2527,6 @@
 			presentation: 'highlight',
 		});
 		highlightToolbarInfo = null;
-		void reloadHighlights();
 	}
 
 	async function handleHighlightChangeStyle(
@@ -2473,11 +2549,14 @@
 			presentation: 'highlight',
 		});
 		highlightToolbarInfo = null;
-		void reloadHighlights();
 	}
 
 		function handleHighlightEditComment(info: HighlightClickInfo) {
 		openCommentEditor(info);
+	}
+
+	function handleHighlightAppendComment(info: HighlightClickInfo) {
+		openCommentEditor(info, 'append');
 	}
 
 	async function saveHighlightComment() {
@@ -2489,10 +2568,20 @@
 		const draft = commentEditorDraft;
 		commentEditorSaving = true;
 		try {
-			const inline = await findInlineHighlight(info.cfiRange);
-			if (inline) {
-				inline.item.commentText = commentEditorDraft;
-				await saveInlineHighlights(inline.arr);
+			// 追加模式空草稿 = no-op：不写存储、不动单槽（追加语义下空输入不该清掉既有想法），
+			// 仅关闭编辑器；编辑模式空草稿仍是既有的「清空剥离」语义。
+			if (commentEditorMode === 'append' && !String(draft || '').trim()) {
+				closeCommentEditor();
+				return;
+			}
+			// 想法持久化：入队 patch（只改 commentText，其它存储字段原样保留——与既有
+			// 「读→就地改→整组写」等价；记录缺失时 patch 为空操作，同原 if(inline) 行为）。
+			if (book?.id && highlightMutationQueue) {
+				await highlightMutationQueue.enqueue((items) =>
+					applyHighlightMutations(items, [
+						{ type: 'patch', cfiRange: info.cfiRange, patch: { commentText: draft } as any },
+					]).items
+				);
 			}
 			readerService.addHighlight({
 				cfiRange: info.cfiRange,
@@ -2508,7 +2597,7 @@
 			});
 			new Notice('想法已保存');
 			closeCommentEditor();
-			void reloadHighlights();
+			// 刷新合并由队列排干末尾的 onFlush 统一执行，此处不再单独 reload。
 			await syncIdeaToNoteDocument(info, draft);
 		} finally {
 			commentEditorSaving = false;
@@ -2536,16 +2625,18 @@
 		const live = await findInlineHighlight(info.cfiRange);
 		const excerptId = String(info.excerptId || live?.item?.excerptId || '') || undefined;
 		const identity = { eid: excerptId, cfi: info.cfiRange };
-		const quoteBlock = buildNoteContent(info.text, info.cfiRange, info.color, info.style, true, excerptId);
+		// 想法块的原文走划线同款字色装饰：新建/合并的块内原文一律带彩词颜色（票 05 接线）。
+		const quoteBlock = buildNoteContent(decorateExcerptForOutput(info.text, info.cfiRange), info.cfiRange, info.color, info.style, true, excerptId);
 		const view = resolveActiveMarkdownView();
 		const doc = view?.editor?.getValue() ?? '';
 		const entry = { text: ideaText, timestamp: formatShortTimestamp(new Date()) };
 
 		let result: IdeaNoteResult | null = null;
-		if (commentEditorMode === 'create') {
+		if (commentEditorMode === 'create' || commentEditorMode === 'append') {
 			if (!trimmed) {
 				return;
 			}
+			// create / append 均走 upsert：首写建块、二次写入追加条目（appended）、相同 noop。
 			result = upsertIdeaEntry(doc, identity, entry, { quoteBlock });
 		} else {
 			// 编辑路径：清空 → 剥离最后一条；有内容 → 改写最后一条（相同则 noop）。
@@ -2564,7 +2655,13 @@
 		}
 		// 自动同步不移动光标（不打断当前写作位置），
 		// 故不复用会 setCursor 的追加式插入工具，直接应用变换补丁。
-		view.editor.replaceRange(result.patch.text, result.patch.from, result.patch.to);
+		// 同句去重时 extraPatches 坐标基于原文档，须按起点行号自后向前应用。
+		const patches = [result.patch, ...(result.extraPatches ?? [])].sort(
+			(a, b) => b.from.line - a.from.line
+		);
+		for (const patch of patches) {
+			view.editor.replaceRange(patch.text, patch.from, patch.to);
+		}
 		new Notice(result.outcome === 'stripped' ? '想法条目已从笔记中清除' : '想法已同步到笔记末尾');
 	}
 
@@ -2698,46 +2795,40 @@
 	}
 
 	/**
-	 * 字色标记持久化共用出口：整组合并进存储 → 更新宿主状态 → 应用到引擎。
-	 * 三个增删改 handler 共用同一「读→改→存→刷新」形状，收敛到一处。
-	 */
-	async function persistFontMarks(nextMarks: EpubStoredFontMark[]) {
-		if (!book?.id) return;
-		await storageService.saveBookFontMarks(book.id, nextMarks);
-		if (componentDisposed) return;
-		pendingLoadedFontMarks = nextMarks;
-		if (readerReady && readerService.applyFontMarks) {
-			await readerService.applyFontMarks(nextMarks);
-		}
-	}
-
-	/**
-	 * 创建字色标记：同 cfiRange 已存在则替换（改色语义），否则追加；
-	 * 落盘后整组应用到阅读器刷新书内渲染。字色标记不进笔记面板、不触发摘录输出。
+	 * 创建字色标记：构造 upsert 入队（同 cfiRange 已存在则替换——改色语义，否则追加），
+	 * 落盘与整组应用（刷新合并）由 per-book 队列串行完成。字色标记不进笔记面板、
+	 * 不触发摘录输出。
 	 */
 	async function handleCreateFontMark(text: string, cfiRange: string, color: FontMarkColorToken) {
 		const trimmedRange = String(cfiRange || '').trim();
-		if (!book?.id || !trimmedRange) return;
+		if (!trimmedRange) {
+			logger.warn('[EpubReaderApp] Font mark upsert skipped: empty cfiRange');
+			return;
+		}
+		if (!book?.id || !fontMarkMutationQueue) return;
 		try {
-			const existing = await storageService.loadBookFontMarks(book.id);
-			if (componentDisposed) return;
-			await persistFontMarks([
-				...existing.filter((mark) => mark.cfiRange !== trimmedRange),
-				{
-					id: generateBlockID(),
-					cfiRange: trimmedRange,
-					color,
-					text,
-					createdTime: Date.now(),
-				},
-			]);
+			// upsert 按归一化 key 折叠：与划线同款「同位置只留一条」，不再依赖严格相等去重。
+			await fontMarkMutationQueue.enqueue((items) =>
+				applyFontMarkMutations(items, [
+					{
+						type: 'upsert',
+						record: {
+							id: generateBlockID(),
+							cfiRange: trimmedRange,
+							color,
+							text,
+							createdTime: Date.now(),
+						},
+					},
+				]).items
+			);
 		} catch (_e) {
 			logger.warn('[EpubReaderApp] Failed to persist font mark:', _e);
 		}
 	}
 
 	/**
-	 * 字色标记换色（票 04）：同 cfiRange 改存储记录的 color，再走引擎的定点改色刷新；
+	 * 字色标记换色（票 04）：构造 patch 入队改存储记录的 color，再走引擎的定点改色刷新；
 	 * 不整组 applyFontMarks，避免无谓的全量重建。同色点击视为 noop（与划线换色一致）。
 	 */
 	async function handleChangeFontMarkColor(info: FontMarkClickInfo, color: FontMarkColorToken) {
@@ -2746,18 +2837,10 @@
 		if (!cfiRange || color === info.color) return;
 		fontMarkToolbarInfo = null;
 		try {
-			const existing = await storageService.loadBookFontMarks(book.id);
-			if (componentDisposed) return;
-			let changed = false;
-			const nextMarks = existing.map((mark) => {
-				if (mark.cfiRange !== cfiRange) return mark;
-				changed = true;
-				return { ...mark, color };
-			});
-			if (changed) {
-				await persistFontMarks(nextMarks);
-			} else {
-				pendingLoadedFontMarks = existing;
+			if (fontMarkMutationQueue) {
+				await fontMarkMutationQueue.enqueue((items) =>
+					applyFontMarkMutations(items, [{ type: 'patch', cfiRange, patch: { color } }]).items
+				);
 			}
 			if (typeof readerService.updateFontMarkColor === 'function') {
 				// 存储缺记录（此前落盘失败）时也照样改运行态：即时反馈优先，重开书才回退。
@@ -2768,20 +2851,20 @@
 		}
 	}
 
-	/** 字色标记删除（票 04）：从存储数组移除 + 引擎按 cfiRange 摘除书内渲染。 */
+	/** 字色标记删除（票 04）：remove 入队移除存储记录 + 引擎按 cfiRange 摘除书内渲染。 */
 	async function handleDeleteFontMark(info: FontMarkClickInfo) {
 		if (!book?.id) return;
 		const cfiRange = String(info.cfiRange || '').trim();
-		if (!cfiRange) return;
+		if (!cfiRange) {
+			logger.warn('[EpubReaderApp] Font mark remove skipped: empty cfiRange');
+			return;
+		}
 		fontMarkToolbarInfo = null;
 		try {
-			const existing = await storageService.loadBookFontMarks(book.id);
-			if (componentDisposed) return;
-			const nextMarks = existing.filter((mark) => mark.cfiRange !== cfiRange);
-			if (nextMarks.length !== existing.length) {
-				await persistFontMarks(nextMarks);
-			} else {
-				pendingLoadedFontMarks = existing;
+			if (fontMarkMutationQueue) {
+				await fontMarkMutationQueue.enqueue((items) =>
+					applyFontMarkMutations(items, [{ type: 'remove', cfiRange }]).items
+				);
 			}
 			if (typeof readerService.removeFontMark === 'function') {
 				// 存储缺记录时也摘除运行态渲染，避免留下「删不掉的幽灵颜色」。
@@ -3295,6 +3378,7 @@
 				onDeleteFontMark={(info) => void handleDeleteFontMark(info)}
 				onCopyText={handleHighlightCopyText}
 				onEditComment={handleHighlightEditComment}
+				onAppendComment={handleHighlightAppendComment}
 				onDismiss={() => {
 					highlightToolbarInfo = null;
 					fontMarkToolbarInfo = null;

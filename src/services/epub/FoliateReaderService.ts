@@ -2752,10 +2752,17 @@ export class FoliateReaderService implements EpubReaderEngine {
 						Array.from(this.fontMarksByCfiKey.values()),
 						(cfiRange) => this.parser.getSectionIndexForCfi(cfiRange)
 					)
-				: new Map<number, ReaderFontMark[]>();
+				: { grouped: new Map<number, ReaderFontMark[]>(), dropped: [] as ReaderFontMark[] };
+		// 不可静默：分组解析不出节索引的标记落日志（书内渲染失效的排查入口）。
+		if (sectionGroups.dropped.length) {
+			logger.warn(
+				`[FoliateReaderService] ${sectionGroups.dropped.length} font mark(s) skipped: section index unresolvable`,
+				sectionGroups.dropped.map((mark) => mark.cfiRange)
+			);
+		}
 		for (const frame of visibleFrames) {
 			try {
-				this.renderFontMarksInFrame(frame.index, frame.frameDocument, sectionGroups);
+				this.renderFontMarksInFrame(frame.index, frame.frameDocument, sectionGroups.grouped);
 			} catch (error) {
 				logger.warn("[FoliateReaderService] Failed to render font marks in frame:", error);
 			}
@@ -5536,12 +5543,24 @@ export class FoliateReaderService implements EpubReaderEngine {
 		highlight: ReaderHighlight,
 		frame: VisibleFrameWithIndex
 	): { rect: HighlightClickInfo["rect"]; rects?: HighlightClickInfo["rect"][] } | null {
-		const range = this.parser.resolveRangeInLoadedSection(
+		// 命中检测：CFI 精确解析优先；失败时以文本引述兜底找回命中（保证 CFI 失配的
+		// 划线仍可点击/删除，避免回归），兜底命中落 warn 日志——不静默误匹配。
+		let range = this.parser.resolveRangeInLoadedSection(
 			highlight.cfiRange,
 			frame.frameDocument,
-			frame.index,
-			String(highlight.text || "").trim() || undefined
+			frame.index
 		);
+		if (!range && String(highlight.text || '').trim()) {
+			logger.warn(
+				`[FoliateReaderService] Highlight CFI resolution failed, using text-hint fallback for hit-test: ${highlight.cfiRange}`
+			);
+			range = this.parser.resolveRangeInLoadedSection(
+				highlight.cfiRange,
+				frame.frameDocument,
+				frame.index,
+				String(highlight.text || '').trim()
+			);
+		}
 		if (!range) {
 			return null;
 		}
@@ -5570,13 +5589,29 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return null;
 		}
 
-		for (const highlight of this.collectHighlightsForSection(frame.index)) {
-			const highlightRange = this.parser.resolveRangeInLoadedSection(
+		// 与 findHighlightAtPointer 的方向一致（反向遍历）：叠加/相邻矩形命中时
+		// 优先「后添加」的标注，保证两次等效点击命中同一记录（确定性）。
+		const sectionHighlights = this.collectHighlightsForSection(frame.index);
+		for (let index = sectionHighlights.length - 1; index >= 0; index -= 1) {
+			const highlight = sectionHighlights[index];
+			// CFI 精确解析优先；失败时以文本引述兜底命中（保证 CFI 失配划线仍可
+			// 点击/删除），兜底命中落 warn 日志——不静默误匹配。
+			let highlightRange = this.parser.resolveRangeInLoadedSection(
 				highlight.cfiRange,
 				doc,
-				frame.index,
-				highlight.text
+				frame.index
 			);
+			if (!highlightRange && String(highlight.text || '').trim()) {
+				logger.warn(
+					`[FoliateReaderService] Highlight CFI resolution failed, using text-hint fallback for hit-test: ${highlight.cfiRange}`
+				);
+				highlightRange = this.parser.resolveRangeInLoadedSection(
+					highlight.cfiRange,
+					doc,
+					frame.index,
+					String(highlight.text || '').trim()
+				);
+			}
 			if (!highlightRange) {
 				continue;
 			}
