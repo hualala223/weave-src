@@ -141,12 +141,14 @@ export class ReaderAnnotationOverlayRenderer {
 			}
 			if (style === "underline") {
 				group.appendChild(createStraightLineOverlay(rect, strokeColor, rect.top + rect.height - 1.5));
+				drawn += 1;
 				continue;
 			}
 			if (style === "strikethrough") {
 				group.appendChild(
 					createStraightLineOverlay(rect, strokeColor, rect.top + rect.height * 0.58)
 				);
+				drawn += 1;
 				continue;
 			}
 			group.appendChild(createWavyLineOverlay(rect, strokeColor));
