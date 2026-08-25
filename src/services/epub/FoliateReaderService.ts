@@ -5349,8 +5349,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 	/**
 	 * 书内图片点击捕获监听（每个章节帧各挂一份）。
-	 * 命中 <img> 且不在链接内时，产出 ReaderImageTapInfo（CFI/章节/alt/宿主坐标矩形）
-	 * 并广播给宿主（浮出提取操作条）；链接内的图片交给 foliate 链接事件处理。
+	 * 命中 <img> 时，产出 ReaderImageTapInfo（CFI/章节/alt/宿主坐标矩形）
+	 * 并广播给宿主（浮出提取操作条）；链接内插图（EPUB 常见「点图看大图」）
+	 * 同样响应提取——capture 阶段 preventDefault 会拦下链接跳转。
 	 */
 	private attachImageTapListeners(doc: Document): void {
 		if (this.documentImageTapCleanups.has(doc)) {
@@ -5363,7 +5364,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 				return;
 			}
 			const img = target.closest("img") as HTMLImageElement | null;
-			if (!img || img.closest("a[href]")) {
+			if (!img) {
 				return;
 			}
 			const src = img.getAttribute("src") || "";
@@ -6941,7 +6942,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 			cleanup();
 		}
 		this.documentImageTapCleanups.clear();
-		this.imageTapCallbacks.clear();
+		// 注意：imageTapCallbacks（App 的 onImageTap 订阅集合）不在此清空——
+		// 它由 onImageTap 返回的 cleanup 管理，随 App 组件销毁而移除。
+		// 若在此清空，章节/视图重建后 App 订阅丢失、点图无回调（emitImageTap 空转）。
 		if (this.themeChangeCleanup) {
 			this.themeChangeCleanup();
 			this.themeChangeCleanup = null;
@@ -7009,6 +7012,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.selectionChangeCallbacks.clear();
 		this.highlightClickCallbacks.clear();
 		this.referenceBadgeClickCallbacks.clear();
+		this.imageTapCallbacks.clear();
 		this.tapZoneController.dispose();
 	}
 
