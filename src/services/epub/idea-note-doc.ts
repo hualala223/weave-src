@@ -323,3 +323,105 @@ export function upsertIdeaEntry(
 	const nextDoc = doc.slice(0, insertOffset) + patchText + doc.slice(insertOffset);
 	return { outcome: "appended", doc: nextDoc, patch: { from: at, to: at, text: patchText } };
 }
+
+/** 块内最后一个想法条目组的起始行（其前导空引用行的行号）；无条目返回 null。 */
+function lastEntryGroupStartLine(blockLines: string[]): number | null {
+	let labelIdx = -1;
+	for (let i = 0; i < blockLines.length; i += 1) {
+		if (IDEA_LABEL_LINE_RE.test(blockLines[i])) {
+			labelIdx = i;
+		}
+	}
+	if (labelIdx === -1) {
+		return null;
+	}
+	return labelIdx > 0 && blockLines[labelIdx - 1].trim() === ">" ? labelIdx - 1 : labelIdx;
+}
+
+function replaceBlockRange(
+	doc: string,
+	hit: { start: IdeaEditorPosition; end: IdeaEditorPosition },
+	lines: string[],
+	newBlockText: string,
+	outcome: "replaced" | "stripped"
+): IdeaNoteResult {
+	const from = { line: hit.start.line, ch: 0 };
+	const to = { line: hit.end.line, ch: lines[hit.end.line].length };
+	const fromOffset = offsetOf(doc, from);
+	const toOffset = offsetOf(doc, to);
+	return {
+		outcome,
+		doc: doc.slice(0, fromOffset) + newBlockText + doc.slice(toOffset),
+		patch: { from, to, text: newBlockText },
+	};
+}
+
+function entryTextOf(blockLines: string[], groupStartIdx: number): string {
+	const lines: string[] = [];
+	// groupStart 指向条目组的前导空引用行，其后一行是标签行，正文从再下一行开始。
+	for (let i = groupStartIdx + 2; i < blockLines.length; i += 1) {
+		if (!blockLines[i].trimStart().startsWith(">") || blockLines[i].trim() === ">") {
+			break;
+		}
+		lines.push(blockLines[i].replace(/^>\s?/, ""));
+	}
+	return lines.join("\n").trim();
+}
+
+/**
+ * 编辑语义：改写最后一条想法条目（含时间戳），历史条目与块头逐字不动。
+ * - 无条目块降级为追加（appended，需要 options.quoteBlock）；
+ * - 与最后一条内容相同 → noop。
+ */
+export function rewriteLastIdeaEntry(
+	doc: string,
+	identity: IdeaBlockIdentity,
+	entry: IdeaEntryInput,
+	options?: UpsertIdeaEntryOptions
+): IdeaNoteResult {
+	const hit = locateIdeaQuoteBlock(doc, identity);
+	if (!hit) {
+		return options
+			? appendBlockToDocEnd(doc, renderIdeaQuoteBlock(options.quoteBlock, [entry]))
+			: { outcome: "noop", doc };
+	}
+	const lines = doc.split("\n");
+	const blockLines = lines.slice(hit.start.line, hit.end.line + 1);
+	const groupStart = lastEntryGroupStartLine(blockLines);
+	if (groupStart === null) {
+		if (!options) {
+			return { outcome: "noop", doc };
+		}
+		return upsertIdeaEntry(doc, identity, entry, options);
+	}
+	const lastText = entryTextOf(blockLines, groupStart);
+	if (lastText === entry.text.trim()) {
+		return { outcome: "noop", doc };
+	}
+	const head = blockLines.slice(0, groupStart);
+	const newGroup = [">", ...renderEntryLines(entry)];
+	const newBlockText = [...head, ...newGroup].join("\n");
+	return replaceBlockRange(doc, hit, lines, newBlockText, "replaced");
+}
+
+/**
+ * 编辑语义：清空想法时剥离最后一条条目。
+ * - 剩余零条目 → 块退化为纯摘录块；无条目 → noop。
+ */
+export function stripLastIdeaEntry(
+	doc: string,
+	identity: IdeaBlockIdentity
+): IdeaNoteResult {
+	const hit = locateIdeaQuoteBlock(doc, identity);
+	if (!hit) {
+		return { outcome: "noop", doc };
+	}
+	const lines = doc.split("\n");
+	const blockLines = lines.slice(hit.start.line, hit.end.line + 1);
+	const groupStart = lastEntryGroupStartLine(blockLines);
+	if (groupStart === null) {
+		return { outcome: "noop", doc };
+	}
+	const newBlockText = blockLines.slice(0, groupStart).join("\n");
+	return replaceBlockRange(doc, hit, lines, newBlockText, "stripped");
+}

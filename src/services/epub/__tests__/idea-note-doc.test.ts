@@ -5,6 +5,8 @@ import {
 	locateIdeaQuoteBlock,
 	mergeIdeaInlineRewrite,
 	renderIdeaQuoteBlock,
+	rewriteLastIdeaEntry,
+	stripLastIdeaEntry,
 	upsertIdeaEntry,
 } from "../idea-note-doc";
 
@@ -217,5 +219,88 @@ describe("upsertIdeaEntry 追加语义（票02）", () => {
 		const lines = doc.split("\n");
 		expect(lines[blockEndLine]).toContain("A1");
 		expect(lines.slice(blockEndLine + 1)).toContain("结尾段落");
+	});
+});
+
+describe("rewriteLastIdeaEntry（票03：改写语义）", () => {
+	const docWith = (excerptId: string, entries: { text: string; timestamp?: string }[]) =>
+		["# 笔记", "", renderIdeaQuoteBlock(buildQuoteBlock(excerptId), entries).trimEnd(), ""].join("\n");
+
+	it("只改写最后一条条目，历史条目与块头逐字不动", () => {
+		const doc = docWith("eid-R", [
+			{ text: "A1", timestamp: "01-01 22:10" },
+			{ text: "A2", timestamp: "01-02 09:30" },
+		]);
+		const headerLine = doc.split("\n").find((l) => l.includes("[!EPUB"))!;
+		const result = rewriteLastIdeaEntry(doc, { eid: "eid-R" }, { text: "A2改", timestamp: "01-03 08:00" });
+		expect(result.outcome).toBe("replaced");
+		expect(result.doc).toBe(
+			docWith("eid-R", [
+				{ text: "A1", timestamp: "01-01 22:10" },
+				{ text: "A2改", timestamp: "01-03 08:00" },
+			])
+		);
+		// 块头（含旧时间戳）原样保留
+		expect(result.doc.split("\n")[2]).toBe(headerLine);
+	});
+
+	it("改写内容与最后一条相同时 no-op，一字不动", () => {
+		const doc = docWith("eid-N", [{ text: "A1", timestamp: "01-01 22:10" }]);
+		const result = rewriteLastIdeaEntry(doc, { eid: "eid-N" }, { text: "A1", timestamp: "01-02 09:30" });
+		expect(result.outcome).toBe("noop");
+		expect(result.doc).toBe(doc);
+		expect(result.patch).toBeUndefined();
+	});
+
+	it("块内尚无条目时降级为追加（appended）", () => {
+		const doc = ["# 笔记", "", buildQuoteBlock("eid-B").trimEnd(), ""].join("\n");
+		const result = rewriteLastIdeaEntry(doc, { eid: "eid-B" }, { text: "第一条", timestamp: "01-01 08:00" }, {
+			quoteBlock: buildQuoteBlock("eid-B"),
+		});
+		expect(result.outcome).toBe("appended");
+		expect(result.doc).toBe(docWith("eid-B", [{ text: "第一条", timestamp: "01-01 08:00" }]));
+	});
+
+	it("仅有 CFI 可匹配的历史块能被正确定位并改写", () => {
+		const doc = ["# 笔记", "", buildQuoteBlock(undefined).trimEnd(), ""].join("\n");
+		const result = rewriteLastIdeaEntry(
+			doc,
+			{ cfi: "epubcfi(/6/4!/4/2/2,/1:0,/2:5)" },
+			{ text: "给历史块补想法", timestamp: "02-01 10:00" },
+			{ quoteBlock: buildQuoteBlock(undefined) }
+		);
+		expect(result.outcome).toBe("appended");
+		expect(result.doc).toContain("**💡 想法：** 02-01 10:00");
+		expect(result.doc).toContain("给历史块补想法");
+	});
+});
+
+describe("stripLastIdeaEntry（票03：清空剥离语义）", () => {
+	const docWith = (excerptId: string, entries: { text: string; timestamp?: string }[]) =>
+		["# 笔记", "", renderIdeaQuoteBlock(buildQuoteBlock(excerptId), entries).trimEnd(), ""].join("\n");
+
+	it("多条想法时只剥掉最后一条，其余原样", () => {
+		const doc = docWith("eid-S2", [
+			{ text: "A1", timestamp: "01-01 22:10" },
+			{ text: "A2", timestamp: "01-02 09:30" },
+		]);
+		const result = stripLastIdeaEntry(doc, { eid: "eid-S2" });
+		expect(result.outcome).toBe("stripped");
+		expect(result.doc).toBe(docWith("eid-S2", [{ text: "A1", timestamp: "01-01 22:10" }]));
+	});
+
+	it("只剩一条时剥离后块退化为纯摘录块（无想法段）", () => {
+		const doc = docWith("eid-S1", [{ text: "A1", timestamp: "01-01 22:10" }]);
+		const result = stripLastIdeaEntry(doc, { eid: "eid-S1" });
+		expect(result.outcome).toBe("stripped");
+		expect(result.doc).toBe(["# 笔记", "", buildQuoteBlock("eid-S1").trimEnd(), ""].join("\n"));
+	});
+
+	it("块内没有条目时 no-op", () => {
+		const doc = ["# 笔记", "", buildQuoteBlock("eid-E").trimEnd(), ""].join("\n");
+		const result = stripLastIdeaEntry(doc, { eid: "eid-E" });
+		expect(result.outcome).toBe("noop");
+		expect(result.doc).toBe(doc);
+		expect(result.patch).toBeUndefined();
 	});
 });

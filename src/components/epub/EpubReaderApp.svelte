@@ -13,7 +13,15 @@
 	import { createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress } from '../../services/epub';
 	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderImageTapInfo, ReaderTapEvent, ReadingPosition } from '../../services/epub';
 	import { insertIntoMarkdownEditor, NO_EDITOR_MESSAGE } from '../../services/epub/note-editor-insert';
-	import { renderIdeaQuoteBlock, upsertIdeaEntry, mergeIdeaInlineRewrite, type IdeaMergedInlineRecord } from '../../services/epub/idea-note-doc';
+	import {
+	renderIdeaQuoteBlock,
+	upsertIdeaEntry,
+	mergeIdeaInlineRewrite,
+	rewriteLastIdeaEntry,
+	stripLastIdeaEntry,
+	type IdeaMergedInlineRecord,
+	type IdeaNoteResult,
+} from '../../services/epub/idea-note-doc';
 	import { extractImageToNote } from '../../services/epub/image-note-extractor';
 	import { DirectoryUtils } from '../../utils/directory-utils';
 	import { resolveConfiguredDataPath, resolveImageAttachmentRoot } from '../../config/paths';
@@ -2447,28 +2455,45 @@
 	}
 
 	/**
-	 * 想法入笔记（票01：创建路径首写）。
-	 * 把带 💡 条目的摘录块按 upsert 结果应用到最近激活的笔记文档末尾；
-	 * 无活动编辑器时兜底复制整块到剪贴板。编辑路径在票03 接入。
+	 * 想法入笔记（票03 起覆盖创建/编辑两路径）：
+	 * - 创建：首写建块 / 同句重写追加条目 / 相同 noop；
+	 * - 编辑：改写最后一条、清空剥离；
+	 * 应用到最近激活笔记文档；无活动编辑器时兜底复制块到剪贴板。
 	 */
 	async function syncIdeaToNoteDocument(info: HighlightClickInfo, ideaText: string) {
-		if (commentEditorMode !== 'create') {
+		if (excerptSettings.ideaAutoToNote === false) {
 			return;
 		}
-		if (!ideaText.trim() || excerptSettings.ideaAutoToNote === false) {
-			return;
-		}
-		const entry = { text: ideaText, timestamp: formatShortTimestamp(new Date()) };
+		const trimmed = ideaText.trim();
+		const identity = { eid: info.excerptId ? String(info.excerptId) : undefined, cfi: info.cfiRange };
 		const quoteBlock = buildNoteContent(info.text, info.cfiRange, info.color, info.style, true, info.excerptId);
 		const view = resolveActiveMarkdownView();
-		if (!view?.editor) {
-			await copyTextToClipboard(renderIdeaQuoteBlock(quoteBlock, [entry]));
-			new Notice('未找到活动的 Markdown 编辑器，已复制到剪贴板');
+		const doc = view?.editor?.getValue() ?? '';
+		const entry = { text: ideaText, timestamp: formatShortTimestamp(new Date()) };
+
+		let result: IdeaNoteResult | null = null;
+		if (commentEditorMode === 'create') {
+			if (!trimmed) {
+				return;
+			}
+			result = upsertIdeaEntry(doc, identity, entry, { quoteBlock });
+		} else {
+			// 编辑路径：清空 → 剥离最后一条；有内容 → 改写最后一条（相同则 noop）。
+			result = trimmed
+				? rewriteLastIdeaEntry(doc, identity, entry, { quoteBlock })
+				: stripLastIdeaEntry(doc, identity);
+		}
+
+		if (!result || result.outcome === 'noop' || !result.patch) {
 			return;
 		}
-		const identity = { eid: info.excerptId ? String(info.excerptId) : undefined, cfi: info.cfiRange };
-		const result = upsertIdeaEntry(view.editor.getValue(), identity, entry, { quoteBlock });
-		if (result.outcome === 'noop' || !result.patch) {
+		if (!view?.editor) {
+			await copyTextToClipboard(
+				commentEditorMode === 'create'
+					? renderIdeaQuoteBlock(quoteBlock, [entry])
+					: result.doc
+			);
+			new Notice('未找到活动的 Markdown 编辑器，已复制到剪贴板');
 			return;
 		}
 		view.editor.replaceRange(result.patch.text, result.patch.from, result.patch.to);
@@ -2476,7 +2501,7 @@
 			line: result.patch.from.line + result.patch.text.split('\n').length,
 			ch: 0,
 		});
-		new Notice('想法已同步到笔记末尾');
+		new Notice(result.outcome === 'stripped' ? '想法条目已从笔记中清除' : '想法已同步到笔记末尾');
 	}
 
 	async function handleHighlightCopyText(info: HighlightClickInfo) {
