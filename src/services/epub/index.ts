@@ -17,6 +17,8 @@ export type {
 	ReaderFrame,
 	ReaderHighlight,
 	ReaderHighlightInput,
+	ReaderImageBytes,
+	ReaderImageTapInfo,
 	ReaderParagraph,
 	ReaderParagraphLocation,
 	ReaderParagraphSelectionResolution,

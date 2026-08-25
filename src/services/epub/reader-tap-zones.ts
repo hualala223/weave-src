@@ -38,9 +38,9 @@ export const TAP_LONG_PRESS_MS = 500;
 export const TAP_MOVE_TOLERANCE_PX = 12;
 /** 该时间窗内出现过文字选区时，点按不翻页（避免「长按选词后点空白处收起工具条」误翻页）。 */
 export const TAP_RECENT_SELECTION_MS = 600;
-/** 命中这些元素时不触发翻页（链接/表单等交给原生行为与 foliate）。 */
+/** 命中这些元素时不触发翻页（链接/表单等交给原生行为与 foliate）；img 交给图片提取流程。 */
 export const TAP_INTERACTIVE_SELECTOR =
-	'a, button, input, textarea, select, summary, label, [contenteditable="true"], [role="button"], [role="link"]';
+	'a, button, input, textarea, select, summary, label, [contenteditable="true"], [role="button"], [role="link"], img';
 
 /**
  * 依据触点纵向位置解析翻页方向。

@@ -10,6 +10,8 @@ import type {
 	ReaderFrame,
 	ReaderHighlight,
 	ReaderHighlightInput,
+	ReaderImageBytes,
+	ReaderImageTapInfo,
 	ReaderNavigationRectOptions,
 	ReaderNavigateOptions,
 	ReaderParagraph,
@@ -113,6 +115,8 @@ import {
 } from "./scrolled-chapter-end";
 import { logger } from "../../utils/logger";
 import { domInstanceOf } from "../../utils/dom-instance-of";
+import { readRegisteredBlobAsArrayBuffer } from "../../utils/blob-url-registry";
+import { decodeDataUriToBytes } from "./image-src-utils";
 import { createSpanInOwnerDocument } from "../../utils/obsidian-document-dom";
 import {
 	sanitizeLegacyAuthorColorAttributes,
@@ -372,6 +376,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private documentHighlightClickCleanups = new Map<Document, () => void>();
 	private documentWheelCleanups = new Map<Document, () => void>();
 	private documentTapZoneCleanups = new Map<Document, () => void>();
+	private documentImageTapCleanups = new Map<Document, () => void>();
+	private imageTapCallbacks = new Set<(info: ReaderImageTapInfo) => void>();
 	private documentStyleElements = new WeakMap<Document, HTMLStyleElement>();
 	private loadedDocumentSectionIndexes = new WeakMap<Document, number>();
 	private lastSelectionByDocument = new WeakMap<Document, string>();
@@ -997,6 +1003,13 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 	getCurrentChapterTitle(): string {
 		return this.currentChapterTitle;
+	}
+
+	getSectionLocationLabelByIndex(
+		index: number,
+		format: EpubChapterLocationFormat = "leaf"
+	): string {
+		return this.parser.getSectionLocationLabelByIndex(index, format);
 	}
 
 	getChapterLocationLabel(format: EpubChapterLocationFormat = "leaf"): string {
@@ -1845,6 +1858,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.attachHighlightClickListeners(doc);
 		this.attachWheelListeners(doc);
 		this.attachTapZoneListeners(doc);
+		this.attachImageTapListeners(doc);
 		this.renderedAnnotations.clear();
 		this.lastSyncedVisibleSectionKey = "";
 		this.schedulePaginatedLayoutRecovery(true);
@@ -5333,6 +5347,128 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.documentTapZoneCleanups.set(doc, cleanup);
 	}
 
+	/**
+	 * 书内图片点击捕获监听（每个章节帧各挂一份）。
+	 * 命中 <img> 且不在链接内时，产出 ReaderImageTapInfo（CFI/章节/alt/宿主坐标矩形）
+	 * 并广播给宿主（浮出提取操作条）；链接内的图片交给 foliate 链接事件处理。
+	 */
+	private attachImageTapListeners(doc: Document): void {
+		if (this.documentImageTapCleanups.has(doc)) {
+			return;
+		}
+
+		const onImageClick = (event: Event) => {
+			const target = event.target as Element | null;
+			if (!target || typeof target.closest !== "function") {
+				return;
+			}
+			const img = target.closest("img") as HTMLImageElement | null;
+			if (!img || img.closest("a[href]")) {
+				return;
+			}
+			const src = img.getAttribute("src") || "";
+			if (!src) {
+				return;
+			}
+			const index =
+				this.loadedDocumentSectionIndexes.get(doc) ?? this.currentPosition.chapterIndex;
+
+			let cfi: string | null = null;
+			try {
+				const range = doc.createRange();
+				range.selectNode(img);
+				cfi = this.parser.createCfiFromRange(index, range);
+			} catch (error) {
+				logger.warn("[FoliateReaderService] Failed to build image CFI:", { index, error });
+			}
+			if (!cfi) {
+				return;
+			}
+
+			const frameElement = (doc.defaultView?.frameElement as HTMLElement | null) || null;
+			const imgRect = img.getBoundingClientRect();
+			const frameRect = frameElement?.getBoundingClientRect();
+			const rect = frameRect
+				? {
+						top: frameRect.top + imgRect.top,
+						left: frameRect.left + imgRect.left,
+						bottom: frameRect.top + imgRect.bottom,
+						right: frameRect.left + imgRect.right,
+						width: imgRect.width,
+						height: imgRect.height,
+					}
+				: {
+						top: imgRect.top,
+						left: imgRect.left,
+						bottom: imgRect.bottom,
+						right: imgRect.right,
+						width: imgRect.width,
+						height: imgRect.height,
+					};
+
+			event.preventDefault();
+			event.stopPropagation();
+			this.emitImageTap({
+				src,
+				cfi,
+				chapterIndex: index,
+				chapterTitle: this.parser.getSectionTitleByIndex(index),
+				chapterHref: this.parser.getSectionHrefByIndex(index),
+				alt: img.getAttribute("alt") || undefined,
+				rect,
+			});
+		};
+
+		doc.addEventListener("click", onImageClick, true);
+		const cleanup = () => {
+			doc.removeEventListener("click", onImageClick, true);
+		};
+		this.documentImageTapCleanups.set(doc, cleanup);
+	}
+
+	private emitImageTap(info: ReaderImageTapInfo): void {
+		for (const callback of this.imageTapCallbacks) {
+			try {
+				callback(info);
+			} catch (error) {
+				logger.warn("[FoliateReaderService] Image tap callback failed:", error);
+			}
+		}
+	}
+
+	onImageTap(callback: (info: ReaderImageTapInfo) => void): () => void {
+		this.imageTapCallbacks.add(callback);
+		return () => {
+			this.imageTapCallbacks.delete(callback);
+		};
+	}
+
+	/**
+	 * 解析点击图片的原始字节：
+	 * 1. data: URI 直接解码（渲染层内联产物 = 档案原始字节，1:1）；
+	 * 2. blob: 走 blob 登记表读取；
+	 * 3. 相对/绝对引用按章节 href 解析后从档案读取（EPUB）。
+	 * 全部失败返回 null。
+	 */
+	async resolveImageBytes(src: string, chapterHref: string): Promise<ReaderImageBytes | null> {
+		try {
+			const data = decodeDataUriToBytes(src);
+			if (data) {
+				return data;
+			}
+			if (src.startsWith("blob:")) {
+				const fromRegistry = await readRegisteredBlobAsArrayBuffer(src);
+				return fromRegistry;
+			}
+			const resolved = chapterHref ? this.parser.resolveHrefAgainst(chapterHref, src) : src;
+			const fromArchive = await this.parser.readImageBytesByHref(resolved);
+			return fromArchive;
+		} catch (error) {
+			logger.warn("[FoliateReaderService] Failed to capture image bytes:", { src, error });
+			return null;
+		}
+	}
+
 	/** 点按翻页区域：命中高亮/划线覆盖物时不翻页（交给高亮工具条处理）。 */
 	private isTapZoneBlockedByContent(
 		point: { x: number; y: number },
@@ -6801,6 +6937,11 @@ export class FoliateReaderService implements EpubReaderEngine {
 			cleanup();
 		}
 		this.documentTapZoneCleanups.clear();
+		for (const cleanup of this.documentImageTapCleanups.values()) {
+			cleanup();
+		}
+		this.documentImageTapCleanups.clear();
+		this.imageTapCallbacks.clear();
 		if (this.themeChangeCleanup) {
 			this.themeChangeCleanup();
 			this.themeChangeCleanup = null;

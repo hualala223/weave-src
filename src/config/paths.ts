@@ -607,3 +607,11 @@ export function resolveDataCacheDir(dataPath?: string): string {
 export function resolveDataBackupsDir(dataPath?: string): string {
 	return normalizePath(`${normalizeDataPath(dataPath)}/backups`);
 }
+
+/**
+ * 图片附件根目录（vault 相对路径）：与数据目录同级，默认 <CONFIG>/asset。
+ * 通过 normalizeDataPath 推导，避免在功能模块中硬编码 CONFIG 根。
+ */
+export function resolveImageAttachmentRoot(dataPath?: string): string {
+	return normalizePath(`${normalizeDataPath(dataPath)}/../asset`);
+}

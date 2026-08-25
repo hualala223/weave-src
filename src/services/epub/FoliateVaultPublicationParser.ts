@@ -29,7 +29,11 @@ import {
 	resolveChapterLocationLabel,
 } from "../../utils/epub-chapter-location-label";
 import { tocHrefBasename } from "../../utils/epub-toc-reading-position";
-import type { EpubBookFootnoteEntry, EpubBookFootnotesDraft } from "./reader-engine-types";
+import type {
+	EpubBookFootnoteEntry,
+	EpubBookFootnotesDraft,
+	ReaderImageBytes,
+} from "./reader-engine-types";
 
 const EPUB_OPS_NAMESPACE = "http://www.idpf.org/2007/ops";
 const POSITION_CHAR_BUCKET = 1800;
@@ -420,6 +424,36 @@ export class FoliateVaultPublicationParser {
 
 	resolveHrefAgainst(baseHref: string, rawHref: string): string {
 		return this.normalizeInternalHref(baseHref, rawHref);
+	}
+
+	/**
+	 * 按档案 href 读取图片原字节（EPUB 内存档案直读路径）。
+	 * 非 EPUB（archive 为空）或条目不存在时返回 null。
+	 */
+	public async readImageBytesByHref(href: string): Promise<ReaderImageBytes | null> {
+		if (!href) {
+			return null;
+		}
+		const entry = this.findArchiveEntry(this.normalizeSectionHref(href));
+		if (!entry) {
+			return null;
+		}
+		try {
+			const bytes = await entry.async("uint8array");
+			if (!bytes || bytes.length === 0) {
+				return null;
+			}
+			return {
+				bytes,
+				mimeType: this.inferMimeType(href) || "application/octet-stream",
+			};
+		} catch (error) {
+			logger.warn("[FoliateVaultPublicationParser] Failed to read image bytes:", {
+				href,
+				error,
+			});
+			return null;
+		}
 	}
 
 

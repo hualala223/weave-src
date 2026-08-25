@@ -153,6 +153,27 @@ export interface ReaderSelectionChange {
 	frame: ReaderFrame;
 }
 
+/** 书内图片点击信息（来源：渲染 DOM 的 <img>）。 */
+export interface ReaderImageTapInfo {
+	/** 渲染层图片源的原始引用（data:/blob:/相对路径）。 */
+	src: string;
+	/** 图片元素在章节内的 CFI。 */
+	cfi: string;
+	chapterIndex: number;
+	chapterTitle: string;
+	/** 章节档案 href（用于相对引用解析）。 */
+	chapterHref: string;
+	alt?: string;
+	/** 宿主文档坐标系中的图片矩形（用于定位提取操作条）。 */
+	rect: ReaderViewportRect;
+}
+
+/** 图片原始字节（从档案/渲染源解析）。 */
+export interface ReaderImageBytes {
+	bytes: Uint8Array;
+	mimeType: string;
+}
+
 export interface ReaderParagraph {
 	id: string;
 	chapterIndex: number;
@@ -229,6 +250,15 @@ export interface EpubReaderEngine {
 	onReaderTap?(callback: (event: ReaderTapEvent) => void): () => void;
 	/** 订阅阅读内容双指轻点事件（切换全屏用）。 */
 	onReaderTwoFingerTap?(callback: (event: ReaderTwoFingerTapEvent) => void): () => void;
+	/** 订阅书内图片点击（点图浮出提取操作条用）。 */
+	onImageTap?(callback: (info: ReaderImageTapInfo) => void): () => void;
+	/** 给定点击图片的 src（data:/blob:/相对路径）解析原图字节；失败返回 null。 */
+	resolveImageBytes?(src: string, chapterHref: string): Promise<ReaderImageBytes | null>;
+	/** 指定章节的定位标签（遵循章节标签格式设置，如 root/leaf/full）。 */
+	getSectionLocationLabelByIndex?(
+		index: number,
+		format?: EpubChapterLocationFormat
+	): string;
 	setLayoutMode(
 		mode: EpubLayoutMode,
 		flowMode: EpubFlowMode,

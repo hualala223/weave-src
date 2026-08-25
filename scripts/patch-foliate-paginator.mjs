@@ -354,7 +354,7 @@ function patchExpandSelectionGuard() {
 		return false;
 	}
 
-	const source = fs.readFileSync(paginatorPath, "utf8");
+	let source = fs.readFileSync(paginatorPath, "utf8");
 	if (source.includes(EXPAND_SELECTION_GUARD_MARKER)) {
 		return false;
 	}

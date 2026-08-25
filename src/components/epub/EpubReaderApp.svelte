@@ -11,7 +11,12 @@
 	import EpubCommentEditorPopover from './EpubCommentEditorPopover.svelte';
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
 	import { createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress } from '../../services/epub';
-	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderTapEvent, ReadingPosition } from '../../services/epub';
+	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderImageTapInfo, ReaderTapEvent, ReadingPosition } from '../../services/epub';
+	import { insertIntoMarkdownEditor, NO_EDITOR_MESSAGE } from '../../services/epub/note-editor-insert';
+	import { extractImageToNote } from '../../services/epub/image-note-extractor';
+	import { DirectoryUtils } from '../../utils/directory-utils';
+	import { resolveConfiguredDataPath, resolveImageAttachmentRoot } from '../../config/paths';
+	import ImageExtractActionBar from './ImageExtractActionBar.svelte';
 	import { getBookFormatDisplayLabel, isSupportedBookFile } from '../../services/epub/book-format';
 	import { EpubBookmarkService } from '../../services/epub/EpubBookmarkService';
 	import {
@@ -195,6 +200,9 @@
 	let commentEditorInfo = $state<HighlightClickInfo | null>(null);
 	let aiPanelInfo = $state<{ text: string; cfiRange: string } | null>(null);
 	let footnotePreviewInfo = $state<ReaderFootnotePreviewInfo | null>(null);
+	let imageTapInfo = $state<ReaderImageTapInfo | null>(null);
+	let imageExtracting = $state(false);
+	let imageTapCleanup: (() => void) | null = null;
 	let commentEditorDraft = $state('');
 	let commentEditorSaving = $state(false);
 	let highlightDeleting = $state(false);
@@ -1809,23 +1817,18 @@
 		return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 	}
 
-	function insertToEditor(content: string): string | null {
+	function resolveActiveMarkdownView(): MarkdownView | null {
 		const leaf = getLastActiveMarkdownLeaf?.();
-		if (!leaf) {
-			new Notice('未找到活动的 Markdown 编辑器');
-			return null;
-		}
-		const view = leaf.view;
-		if (!(view instanceof MarkdownView) || !view.editor) {
-			new Notice('未找到活动的 Markdown 编辑器');
-			return null;
-		}
-		const editor = view.editor;
-		const cursor = editor.getCursor();
-		editor.replaceRange(content + '\n', cursor);
-		const lines = content.split('\n').length;
-		editor.setCursor({ line: cursor.line + lines, ch: 0 });
-		return view.file?.path || null;
+		const view = leaf?.view;
+		return view instanceof MarkdownView ? view : null;
+	}
+
+	function insertToEditor(content: string): string | null {
+		const result = insertIntoMarkdownEditor(content, 'cursor', {
+			resolveMarkdownView: resolveActiveMarkdownView,
+			notify: (message) => new Notice(message),
+		});
+		return result.ok ? result.filePath : null;
 	}
 
 	function insertToEditorAndTrack(content: string) {
@@ -1859,6 +1862,102 @@
 	) {
 		outputNote(text, cfiRange, color, style);
 		void persistInlineHighlight(cfiRange, text, color, style);
+	}
+
+	function resolveBookDisplayTitle(): string {
+		const metaTitle = book?.metadata.title?.trim();
+		if (metaTitle) {
+			return metaTitle;
+		}
+		const base = filePath.slice(Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\')) + 1);
+		return base.replace(/\.[^.]+$/, '') || 'book';
+	}
+
+	async function handleExtractImage() {
+		const info = imageTapInfo;
+		if (!info || !book) {
+			return;
+		}
+		// 先确认有打开的 MD 笔记文档，避免写了附件却无处插入（无副作用原则）。
+		if (!resolveActiveMarkdownView()) {
+			new Notice(NO_EDITOR_MESSAGE);
+			return;
+		}
+		imageExtracting = true;
+		try {
+			const source = await readerService.resolveImageBytes?.(info.src, info.chapterHref);
+			if (!source || !source.bytes?.length) {
+				new Notice('无法读取该图片的原始数据');
+				return;
+			}
+			// 章节标签遵循「章节标签格式」设置（root/leaf/full），与被点击章节对应而非当前章节。
+			const chapterTitle =
+				typeof readerService.getSectionLocationLabelByIndex === 'function'
+					? readerService.getSectionLocationLabelByIndex(
+							info.chapterIndex,
+							excerptSettings.chapterLocationFormat ?? 'leaf'
+						) || info.chapterTitle
+					: info.chapterTitle;
+			const adapter = app.vault.adapter;
+			const result = await extractImageToNote(
+				{
+					bookTitle: resolveBookDisplayTitle(),
+					chapterIndex: info.chapterIndex,
+					chapterTitle,
+					chapterLabelMaxLength: resolveExcerptChapterLabelMaxLength(),
+					cfi: info.cfi,
+					alt: info.alt,
+					timestamp: excerptSettings.addCreationTime
+						? formatTimestamp(new Date())
+						: undefined,
+				},
+				source,
+				{
+					attachmentRoot: resolveImageAttachmentRoot(resolveConfiguredDataPath(app)),
+					ensureDir: (dir) => DirectoryUtils.ensureDirRecursive(adapter, dir),
+					pathExists: (path) => adapter.exists(path),
+					writeBinary: (path, bytes) => {
+						const buffer = bytes.buffer.slice(
+							bytes.byteOffset,
+							bytes.byteOffset + bytes.byteLength
+						) as ArrayBuffer;
+						return adapter.writeBinary(path, buffer);
+					},
+					buildDeepLink: ({ cfi, chapterIndex, chapterTitle }) =>
+						linkService.buildEpubLink(
+							filePath,
+							cfi,
+							'',
+							chapterIndex,
+							chapterTitle,
+							undefined,
+							book?.sourceId,
+							undefined,
+							{ preferCompactLocator: true }
+						),
+				}
+			);
+			const inserted = insertIntoMarkdownEditor(result.block, 'end', {
+				resolveMarkdownView: resolveActiveMarkdownView,
+				notify: (message) => new Notice(message),
+			});
+			if (inserted.ok) {
+				new Notice(`已提取图片 ${result.attachmentName} 到笔记末尾`);
+			} else {
+				// 插入失败（如编辑器在写入期间被关闭）：回滚刚写入的附件，保持「无副作用」。
+				try {
+					await adapter.remove(result.attachmentPath);
+				} catch (_rollbackError) {
+					// 回滚失败不阻断提示；附件残留由用户自行清理（见 Q9a 不自动清理）。
+				}
+			}
+		} catch (error) {
+			logger.warn('[EpubReaderApp] Failed to extract image to note:', error);
+			new Notice('图片提取失败');
+		} finally {
+			imageExtracting = false;
+			imageTapInfo = null;
+		}
 	}
 
 	/** v2：读取当前书的高亮记录（books[id].notes.highlights）。 */
@@ -2027,6 +2126,22 @@
 			}
 			closeCommentEditor();
 			highlightToolbarInfo = info;
+		});
+	}
+
+	function setupImageTapHandler() {
+		imageTapCleanup?.();
+		imageTapCleanup = null;
+		if (typeof readerService.onImageTap !== 'function') {
+			return;
+		}
+		imageTapCleanup = readerService.onImageTap((info: ReaderImageTapInfo) => {
+			if (!readerReady) {
+				return;
+			}
+			footnotePreviewInfo = null;
+			highlightToolbarInfo = null;
+			imageTapInfo = info;
 		});
 	}
 
@@ -2552,6 +2667,7 @@
 		flushPendingLocateFromProps();
 
 		setupHighlightClickHandler();
+		setupImageTapHandler();
 		setupFootnotePreviewHandler();
 		trackHighlightSourceChanges();
 		setupScrolledChapterEndHandler();
@@ -2633,6 +2749,8 @@
 			sourceLocateOverlay.clear();
 			scrolledChapterEndCleanup?.();
 			scrolledChapterEndCleanup = null;
+			imageTapCleanup?.();
+			imageTapCleanup = null;
 			readerService.setBookEndAdvanceHandler?.(null);
 			void persistCurrentReadingProgress(book).then((saved) => {
 				if (saved) {
@@ -2656,6 +2774,14 @@
 			window.removeEventListener('mousedown', handleTypographyPointerDownOutside);
 			document.body.classList.remove('weave-epub-fullscreen');
 		};
+	});
+
+	$effect(() => {
+		const _readerVersion = readerVersion;
+		void _readerVersion;
+		untrack(() => {
+			imageTapInfo = null;
+		});
 	});
 
 	$effect(() => {
@@ -2908,6 +3034,14 @@
 				onCommentCreate={handleCommentCreateOnSelection}
 				onCopyTraceLink={handleCopyTraceSelection}
 				onOpenAI={handleOpenAI}
+			/>
+
+			<ImageExtractActionBar
+				info={imageTapInfo}
+				boundsEl={viewportEl}
+				extracting={imageExtracting}
+				onExtract={() => void handleExtractImage()}
+				onDismiss={() => imageTapInfo = null}
 			/>
 
 			<EpubAIPanel
