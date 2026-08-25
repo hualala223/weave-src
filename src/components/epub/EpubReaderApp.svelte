@@ -1824,8 +1824,10 @@
 		);
 	}
 
+	const pad2 = (value: number) => String(value).padStart(2, '0');
+
 	function formatTimestamp(date: Date): string {
-		return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+		return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 	}
 
 	function resolveActiveMarkdownView(): MarkdownView | null {
@@ -1835,8 +1837,7 @@
 	}
 
 	function insertToEditor(content: string): string | null {
-		// 自动插入固定追加到笔记文档末尾（规格：不再依赖光标位置）。
-		const result = insertIntoMarkdownEditor(content, 'end', {
+		const result = insertIntoMarkdownEditor(content, 'cursor', {
 			resolveMarkdownView: resolveActiveMarkdownView,
 			notify: (message) => new Notice(message),
 		});
@@ -2450,8 +2451,7 @@
 
 	/** 紧凑条目时间戳（月-日 时:分），独立于「摘录时间戳」设置。 */
 	function formatShortTimestamp(date: Date): string {
-		const pad = (value: number) => String(value).padStart(2, '0');
-		return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+		return `${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 	}
 
 	/**
@@ -2465,8 +2465,12 @@
 			return;
 		}
 		const trimmed = ideaText.trim();
-		const identity = { eid: info.excerptId ? String(info.excerptId) : undefined, cfi: info.cfiRange };
-		const quoteBlock = buildNoteContent(info.text, info.cfiRange, info.color, info.style, true, info.excerptId);
+		// 兜底：info 取自输入框打开的瞬间，那时引擎可能尚未写入新记录；
+		// 用持久化记录补齐真实 eid，保证块头深链携带稳定划线标识。
+		const live = await findInlineHighlight(info.cfiRange);
+		const excerptId = String(info.excerptId || live?.item?.excerptId || '') || undefined;
+		const identity = { eid: excerptId, cfi: info.cfiRange };
+		const quoteBlock = buildNoteContent(info.text, info.cfiRange, info.color, info.style, true, excerptId);
 		const view = resolveActiveMarkdownView();
 		const doc = view?.editor?.getValue() ?? '';
 		const entry = { text: ideaText, timestamp: formatShortTimestamp(new Date()) };
@@ -2488,19 +2492,13 @@
 			return;
 		}
 		if (!view?.editor) {
-			await copyTextToClipboard(
-				commentEditorMode === 'create'
-					? renderIdeaQuoteBlock(quoteBlock, [entry])
-					: result.doc
-			);
+			await copyTextToClipboard(result.block ?? renderIdeaQuoteBlock(quoteBlock, [entry]));
 			new Notice('未找到活动的 Markdown 编辑器，已复制到剪贴板');
 			return;
 		}
+		// 自动同步不移动光标（不打断当前写作位置），
+		// 故不复用会 setCursor 的追加式插入工具，直接应用变换补丁。
 		view.editor.replaceRange(result.patch.text, result.patch.from, result.patch.to);
-		view.editor.setCursor({
-			line: result.patch.from.line + result.patch.text.split('\n').length,
-			ch: 0,
-		});
 		new Notice(result.outcome === 'stripped' ? '想法条目已从笔记中清除' : '想法已同步到笔记末尾');
 	}
 
@@ -2537,8 +2535,10 @@
 	}
 
 	/** 创建状态「想法」：默认下划线标注并持久化，随即打开想法输入框。 */
-	function handleCommentCreateOnSelection(text: string, cfiRange: string, color: string) {
-		void persistInlineHighlight(cfiRange, text, color || 'yellow', 'underline');
+	async function handleCommentCreateOnSelection(text: string, cfiRange: string, color: string) {
+		// 先等待持久化完成，确保引擎已持有带真实 excerptId 的记录，
+		// 想法块深链因此携带稳定划线标识（而非随机 eid）。
+		await persistInlineHighlight(cfiRange, text, color || 'yellow', 'underline');
 		const info = readerService.getHighlightClickInfo?.(cfiRange) || {
 			cfiRange,
 			color: color || 'yellow',

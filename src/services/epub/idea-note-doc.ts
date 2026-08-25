@@ -14,6 +14,8 @@
 
 import { EpubLinkService } from "./EpubLinkService";
 import { generateBlockID } from "../identifier/WeaveIDGenerator";
+import type { ReaderHighlight } from "./reader-engine-types";
+import type { EpubHighlightStyle } from "./types";
 
 /** 条目标签（粗体内含图标），后接可选的紧凑时间戳。 */
 export const IDEA_ENTRY_LABEL = "**💡 想法：**";
@@ -42,6 +44,8 @@ export interface IdeaNoteResult {
 	outcome: IdeaNoteOutcome;
 	doc: string;
 	patch?: IdeaBlockPatch;
+	/** 同步后的完整块文本（无活动编辑器兜底复制用；created 必有，其余视路径）。 */
+	block?: string;
 }
 
 /** 块身份：深链中的稳定划线标识优先，无标识历史块用 CFI 兜底。 */
@@ -55,19 +59,14 @@ export interface IdeaInlineRewriteInput {
 	cfiRange: string;
 	text: string;
 	color?: string;
-	style?: string;
+	style?: EpubHighlightStyle;
 }
 
-/** 合并后的记录：沿用原身份与既有想法，更新文本/样式位。 */
-export interface IdeaMergedInlineRecord {
-	cfiRange: string;
-	text: string;
-	color: string;
-	style?: string;
-	commentText: string;
-	createdTime: number;
-	excerptId: string;
-}
+/** 合并后的记录：沿用原身份与既有想法，更新文本/样式位。复用划线记录的字段形状。 */
+export type IdeaMergedInlineRecord = Pick<
+	ReaderHighlight,
+	"cfiRange" | "text" | "color" | "style" | "commentText" | "createdTime" | "excerptId"
+>;
 
 /**
  * 同 CFI 重写合并规则（配套修复）：对同一句再次选字时，
@@ -88,11 +87,6 @@ export function mergeIdeaInlineRewrite(
 		createdTime: existing?.createdTime || now,
 		excerptId: existing?.excerptId || generateBlockID(),
 	};
-}
-
-interface LineSpan {
-	start: number;
-	end: number;
 }
 
 function decodeUriComponentSafe(value: string): string {
@@ -214,7 +208,7 @@ const IDEA_LABEL_LINE_RE = /^>\s*\*\*💡 想法：\*\*/;
  * 解析块内已存在的想法条目文本（按顺序）。空引用行（`>`）分隔条目，
  * 首个条目之前的空白引用行不计。无法识别的块视为无条目。
  */
-export function parseIdeaEntryTexts(blockText: string): string[] {
+function parseIdeaEntryTexts(blockText: string): string[] {
 	const entries: string[] = [];
 	let current: string[] | null = null;
 	const finalize = () => {
@@ -292,6 +286,13 @@ export interface UpsertIdeaEntryOptions {
 	quoteBlock: string;
 }
 
+/** 定位命中的块内最后一条想法文本；无条目返回空串。 */
+function currentLastIdeaText(lines: string[], hit: { start: IdeaEditorPosition; end: IdeaEditorPosition }): string {
+	const blockText = lines.slice(hit.start.line, hit.end.line + 1).join("\n");
+	const entries = parseIdeaEntryTexts(blockText);
+	return entries.length ? entries[entries.length - 1].trim() : "";
+}
+
 /**
  * 想法入笔记 upsert：按身份定位旧块。
  * - 找不到 → created：渲染带该条目的完整块追加到文档末尾；
@@ -306,22 +307,25 @@ export function upsertIdeaEntry(
 ): IdeaNoteResult {
 	const hit = locateIdeaQuoteBlock(doc, identity);
 	if (!hit) {
-		return appendBlockToDocEnd(doc, renderIdeaQuoteBlock(options.quoteBlock, [entry]));
+		const block = renderIdeaQuoteBlock(options.quoteBlock, [entry]);
+		return { ...appendBlockToDocEnd(doc, block), block };
 	}
 	const lines = doc.split("\n");
-	const blockText = lines.slice(hit.start.line, hit.end.line + 1).join("\n");
-	const existingEntries = parseIdeaEntryTexts(blockText);
-	const lastText = existingEntries.length
-		? existingEntries[existingEntries.length - 1].trim()
-		: "";
+	const lastText = currentLastIdeaText(lines, hit);
 	if (lastText === entry.text.trim()) {
 		return { outcome: "noop", doc };
 	}
+	const blockText = lines.slice(hit.start.line, hit.end.line + 1).join("\n");
 	const at = { line: hit.end.line, ch: lines[hit.end.line].length };
 	const insertOffset = offsetOf(doc, at);
 	const patchText = appendEntryPatchText(entry);
 	const nextDoc = doc.slice(0, insertOffset) + patchText + doc.slice(insertOffset);
-	return { outcome: "appended", doc: nextDoc, patch: { from: at, to: at, text: patchText } };
+	return {
+		outcome: "appended",
+		doc: nextDoc,
+		patch: { from: at, to: at, text: patchText },
+		block: blockText + patchText,
+	};
 }
 
 /** 块内最后一个想法条目组的起始行（其前导空引用行的行号）；无条目返回 null。 */
@@ -356,18 +360,6 @@ function replaceBlockRange(
 	};
 }
 
-function entryTextOf(blockLines: string[], groupStartIdx: number): string {
-	const lines: string[] = [];
-	// groupStart 指向条目组的前导空引用行，其后一行是标签行，正文从再下一行开始。
-	for (let i = groupStartIdx + 2; i < blockLines.length; i += 1) {
-		if (!blockLines[i].trimStart().startsWith(">") || blockLines[i].trim() === ">") {
-			break;
-		}
-		lines.push(blockLines[i].replace(/^>\s?/, ""));
-	}
-	return lines.join("\n").trim();
-}
-
 /**
  * 编辑语义：改写最后一条想法条目（含时间戳），历史条目与块头逐字不动。
  * - 无条目块降级为追加（appended，需要 options.quoteBlock）；
@@ -380,28 +372,22 @@ export function rewriteLastIdeaEntry(
 	options?: UpsertIdeaEntryOptions
 ): IdeaNoteResult {
 	const hit = locateIdeaQuoteBlock(doc, identity);
-	if (!hit) {
-		return options
-			? appendBlockToDocEnd(doc, renderIdeaQuoteBlock(options.quoteBlock, [entry]))
-			: { outcome: "noop", doc };
-	}
-	const lines = doc.split("\n");
-	const blockLines = lines.slice(hit.start.line, hit.end.line + 1);
-	const groupStart = lastEntryGroupStartLine(blockLines);
-	if (groupStart === null) {
+	if (!hit || lastEntryGroupStartLine(doc.split("\n").slice(hit.start.line, hit.end.line + 1)) === null) {
 		if (!options) {
 			return { outcome: "noop", doc };
 		}
 		return upsertIdeaEntry(doc, identity, entry, options);
 	}
-	const lastText = entryTextOf(blockLines, groupStart);
+	const lines = doc.split("\n");
+	const lastText = currentLastIdeaText(lines, hit);
 	if (lastText === entry.text.trim()) {
 		return { outcome: "noop", doc };
 	}
+	const blockLines = lines.slice(hit.start.line, hit.end.line + 1);
+	const groupStart = lastEntryGroupStartLine(blockLines)!;
 	const head = blockLines.slice(0, groupStart);
-	const newGroup = [">", ...renderEntryLines(entry)];
-	const newBlockText = [...head, ...newGroup].join("\n");
-	return replaceBlockRange(doc, hit, lines, newBlockText, "replaced");
+	const newBlockText = [...head, ">", ...renderEntryLines(entry)].join("\n");
+	return { ...replaceBlockRange(doc, hit, lines, newBlockText, "replaced"), block: newBlockText };
 }
 
 /**
@@ -423,5 +409,5 @@ export function stripLastIdeaEntry(
 		return { outcome: "noop", doc };
 	}
 	const newBlockText = blockLines.slice(0, groupStart).join("\n");
-	return replaceBlockRange(doc, hit, lines, newBlockText, "stripped");
+	return { ...replaceBlockRange(doc, hit, lines, newBlockText, "stripped"), block: newBlockText };
 }

@@ -19,6 +19,7 @@ import type {
 	ReadingStats,
 } from "./types";
 import type { EpubBookmarkRecord } from "./EpubBookmarkService";
+import { isFontMarkColorToken, type FontMarkColorToken } from "./font-mark-decoration";
 
 /** schema v2 版本号。 */
 export const WEAVE_DATA_SCHEMA_VERSION = 2;
@@ -34,7 +35,7 @@ export interface WeaveUiMemory {
 		chapterLocationFormat: "root" | "leaf" | "full";
 		strikethroughDisplayMode: "strikethrough";
 		showStrikethroughInSidebar: boolean;
-		ideaAutoToNote?: boolean;
+		ideaAutoToNote: boolean;
 	};
 }
 
@@ -87,10 +88,56 @@ export interface EpubStoredHighlight extends Highlight {
 	sourceRef?: string;
 }
 
+/**
+ * notes.fontMarks 的持久化记录：字色标记（Font mark）。
+ * 独立轻量标注——只染字色，不是划线的变体：不进笔记面板、不触发摘录输出。
+ */
+export interface EpubStoredFontMark {
+	id?: string;
+	cfiRange: string;
+	color: FontMarkColorToken;
+	text?: string;
+	createdTime?: number;
+}
+
 export interface EpubBookNotes {
 	bookmarks: EpubBookmarkRecord[];
 	highlights: EpubStoredHighlight[];
 	excerpts: Note[];
+	/** 字色标记（可选：旧聚合无此字段；持久化链路对未知字段原样透传）。 */
+	fontMarks?: EpubStoredFontMark[];
+}
+
+/**
+ * 字色标记的持久化兜底（纯函数）：丢弃缺 cfiRange、颜色 token 非法或非对象的项，
+ * 与划线保存路径「无 cfiRange 即丢弃」的行为对齐；坏数据不落盘、读取侧同样清洗。
+ */
+export function normalizeEpubStoredFontMarks(input: unknown): EpubStoredFontMark[] {
+	if (!Array.isArray(input)) {
+		return [];
+	}
+	const marks: EpubStoredFontMark[] = [];
+	for (const raw of input) {
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+			continue;
+		}
+		const candidate = raw as Partial<EpubStoredFontMark> & Record<string, unknown>;
+		const cfiRange = typeof candidate.cfiRange === "string" ? candidate.cfiRange.trim() : "";
+		if (!cfiRange || !isFontMarkColorToken(candidate.color)) {
+			continue;
+		}
+		marks.push({
+			id: typeof candidate.id === "string" && candidate.id ? candidate.id : undefined,
+			cfiRange,
+			color: candidate.color,
+			text: typeof candidate.text === "string" ? candidate.text : undefined,
+			createdTime:
+				typeof candidate.createdTime === "number" && Number.isFinite(candidate.createdTime)
+					? candidate.createdTime
+					: undefined,
+		});
+	}
+	return marks;
 }
 
 export interface EpubBookAudit {
