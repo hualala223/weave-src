@@ -249,6 +249,59 @@ describe("recoverFontMarkRange（三路共用标记 Range 找回）", () => {
 		});
 		expect(result).toBeNull();
 	});
+
+	it("宽松模式（书内渲染/点击）：短词节内多处出现 → 节内首个出现 Range（标了的词可见）", () => {
+		const doc = buildDoc("<p>晚上吃饭</p><p>晚上再说</p>");
+		const result = recoverFontMarkRange({
+			...BASE,
+			doc,
+			markSection: 0,
+			text: "晚上",
+			allowFirstOccurrenceFallback: true,
+			resolveRangeInDocument: () => null,
+		});
+		expect(result).not.toBeNull();
+		expect(result!.toString()).toBe("晚上");
+	});
+
+	it("宽松模式：长词（≥4 字）锚失败多处出现 → 节内首个出现 Range", () => {
+		const doc = buildDoc("<p>经济学原理很重要，经济学原理要反复读</p>");
+		const result = recoverFontMarkRange({
+			...BASE,
+			doc,
+			markSection: 0,
+			text: "经济学原理",
+			allowFirstOccurrenceFallback: true,
+			resolveRangeInDocument: () => null,
+		});
+		expect(result).not.toBeNull();
+		expect(result!.toString()).toBe("经济学原理");
+	});
+
+	it("宽松模式仍遵守同节证明：异节标记不参与首现兜底", () => {
+		const doc = buildDoc("<p>晚上吃饭</p><p>别处晚上</p>");
+		const result = recoverFontMarkRange({
+			...BASE,
+			doc,
+			markSection: 1, // 异节：无法证明归属
+			text: "晚上",
+			allowFirstOccurrenceFallback: true,
+			resolveRangeInDocument: () => null,
+		});
+		expect(result).toBeNull();
+	});
+
+	it("宽松模式默认关闭（导出保持严格）：多处出现的词锚失败 → 仍拒绝", () => {
+		const doc = buildDoc("<p>晚上吃饭</p><p>晚上再说</p>");
+		const result = recoverFontMarkRange({
+			...BASE,
+			doc,
+			markSection: 0,
+			text: "晚上",
+			resolveRangeInDocument: () => null,
+		});
+		expect(result).toBeNull();
+	});
 });
 
 describe("recoverExportFontMarkRanges（导出侧找回编排：划线基线 + 标记找回）", () => {

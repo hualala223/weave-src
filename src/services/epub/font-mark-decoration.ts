@@ -68,9 +68,14 @@ export interface FontMarkSegment {
 /**
  * 导出装饰编排：把「摘录文本 + 候选字色标记」统一为偏移切段。
  *
- * 对每个标记：
- * 1. 用宿主注入的 Range 解析（同章节 DOM 内）计算精确偏移；
- * 2. 解析失败或标记不在划线范围内（夹紧后无重叠）→ 跳过该标记，**不做字符串回退**。
+ * 对每个标记（同节候选已由调用方保证）：
+ * 1. 划线基线可解析时，用块感知偏移精确切段（Range 证明优先，严格包含性）；
+ * 2. 偏移切段失败（标记 Range 不可用/无重叠）**或基线本身解析失败**时，
+ *    回退「摘录内文本回退」：在摘录文本里找标记文本首现，找到即染——
+ *    用户标记过的词出现在所划句子中，染上它是预期行为（8/25 成功版语义，
+ *    票 08 修订恢复；ac3a3d8 的"基线失败即整体放弃"被证伪：用户主场景是
+ *    反复出现的主题词，CFI 常解析失败，整体放弃等于让句子里的词永远无色）；
+ * 3. 两级都失败则跳过该标记（无色纯文本降级，绝不阻塞导出）。
  *
  * 任何情况都不抛异常——字色只是增强。
  */
@@ -84,33 +89,29 @@ export function buildExcerptDecorationSegments(input: {
 	if (!text || !marks?.length) {
 		return [];
 	}
-	// 划线范围是整个引用的基线，一次解析供所有标记复用（同节约束已由调用方保证）。
-	const highlightRange = resolveRange(input.highlightCfiRange);
-	if (!highlightRange) {
-		return [];
-	}
-	// 块感知索引一次构建、所有标记复用：避免每个标记都重建全文档索引（O(n) 每标记）。
-	const index = buildBlockAwareIndex(highlightRange.startContainer.ownerDocument);
-	if (!index) {
-		return [];
-	}
 	const segments: FontMarkSegment[] = [];
+	// 划线基线（偏移计算的锚）：可解析则走块感知偏移；基线 CFI 解析失败不再
+	// 整体放弃——标记直接由摘录内文本回退定位（基线对回退不是前置条件）。
+	const highlightRange = resolveRange(input.highlightCfiRange);
+	const index = highlightRange
+		? buildBlockAwareIndex(highlightRange.startContainer.ownerDocument)
+		: null;
 	for (const mark of marks) {
 		if (!isFontMarkColorToken(mark.color)) {
 			continue;
 		}
-		const markRange = resolveRange(mark.cfiRange);
-		// 严格包含性：只认 Range 证明的包含关系。标记 Range 解析失败、或夹紧后与
-		// 划线无重叠（越界/异段）时，computeFontMarkOffsets 返回 null——此时一旦
-		// 回退字符串查找，就会把摘录里恰好同文的词染上颜色（真实用户数据已复现：
-		// 同章不同段的「经济学」标记把另一段摘录里的「经济学」染绿）。故此处
-		// 明确跳过，绝不用 mark.text 做兜底匹配。
-		const offsets = computeFontMarkOffsetsWithIndex(
-			index,
-			highlightRange,
-			markRange,
-			text.length
-		);
+		let offsets: { start: number; end: number } | null = null;
+		if (highlightRange && index) {
+			const markRange = resolveRange(mark.cfiRange);
+			// 严格包含性（偏移优先）：只认 Range 证明的偏移；无重叠/越界/解析失败
+			// 返回 null，才走下一级回退。
+			offsets = computeFontMarkOffsetsWithIndex(index, highlightRange, markRange, text.length);
+		}
+		// 摘录内文本回退（最后一级，同时覆盖基线失败场景）：
+		// 在摘录文本里找标记文本首现，找到即染。同节约束已由调用方保证。
+		if (!offsets && mark.text) {
+			offsets = findFontMarkByText(text, mark.text);
+		}
 		if (offsets) {
 			segments.push({ ...offsets, color: mark.color });
 		}

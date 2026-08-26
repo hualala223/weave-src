@@ -156,7 +156,7 @@ export function findUniqueShortWordRangeInSection(
 /**
  * 三路共用（书内渲染 / 摘录导出 / 点击命中）的标记 Range 找回。
  *
- * 迭代层级（spec「任何一步都坚持同节 + 唯一性」，票 08）：
+ * 迭代层级（票 08）：
  * 1. CFI 锚精确解析（无 hint）：CFI 证明的唯一位置，文本验证后直接信任——
  *    词的其它出现不影响（唯一性由 CFI 证明，不查节内出现次数）；
  * 2. 同节文本找回（仅当第 1 层失败）：把标记文本作为 hint 交给解析器引述找回。
@@ -166,7 +166,10 @@ export function findUniqueShortWordRangeInSection(
  *    若按文本全文搜索，会被钉到本帧首次出现的同文处，造成没标过的词被染色；
  * 3. 节内唯一短词兜底：1~3 字短词、可证明同节时，以「全节唯一出现」找回
  *    （唯一 = 无歧义，染它不可能错配到别的词；出现多次宁可不染）；
- * 4. 兜底出的 Range 再过一次文本验证闸。
+ * 4. 书内宽回退（仅渲染/点击，allowFirstOccurrenceFallback）：上述都失败时按
+ *    「节内首个出现」找回（不限词长/次数）——多出现的主题词（用户主场景）也
+ *    保证书内可见/可点；导出保持严格，宁可不染不错配；
+ * 5. Range 始终过文本验证闸。
  *
  * 解析器由调用方注入（可测），本函数只做找回编排。任何失败都不抛异常。
  */
@@ -182,6 +185,12 @@ export interface FontMarkRangeRecoveryInput {
 	text: string;
 	/** 注入的范围解析器（CFI 锚 + 文本引述）。 */
 	resolveRangeInDocument: (cfiRange: string, textHint?: string) => Range | null;
+	/**
+	 * 书内渲染/点击的宽松兜底（默认 false）：唯一兜底仍失败时，按节内「首个出现」
+	 * 找回 Range（不限词长/出现次数）——多出现的主题词也保证可见/可点。
+	 * 导出保持严格（宁可不染不错配），调用方不传此参数。
+	 */
+	allowFirstOccurrenceFallback?: boolean;
 }
 
 export function recoverFontMarkRange(input: FontMarkRangeRecoveryInput): Range | null {
@@ -234,6 +243,21 @@ export function recoverFontMarkRange(input: FontMarkRangeRecoveryInput): Range |
 		}
 	}
 
+	// ④ 书内宽回退（仅渲染/点击启用）：唯一兜底仍失败时按「节内首个出现」找回——
+	// 多出现的主题词（用户主场景）也保证书内可见/可点。导出不启用（默认关闭）。
+	if (
+		!range &&
+		trimmedText &&
+		sameSectionProven &&
+		input.allowFirstOccurrenceFallback === true
+	) {
+		try {
+			range = findFirstTextRangeInSection(doc, trimmedText);
+		} catch {
+			range = null;
+		}
+	}
+
 	// 兜底出的 Range 仍须过文本验证闸。
 	if (range && trimmedText && !resolvedRangeCoversHighlightText(range, text)) {
 		return null;
@@ -261,6 +285,43 @@ function countTextOccurrencesInSection(doc: Document | null, needle: string): nu
 		}
 	}
 	return count;
+}
+
+/**
+ * 节内按文本查找「首个出现」的 Range（不限词长、不限出现次数）。
+ *
+ * 书内渲染/点击的宽松兜底（票 08 修订）：CFI 锚与唯一性兜底都失败时，保证
+ * 「用户标过的词」至少有一处书内可见/可点——用户主场景是反复出现的主题词
+ * （「为什么」「晚上」这类短词，CFI 常解析失败且节内多次出现），唯一性约束
+ * 会让它们完全不可见。首个出现的约束比「全部出现」保守：染的是该词的某个
+ * 真实出现（词面正确），维持最小惊奇。
+ *
+ * 导出保持严格（不启用）：宁可不染不错配。任何异常返回 null，不抛异常。
+ */
+export function findFirstTextRangeInSection(doc: Document | null, word: string): Range | null {
+	if (!doc) {
+		return null;
+	}
+	const needle = String(word || "").trim();
+	if (!needle) {
+		return null;
+	}
+	const root = doc.body ?? doc.documentElement;
+	if (!root) {
+		return null;
+	}
+	const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+	while (walker.nextNode()) {
+		const textNode = walker.currentNode as Text;
+		const index = textNode.data.indexOf(needle);
+		if (index >= 0) {
+			const range = doc.createRange();
+			range.setStart(textNode, index);
+			range.setEnd(textNode, index + needle.length);
+			return range;
+		}
+	}
+	return null;
 }
 
 /**

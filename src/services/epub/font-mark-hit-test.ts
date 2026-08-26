@@ -60,6 +60,8 @@ export function buildFontMarkHitCandidates(
 			allowSectionTextHint: true,
 			cfiRange: mark.cfiRange,
 			text: mark.text || "",
+			// 书内宽回退：与渲染一致——多出现的主题词也保证可点选。
+			allowFirstOccurrenceFallback: true,
 			resolveRangeInDocument,
 		});
 		if (range) {

@@ -151,7 +151,7 @@ describe("buildFontMarkHitCandidates（点击候选构建：锚失败时短词�
 		expect(candidates[0].mark.cfiRange).toBe(MARK_CFI);
 	});
 
-	it("锚解析失败 + 短词出现多次（无法唯一判定）→ 该标记不进候选（点击不响应）", () => {
+	it("锚解析失败 + 短词出现多次：书内宽回退按首个出现进候选（用户可点选）", () => {
 		const doc = buildDoc("<p>经济学第一段</p><p>经济学第二段</p>");
 		const candidates = buildFontMarkHitCandidates({
 			doc,
@@ -160,10 +160,11 @@ describe("buildFontMarkHitCandidates（点击候选构建：锚失败时短词�
 			resolveSectionIndex: buildSectionResolver({ [MARK_CFI]: 0 }),
 			resolveRangeInDocument: () => null,
 		});
-		expect(candidates).toHaveLength(0);
+		expect(candidates).toHaveLength(1);
+		expect(candidates[0].range.toString()).toBe("经济学");
 	});
 
-	it("锚解析失败 + ≥4 字词（引述门槛不适用短词兜底）→ 不进候选", () => {
+	it("锚解析失败 + ≥4 字词：书内宽回退同样进候选（不限词长）", () => {
 		const doc = buildDoc("<p>这是一句足够长的引述文字</p>");
 		const candidates = buildFontMarkHitCandidates({
 			doc,
@@ -172,7 +173,8 @@ describe("buildFontMarkHitCandidates（点击候选构建：锚失败时短词�
 			resolveSectionIndex: buildSectionResolver({ [MARK_CFI]: 0 }),
 			resolveRangeInDocument: () => null,
 		});
-		expect(candidates).toHaveLength(0);
+		expect(candidates).toHaveLength(1);
+		expect(candidates[0].range.toString()).toBe("这是一句足够长");
 	});
 
 	it("异节标记（节号不同）不参与候选，即使其文本在本节唯一出现", () => {
@@ -229,7 +231,7 @@ describe("buildFontMarkHitCandidates（点击候选构建：锚失败时短词�
 		expect(candidates[0].range.toString()).toBe("经济学");
 	});
 
-	it("解析器抛异常 + 短词多次出现（无唯一判定）→ 不进候选，不冒泡", () => {
+	it("解析器抛异常 + 短词多次出现：视为解析失败，宽回退按首个出现进候选，不冒泡", () => {
 		const doc = buildDoc("<p>经济学第一段</p><p>经济学第二段</p>");
 		const candidates = buildFontMarkHitCandidates({
 			doc,
@@ -240,6 +242,7 @@ describe("buildFontMarkHitCandidates（点击候选构建：锚失败时短词�
 				throw new Error("boom");
 			},
 		});
-		expect(candidates).toHaveLength(0);
+		expect(candidates).toHaveLength(1);
+		expect(candidates[0].range.toString()).toBe("经济学");
 	});
 });

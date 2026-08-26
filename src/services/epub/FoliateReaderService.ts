@@ -2972,6 +2972,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 				allowSectionTextHint,
 				cfiRange: mark.cfiRange,
 				text: mark.text || "",
+				// 书内宽回退：多出现的主题词（用户主场景）也保证可见。
+				allowFirstOccurrenceFallback: true,
 				resolveRangeInDocument: (cfiRange, textHint) =>
 					this.parser.resolveRangeInLoadedSection(cfiRange, doc, sectionIndex, textHint),
 			});

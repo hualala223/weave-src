@@ -128,13 +128,16 @@ describe("buildExcerptDecorationSegments：真实选区回归下的导出编排"
 		expect(segments).toEqual([{ start: 3, end: 6, color: "red" }]);
 	});
 
-	it("同节不同段落的标记：文本出现在摘录中也不产生切段（不误染不变式）", () => {
+	it("同节不同段落的标记：文本出现在摘录中也染色——摘录内回退（8/25 成功版语义，票 08 修订）", () => {
 		const doc = buildDoc("<p>这是摘录段</p><p>经济学原理在另一段</p>");
 		const paragraphs = doc.body.querySelectorAll("p");
 		const highlight = rangeForParagraph(doc, 0, 0, 5);
+		// 同节异段标记：其文本「经济学」出现在摘录文本中时，经摘录内回退染色。
+		// （ac3a3d8 曾要求"绝不染色"；用户主场景——反复出现的主题词——实测
+		//  需要此回退，票 08 修订恢复之。CFI 证明仍优先，回退只是最后一级。）
 		const markRange = rangeForParagraph(doc, 1, 0, 3); // 「经济学」在第二段
 
-		const excerpt = "这是摘录段";
+		const excerpt = "这是摘录段经济学";
 		const segments = buildExcerptDecorationSegments({
 			text: excerpt,
 			highlightCfiRange: "epubcfi(/6/12!/4/8,/1:0,/1:6)",
@@ -143,6 +146,52 @@ describe("buildExcerptDecorationSegments：真实选区回归下的导出编排"
 				cfiRange.includes("/4/8") ? highlight : markRange,
 		});
 
-		expect(segments).toEqual([]);
+		expect(segments).toEqual([{ start: 5, end: 8, color: "green" }]);
+	});
+
+	it("划线基线 CFI 解析失败（highlight Range 为 null）且摘录含标记词 → 仍染色（回退兜底）", () => {
+		const doc = buildDoc("<p>这本书讲经济学原理</p>");
+		const markRange = rangeForParagraph(doc, 0, 4, 7); // 「经济学」
+		const excerpt = "这本书讲经济学原理";
+
+		const segments = buildExcerptDecorationSegments({
+			text: excerpt,
+			highlightCfiRange: "epubcfi(/6/12!/4/8)",
+			marks: [{ cfiRange: "epubcfi(/6/12!/4/8,/1:4,/1:7)", text: "经济学", color: "red" }],
+			// 划线基线解析必败（resolveRange 对 highlight 键返回 null）——基线不可用
+			// 不整体放弃：标记经摘录内文本回退染色。
+			resolveRange: (cfiRange: string) => null,
+		});
+
+		expect(segments).toEqual([{ start: 4, end: 7, color: "red" }]);
+	});
+
+	it("偏移失败但摘录含标记词 → 摘录内文本回退染色；摘录不含 → 跳过", () => {
+		const doc = buildDoc("<p>这是摘录段</p><p>另一段有经济学</p>");
+		const highlight = rangeForParagraph(doc, 0, 0, 5);
+		const foreignRange = rangeForParagraph(doc, 1, 4, 7); // 「经济学」在划线外
+
+		const excerpt = "这是摘录段经济学";
+		const segments = buildExcerptDecorationSegments({
+			text: excerpt,
+			highlightCfiRange: "epubcfi(/6/12!/4/8,/1:0,/1:6)",
+			marks: [{ cfiRange: "epubcfi(foreign)", text: "经济学", color: "red" }],
+			resolveRange: (cfiRange: string) =>
+				cfiRange.includes("/4/8") ? highlight : foreignRange,
+		});
+
+		// 标记 Range 在划线之外 → 偏移计算无重叠 → 字符串回退在摘录内找到「经济学」（偏移 5..8）→ 染色。
+		expect(segments).toEqual([{ start: 5, end: 8, color: "red" }]);
+
+		// 摘录不含该书内该词时：CFI 失败 + 回退失败 → 跳过（无色且不阻塞）。
+		const missingExcerpt = "这是摘录段";
+		const missingSegments = buildExcerptDecorationSegments({
+			text: missingExcerpt,
+			highlightCfiRange: "epubcfi(/6/12!/4/8,/1:0,/1:6)",
+			marks: [{ cfiRange: "epubcfi(foreign)", text: "经济学", color: "red" }],
+			resolveRange: (cfiRange: string) =>
+				cfiRange.includes("/4/8") ? highlight : foreignRange,
+		});
+		expect(missingSegments).toEqual([]);
 	});
 });
