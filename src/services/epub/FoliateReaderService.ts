@@ -2044,16 +2044,15 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (!trimmed) {
 			return [];
 		}
+		const visibleFrames = this.getVisibleFramesWithIndex();
+		if (!visibleFrames.length) {
+			return [];
+		}
+		// 节号解析失败（真实书常态，票 08 实测）不再直接放弃：回退首个可见帧继续解析，
+		// 与字色替换路径 getFontMarksContainedInSelection 保持同一兜底哲学。
 		const targetSectionIndex = this.parser.getSectionIndexForCfi(trimmed);
-		if (targetSectionIndex === null) {
-			return [];
-		}
-		const frame = this.getVisibleFramesWithIndex().find(
-			(item) => item.index === targetSectionIndex
-		);
-		if (!frame) {
-			return [];
-		}
+		const frame =
+			visibleFrames.find((item) => item.index === targetSectionIndex) ?? visibleFrames[0];
 		const frameDoc = frame.frameDocument;
 		const selectionRange = this.parser.resolveRangeInLoadedSection(
 			trimmed,
@@ -2070,12 +2069,16 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const contained: string[] = [];
 		for (const highlight of this.highlightDataMap.values()) {
 			try {
-				const highlightSection =
-					typeof highlight.chapterIndex === "number"
-						? highlight.chapterIndex
-						: this.parser.getSectionIndexForCfi(highlight.cfiRange);
-				if (highlightSection !== targetSectionIndex) {
-					continue;
+				// 节过滤仅在节号可解时启用；不可解时交给「同一文档两边都解析出偏移 + 完全包含」
+				// 证明——任一边解析失败即自然不吞并（保守共存，绝不误删）。
+				if (targetSectionIndex !== null) {
+					const highlightSection =
+						typeof highlight.chapterIndex === "number"
+							? highlight.chapterIndex
+							: this.parser.getSectionIndexForCfi(highlight.cfiRange);
+					if (highlightSection !== targetSectionIndex) {
+						continue;
+					}
 				}
 				const highlightRange = this.parser.resolveRangeInLoadedSection(
 					highlight.cfiRange,
@@ -3047,6 +3050,20 @@ export class FoliateReaderService implements EpubReaderEngine {
 					this.parser.resolveRangeInLoadedSection(cfiRange, doc, sectionIndex, textHint),
 			});
 			if (!range) {
+				// 不可静默：整条找回链（CFI 锚 → 同节 hint → 短词兜底 → 节内首现）全落空时，
+				// 落一条 debug 级诊断，记录标记身份与解析出的节号，供「书内颜色缺失」排查
+				// （区分「节号解析不出」与「节号在但所有 Range 找回失败」两类根因）。
+				logger.debugWithTag(
+					"FoliateReaderService",
+					"Font mark not rendered: CFI anchor and all fallbacks failed",
+					{
+						cfiRange: mark.cfiRange,
+						text: mark.text,
+						sectionIndex,
+						markSection,
+						allowSectionTextHint,
+					}
+				);
 				continue;
 			}
 			const bucket = rangesByToken.get(mark.color);
