@@ -3,6 +3,8 @@ import {
 	AnnotationMutationQueue,
 	applyFontMarkMutations,
 	applyHighlightMutations,
+	buildHighlightReplaceMutations,
+	isSpanFullyContained,
 	normalizeAnnotationKey,
 	type EpubStoredFontMark,
 } from "../annotation-mutation-queue";
@@ -171,5 +173,104 @@ describe("AnnotationMutationQueue", () => {
 		await queue.enqueue(() => ["C"]); // 成功：写回 C
 		expect(store).toEqual(["C"]); // 失败那次未写回，后续照常
 		expect(logger).toHaveBeenCalledWith(expect.stringContaining("mutation failed"));
+	});
+});
+
+describe("isSpanFullyContained (划线替换语义的包含判定)", () => {
+	it("inner 完全落在 outer 内 → 包含", () => {
+		expect(
+			isSpanFullyContained({ start: 12, end: 30 }, { start: 10, end: 40 })
+		).toBe(true);
+	});
+
+	it("inner 完全重合 outer → 包含", () => {
+		expect(
+			isSpanFullyContained({ start: 10, end: 40 }, { start: 10, end: 40 })
+		).toBe(true);
+	});
+
+	it("inner 起点越出 outer → 不包含（部分重叠共存）", () => {
+		expect(
+			isSpanFullyContained({ start: 8, end: 30 }, { start: 10, end: 40 })
+		).toBe(false);
+	});
+
+	it("inner 终点越出 outer → 不包含", () => {
+		expect(
+			isSpanFullyContained({ start: 12, end: 45 }, { start: 10, end: 40 })
+		).toBe(false);
+	});
+
+	it("非法跨度（end < start）→ 不包含（保守）", () => {
+		expect(
+			isSpanFullyContained({ start: 30, end: 12 }, { start: 10, end: 40 })
+		).toBe(false);
+	});
+
+	it("负坐标跨度 → 不包含（保守）", () => {
+		expect(
+			isSpanFullyContained({ start: -2, end: 5 }, { start: 0, end: 40 })
+		).toBe(false);
+	});
+
+	it("非有限值（NaN / Infinity）→ 不包含（保守）", () => {
+		expect(
+			isSpanFullyContained({ start: Number.NaN, end: 30 }, { start: 10, end: 40 })
+		).toBe(false);
+		expect(
+			isSpanFullyContained({ start: 12, end: Number.POSITIVE_INFINITY }, { start: 10, end: 40 })
+		).toBe(false);
+	});
+});
+
+describe("buildHighlightReplaceMutations (划线创建时替换语义)", () => {
+	it("无被包含项 → 仅 upsert（与既有去重路径一致）", () => {
+		const mutations = buildHighlightReplaceMutations(
+			[],
+			hl({ cfiRange: "new", text: "新划线" })
+		);
+		expect(mutations).toEqual([{ type: "upsert", record: hl({ cfiRange: "new", text: "新划线" }) }]);
+	});
+
+	it("被包含多项 → 先逐条 remove 再 upsert（顺序稳定）", () => {
+		const record = hl({ cfiRange: "new", text: "新划线" });
+		const mutations = buildHighlightReplaceMutations(["c1", "c2"], record);
+		expect(mutations).toEqual([
+			{ type: "remove", cfiRange: "c1" },
+			{ type: "remove", cfiRange: "c2" },
+			{ type: "upsert", record },
+		]);
+	});
+
+	it("被包含项与 upsert 同 key → 不进 remove（保留身份合并路径）", () => {
+		const mutations = buildHighlightReplaceMutations(
+			["same", "其它"],
+			hl({ cfiRange: "same", text: "重划" })
+		);
+		expect(mutations.filter((m) => m.type === "remove").map((m) => m.cfiRange)).toEqual(["其它"]);
+	});
+
+	it("同 key 判定按归一化 key：编码不同同义也跳过 remove", () => {
+		const record = hl({ cfiRange: "epubcfi(/6/4!/4[2]/2)" });
+		const mutations = buildHighlightReplaceMutations(["epubcfi(/6/4!/4%5B2%5D/2)"], record);
+		expect(mutations.filter((m) => m.type === "remove")).toHaveLength(0);
+	});
+
+	it("空白被包含项被跳过", () => {
+		const record = hl({ cfiRange: "new" });
+		const mutations = buildHighlightReplaceMutations(["  ", "c1", ""], record);
+		expect(mutations.filter((m) => m.type === "remove")).toHaveLength(1);
+	});
+
+	it("组合结果经 applyHighlightMutations 应用后：含旧身份的新划线替换被包含者", () => {
+		const items = [
+			hl({ cfiRange: "c1", excerptId: "eid-old", text: "旧短线" }),
+			hl({ cfiRange: "keep", text: "部分重叠" }),
+		];
+		const record = hl({ cfiRange: "new", text: "新长线" });
+		const mutations = buildHighlightReplaceMutations(["c1"], record);
+		const result = applyHighlightMutations(items, mutations);
+		expect(result.items.map((x) => x.cfiRange)).toEqual(["keep", "new"]);
+		expect(result.dropped).toBe(0);
 	});
 });

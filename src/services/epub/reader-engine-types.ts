@@ -396,5 +396,11 @@ export interface EpubReaderEngine {
 	 * 无法解析选区/无可见帧时返回空数组（不染色即不替换，保守安全）。
 	 */
 	getFontMarksContainedInSelection?(cfiRange: string): string[];
+	/**
+	 * 划线创建时替换语义：返回「完整落在给定选区范围内」的既有划线 cfiRange（
+	 * 部分重叠不返回；解析失败保守返回空数组——不替换、绝不误删）。
+	 * 宿主在创建新划线前调用，先移除被包含划线再 upsert（与字色标记替换语义同构）。
+	 */
+	getHighlightsContainedInSelection?(selectionCfiRange: string): string[];
 	destroy(): void;
 }

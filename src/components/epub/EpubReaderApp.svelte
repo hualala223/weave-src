@@ -12,6 +12,7 @@
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
 	import { createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress } from '../../services/epub';
 	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubStoredFontMark, FontMarkClickInfo, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderImageTapInfo, ReaderTapEvent, ReadingPosition } from '../../services/epub';
+	import type { EpubStoredHighlight } from '../../services/epub/schema-v2';
 	import { decorateExcerptText, type FontMarkColorToken } from '../../services/epub/font-mark-decoration';
 	import { insertIntoMarkdownEditor, NO_EDITOR_MESSAGE } from '../../services/epub/note-editor-insert';
 	import {
@@ -27,6 +28,7 @@
 		AnnotationMutationQueue,
 		applyFontMarkMutations,
 		applyHighlightMutations,
+		buildHighlightReplaceMutations,
 		type FontMarkMutation,
 	} from '../../services/epub/annotation-mutation-queue';
 	import { extractImageToNote } from '../../services/epub/image-note-extractor';
@@ -2143,6 +2145,12 @@
 				return;
 			}
 			if (!highlightMutationQueue) return;
+			// 票：划线创建时替换语义——服务层解析「完整落在新选区内的既有划线」；
+			// 解析失败/异节保守返回空数组（不替换、绝不误删）。
+			const containedRanges =
+				typeof readerService.getHighlightsContainedInSelection === 'function'
+					? readerService.getHighlightsContainedInSelection(trimmedRange)
+					: [];
 			const nKey = () => EpubLinkService.normalizeCfi(trimmedRange);
 			const nextItems = await highlightMutationQueue.run((items) => {
 				// 在队列读取的「最新全量」里做既有 merge：existing 按归一化 key 命中
@@ -2155,7 +2163,11 @@
 					existing as Partial<IdeaMergedInlineRecord> | undefined,
 					{ cfiRange: trimmedRange, text, color, style }
 				);
-				return applyHighlightMutations(items, [{ type: 'upsert', record: item as any }]).items;
+				const mutations = buildHighlightReplaceMutations(
+					containedRanges,
+					item as EpubStoredHighlight
+				);
+				return applyHighlightMutations(items, mutations).items;
 			});
 			const merged = nextItems.find(
 				(x: { cfiRange?: string }) =>

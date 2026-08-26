@@ -1,4 +1,5 @@
 import type { App } from "obsidian";
+import { Platform } from "obsidian";
 import type {
 	EpubBookFootnotesDraft,
 	EpubReaderEngine,
@@ -163,6 +164,12 @@ import {
 	type FontMarkColorToken,
 	type FontMarkSegment,
 } from "./font-mark-decoration";
+import { isSpanFullyContained } from "./annotation-mutation-queue";
+import {
+	collectSelectionRects,
+	decideSelectionPointerGuard,
+	SELECTION_HANDLE_TOLERANCE_PX,
+} from "../../utils/selection-pointer-guard";
 
 function logFootnoteDiag(message: string): void {
 	logger.debugWithTag("FootnoteDiag", message);
@@ -2014,15 +2021,77 @@ export class FoliateReaderService implements EpubReaderEngine {
 					continue;
 				}
 				const markSpan = computeRangeTextOffsets(frameDoc, markRange);
-				if (
-					markSpan &&
-					markSpan.start >= selectionSpan.start &&
-					markSpan.end <= selectionSpan.end
-				) {
+				if (markSpan && isSpanFullyContained(markSpan, selectionSpan)) {
 					contained.push(mark.cfiRange);
 				}
 			} catch {
 				// 单条解析失败不影响其他标记；保守跳过（不删除）。
+			}
+		}
+		return contained;
+	}
+
+	/**
+	 * 划线创建时替换语义（票：划线创建时替换语义）：返回「完整落在给定选区范围内」
+	 * 的既有划线 cfiRange。语义与 getFontMarksContainedInSelection 同构：
+	 * - 选区与划线都只在可见帧章节文档内解析；划线仅取与选区同节的（异节不参与，防错判）；
+	 * - 以文档级文本偏移判定包含（mark ⊆ selection 才计入，部分重叠不删）；
+	 * - 任何解析失败保守跳过（不替换，绝不误删）。
+	 * 宿主（EpubReaderApp）在创建新划线前调用本方法，先移除选区内全部被包含划线再 upsert。
+	 */
+	getHighlightsContainedInSelection(selectionCfiRange: string): string[] {
+		const trimmed = String(selectionCfiRange || "").trim();
+		if (!trimmed) {
+			return [];
+		}
+		const targetSectionIndex = this.parser.getSectionIndexForCfi(trimmed);
+		if (targetSectionIndex === null) {
+			return [];
+		}
+		const frame = this.getVisibleFramesWithIndex().find(
+			(item) => item.index === targetSectionIndex
+		);
+		if (!frame) {
+			return [];
+		}
+		const frameDoc = frame.frameDocument;
+		const selectionRange = this.parser.resolveRangeInLoadedSection(
+			trimmed,
+			frameDoc,
+			frame.index
+		);
+		if (!selectionRange) {
+			return [];
+		}
+		const selectionSpan = computeRangeTextOffsets(frameDoc, selectionRange);
+		if (!selectionSpan) {
+			return [];
+		}
+		const contained: string[] = [];
+		for (const highlight of this.highlightDataMap.values()) {
+			try {
+				const highlightSection =
+					typeof highlight.chapterIndex === "number"
+						? highlight.chapterIndex
+						: this.parser.getSectionIndexForCfi(highlight.cfiRange);
+				if (highlightSection !== targetSectionIndex) {
+					continue;
+				}
+				const highlightRange = this.parser.resolveRangeInLoadedSection(
+					highlight.cfiRange,
+					frameDoc,
+					frame.index,
+					String(highlight.text || "")
+				);
+				if (!highlightRange) {
+					continue;
+				}
+				const highlightSpan = computeRangeTextOffsets(frameDoc, highlightRange);
+				if (highlightSpan && isSpanFullyContained(highlightSpan, selectionSpan)) {
+					contained.push(highlight.cfiRange);
+				}
+			} catch {
+				// 单条解析失败不影响其他划线；保守跳过（不删除）。
 			}
 		}
 		return contained;
@@ -5542,7 +5611,15 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 
 		if (this.hasActiveReaderSelection(doc)) {
-			return;
+			if (this.isMobileClickOutsideSelection(event, doc)) {
+				// 移动端点按取消（票：移动端点按交互修复）：点击点落在残留选区之外，
+				// 本次点按即取消手势——先清残留选区再继续命中检测，避免「点标记词被
+				// 残留选区锁死」；只清书内帧选区、不动宿主文档；桌面端不进入
+				// （桌面 mousedown 已先折叠选区）。
+				this.clearBookFrameSelections();
+			} else {
+				return;
+			}
 		}
 
 		// 字色标记优先：词级命中比划线行级几何更精确，且两者互斥——
@@ -5570,6 +5647,67 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.notifyHighlightClick(
 			buildHighlightClickInfo(highlight, geometry, "highlight")
 		);
+	}
+
+	/**
+	 * 移动端「点击点位于残留选区之外」判定（票：移动端点按交互修复）。
+	 * 主判据为被点击文档自身的非折叠选区：点按落在其矩形（含手柄容差）外 → 取消手势；
+	 * 若被点击文档无选区，但残留选中态存在于其他**书内帧**（不含宿主文档，避免误清
+	 * 笔记/编辑器选区）→ 本次点按不可能落在其选区内，同样按取消手势处理。
+	 * 桌面端恒返回 false（守门员维持既有早退路径，桌面 mousedown 已先折叠选区）。
+	 */
+	private isMobileClickOutsideSelection(
+		event: MouseEvent,
+		doc: Document | null | undefined
+	): boolean {
+		const isMobile =
+			Platform.isMobile ||
+			(typeof activeDocument !== "undefined" &&
+				activeDocument.body.classList.contains("is-mobile"));
+		if (!isMobile) {
+			return false;
+		}
+		const selection = doc?.defaultView?.getSelection?.();
+		if (selection && selection.rangeCount > 0 && !selection.isCollapsed && selection.toString().trim()) {
+			return (
+				decideSelectionPointerGuard({
+					mobile: true,
+					hasNonCollapsedSelection: true,
+					point: { x: event.clientX, y: event.clientY },
+					selectionRects: collectSelectionRects(selection),
+					handleTolerance: SELECTION_HANDLE_TOLERANCE_PX,
+				}) === "cancel"
+			);
+		}
+		for (const frame of this.getVisibleFramesWithIndex()) {
+			if (frame.frameDocument === doc) {
+				continue;
+			}
+			if (this.hasNonCollapsedTextSelection(frame.frameDocument)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * 仅清空书内可见帧的选区（不动宿主文档）：残留选区清除只针对书内，绝不误清
+	 * 笔记/编辑器等其他面板的文本选区。
+	 */
+	private clearBookFrameSelections(): void {
+		for (const frame of this.getVisibleFramesWithIndex()) {
+			const frameDoc = frame.frameDocument;
+			try {
+				frameDoc.getSelection?.()?.removeAllRanges();
+			} catch {
+				/* ignore */
+			}
+			try {
+				frameDoc.defaultView?.getSelection?.()?.removeAllRanges();
+			} catch {
+				/* ignore */
+			}
+		}
 	}
 
 	/**

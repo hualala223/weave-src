@@ -1,6 +1,8 @@
 import {
+	collectSelectionRects,
 	computeToolbarPosition,
 	createEventBinder,
+	decideSelectionPointerGuard,
 	estimateNativeSelectionMenuSide,
 	isEventInsideObsidianFloatingUi,
 	isEventOutsideToolbar,
@@ -274,5 +276,169 @@ describe('toolbar-positioning', () => {
 		const iframeEvent = new MouseEvent('mousedown', { bubbles: true });
 		Object.defineProperty(iframeEvent, 'target', { value: insideIframe });
 		expect(shouldDismissToolbarOnPointerDown(toolbar, iframeEvent)).toBe(true);
+	});
+});
+
+describe('decideSelectionPointerGuard (移动端坐标感知选区守卫)', () => {
+	function rect(left: number, top: number, right: number, bottom: number) {
+		return { left, top, right, bottom };
+	}
+
+	it('非移动端一律取消（守卫生效范围仅限移动端）', () => {
+		expect(
+			decideSelectionPointerGuard({
+				mobile: false,
+				hasNonCollapsedSelection: true,
+				point: { x: 50, y: 60 },
+				selectionRects: [rect(0, 0, 100, 100)],
+				handleTolerance: 4,
+			})
+		).toBe('cancel');
+	});
+
+	it('移动端但无选区 → 取消', () => {
+		expect(
+			decideSelectionPointerGuard({
+				mobile: true,
+				hasNonCollapsedSelection: false,
+				point: { x: 50, y: 60 },
+				selectionRects: [rect(0, 0, 100, 100)],
+				handleTolerance: 4,
+			})
+		).toBe('cancel');
+	});
+
+	it('移动端 + 有选区 + 坐标不可用时保守旁观（维持旧行为）', () => {
+		expect(
+			decideSelectionPointerGuard({
+				mobile: true,
+				hasNonCollapsedSelection: true,
+				point: null,
+				selectionRects: [rect(0, 0, 100, 100)],
+				handleTolerance: 4,
+			})
+		).toBe('standby');
+	});
+
+	it('点按落在选区矩形内 → 旁观', () => {
+		expect(
+			decideSelectionPointerGuard({
+				mobile: true,
+				hasNonCollapsedSelection: true,
+				point: { x: 50, y: 60 },
+				selectionRects: [rect(10, 20, 90, 120)],
+				handleTolerance: 4,
+			})
+		).toBe('standby');
+	});
+
+	it('点按刚越出选区但仍在手柄容差内 → 旁观（保护拖选手柄起点）', () => {
+		expect(
+			decideSelectionPointerGuard({
+				mobile: true,
+				hasNonCollapsedSelection: true,
+				point: { x: 94, y: 20 },
+				selectionRects: [rect(10, 20, 90, 120)],
+				handleTolerance: 8,
+			})
+		).toBe('standby');
+	});
+
+	it('点按明显在选区矩形外 → 取消', () => {
+		expect(
+			decideSelectionPointerGuard({
+				mobile: true,
+				hasNonCollapsedSelection: true,
+				point: { x: 140, y: 20 },
+				selectionRects: [rect(10, 20, 90, 120)],
+				handleTolerance: 4,
+			})
+		).toBe('cancel');
+	});
+
+	it('容差为 0 时点恰在边界 → 旁观（边界含）', () => {
+		expect(
+			decideSelectionPointerGuard({
+				mobile: true,
+				hasNonCollapsedSelection: true,
+				point: { x: 90, y: 120 },
+				selectionRects: [rect(10, 20, 90, 120)],
+				handleTolerance: 0,
+			})
+		).toBe('standby');
+	});
+
+	it('多行选区：点落在第二行矩形内 → 旁观', () => {
+		expect(
+			decideSelectionPointerGuard({
+				mobile: true,
+				hasNonCollapsedSelection: true,
+				point: { x: 30, y: 300 },
+				selectionRects: [
+					rect(10, 20, 200, 50),
+					rect(10, 80, 200, 120),
+					rect(10, 260, 200, 340),
+				],
+				handleTolerance: 4,
+			})
+		).toBe('standby');
+	});
+
+	it('选区矩形集为空但有坐标 → 取消（无物可保护）', () => {
+		expect(
+			decideSelectionPointerGuard({
+				mobile: true,
+				hasNonCollapsedSelection: true,
+				point: { x: 10, y: 10 },
+				selectionRects: [],
+				handleTolerance: 4,
+			})
+		).toBe('cancel');
+	});
+
+	it('负容差按 0 处理：越出边界即取消', () => {
+		expect(
+			decideSelectionPointerGuard({
+				mobile: true,
+				hasNonCollapsedSelection: true,
+				point: { x: 150, y: 20 },
+				selectionRects: [rect(10, 20, 90, 120)],
+				handleTolerance: -5,
+			})
+		).toBe('cancel');
+	});
+});
+
+describe('collectSelectionRects (选区矩形收集，守卫接线共用助手)', () => {
+	it('把 Range 客户端矩形规整为四边结构并过滤零面积', () => {
+		const selection = {
+			isCollapsed: false,
+			rangeCount: 1,
+			getRangeAt: () => ({
+				getClientRects: () => [
+					{ left: 10, top: 20, right: 90, bottom: 40, width: 80, height: 20 },
+					{ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 },
+				],
+			}),
+		} as unknown as Selection;
+		expect(collectSelectionRects(selection)).toEqual([{ left: 10, top: 20, right: 90, bottom: 40 }]);
+	});
+
+	it('null / 折叠 / 无 range → 空数组', () => {
+		expect(collectSelectionRects(null)).toEqual([]);
+		expect(
+			collectSelectionRects({ isCollapsed: true, rangeCount: 0 } as unknown as Selection)
+		).toEqual([]);
+	});
+
+	it('getRangeAt 抛错 → 空数组（防御）', () => {
+		const selection = {
+			isCollapsed: false,
+			rangeCount: 1,
+			getRangeAt: () => {
+				throw new Error('boom');
+			},
+		} as unknown as Selection;
+		expect(collectSelectionRects(selection)).toEqual([]);
 	});
 });

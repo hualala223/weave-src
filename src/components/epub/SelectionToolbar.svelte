@@ -16,10 +16,14 @@
 	import {
 		computeToolbarPosition,
 		createEventBinder,
+		decideSelectionPointerGuard,
 		getEventTargetNode,
 		isEventOutsideToolbar,
 		shouldDismissToolbarOnPointerDown,
 		resolveMobileFloatingInsetBottom,
+		SELECTION_HANDLE_TOLERANCE_PX,
+		collectSelectionRects,
+		type SelectionRect,
 	} from './toolbar-positioning';
 
 	type ExternalSelectionState = {
@@ -335,6 +339,21 @@
 		return Boolean(selection && selection.rangeCount > 0 && !selection.isCollapsed);
 	}
 
+	function readTouchEventPoint(event: Event): { x: number; y: number } | null {
+		const touchEvent = event as TouchEvent;
+		const touch = touchEvent.touches?.[0] ?? touchEvent.changedTouches?.[0];
+		return touch ? { x: touch.clientX, y: touch.clientY } : null;
+	}
+
+	/** 读取当前跟踪帧的非折叠选区矩形（iframe 视口坐标系，与同帧 touchstart 坐标一致）。 */
+	function readIframeSelectionRects(): SelectionRect[] {
+		try {
+			return collectSelectionRects(iframeDoc?.getSelection?.());
+		} catch {
+			return [];
+		}
+	}
+
 	function handlePointerDownOutside(event: Event) {
 		if (!shouldDismissToolbarOnPointerDown(toolbarEl, event)) {
 			const target = getEventTargetNode(event.target);
@@ -345,10 +364,26 @@
 		}
 
 		dismissActiveToolbarMenu();
-		// 移动端原生选择 handle 的拖拽会以 touchstart 落到 iframe；此时清空选区会打断扩选。
-		// 扩选期间保持旁观，待浏览器自行收起选区后由 selectionchange 统一隐藏工具条。
-		if (isMobileToolbar && event.type === 'touchstart' && hasNonCollapsedIframeSelection()) {
-			return;
+		// 移动端点按取消（票：移动端点按交互修复）——坐标感知守卫替代盲区守卫：
+		// 仅在「点按落在本帧选区矩形（含手柄容差）内」时旁观（保护扩选手势）；
+		// 点空白 / 异帧 / 宿主 UI = 取消手势，正常走 dismiss + 清选区。
+		if (isMobileToolbar && event.type === 'touchstart') {
+			const targetNode = getEventTargetNode(event.target);
+			const sameFrameDoc = Boolean(
+				targetNode && iframeDoc && targetNode.ownerDocument === iframeDoc
+			);
+			if (sameFrameDoc) {
+				const verdict = decideSelectionPointerGuard({
+					mobile: true,
+					hasNonCollapsedSelection: hasNonCollapsedIframeSelection(),
+					point: readTouchEventPoint(event),
+					selectionRects: readIframeSelectionRects(),
+					handleTolerance: SELECTION_HANDLE_TOLERANCE_PX,
+				});
+				if (verdict === 'standby') {
+					return;
+				}
+			}
 		}
 		if (editActive) {
 			untrack(() => onDismiss?.());

@@ -23,6 +23,8 @@
 import { EpubLinkService } from "./EpubLinkService";
 import type { EpubStoredFontMark, EpubStoredHighlight } from "./schema-v2";
 
+export type { EpubStoredFontMark, EpubStoredHighlight } from "./schema-v2";
+
 /** 划线变更操作（纯数据描述，由 applyHighlightMutations 解释）。 */
 export type HighlightMutation =
 	| { type: "upsert"; record: EpubStoredHighlight }
@@ -121,6 +123,63 @@ export function applyHighlightMutations(
 export interface FontMarkMutationResult {
 	items: EpubStoredFontMark[];
 	dropped: number;
+}
+
+/** 文档偏移坐标的跨度（由服务层把 CFI/Range 解析为文本偏移后使用）。 */
+export interface TextSpan {
+	start: number;
+	end: number;
+}
+
+/**
+ * 纯函数：文档偏移坐标的包含判定（划线创建时替换语义）。
+ * `inner` 完全落在 `outer` 内才算包含；非法/非有限跨度一律不包含（保守，
+ * 解析失败即共存、绝不误删——与字色替换语义的保守策略一致）。
+ */
+export function isSpanFullyContained(inner: TextSpan, outer: TextSpan): boolean {
+	if (
+		!Number.isFinite(inner.start) ||
+		!Number.isFinite(inner.end) ||
+		!Number.isFinite(outer.start) ||
+		!Number.isFinite(outer.end)
+	) {
+		return false;
+	}
+	if (
+		inner.start < 0 ||
+		inner.end < inner.start ||
+		outer.start < 0 ||
+		outer.end < outer.start
+	) {
+		return false;
+	}
+	return inner.start >= outer.start && inner.end <= outer.end;
+}
+
+/**
+ * 纯函数：划线创建时替换语义的变更组合（票：划线创建时替换语义）。
+ * 给定服务层解析出的「完整落在新选区范围内的既有划线」与新建记录，
+ * 产出「先逐条 remove 被包含者、再 upsert 新划线」的变更序列：
+ * - 与 upsert 同 key（含归一化同义）的项不进 remove——走 applyHighlightMutations
+ *   的身份合并路径（保留 excerptId / createdTime / 既有想法）；
+ * - 空白 CFI 跳过；顺序稳定（remove 保持传入顺序，upsert 恒为最后一条）。
+ */
+export function buildHighlightReplaceMutations(
+	containedCfiRanges: readonly string[],
+	record: EpubStoredHighlight
+): HighlightMutation[] {
+	const recordKey = normalizeAnnotationKey(record.cfiRange);
+	const removals: HighlightMutation[] = [];
+	for (const cfiRange of containedCfiRanges) {
+		if (isBlank(cfiRange)) {
+			continue;
+		}
+		if (normalizeAnnotationKey(cfiRange) === recordKey) {
+			continue;
+		}
+		removals.push({ type: "remove", cfiRange });
+	}
+	return [...removals, { type: "upsert", record }];
 }
 
 /** 纯函数：按序应用字色标记变更到数组（语义同划线，仅形状不同）。 */

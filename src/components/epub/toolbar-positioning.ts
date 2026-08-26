@@ -521,3 +521,14 @@ export function shouldDismissToolbarOnPointerDown(
 	}
 	return true;
 }
+
+// 移动端坐标感知选区守卫的纯判定共享于 utils 层（components 与 services 共用，
+// 避免反向依赖）；此处 re-export 保持既有消费方（工具条组件、测试）引用不变。
+export {
+	SELECTION_HANDLE_TOLERANCE_PX,
+	collectSelectionRects,
+	decideSelectionPointerGuard,
+	type SelectionPointerGuardInput,
+	type SelectionPointerVerdict,
+	type SelectionRect,
+} from "../../utils/selection-pointer-guard";
