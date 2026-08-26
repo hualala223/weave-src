@@ -462,6 +462,27 @@ describe('EpubLinkService legacy link compatibility', () => {
 		);
 	});
 
+	it('多行摘录逐行 > 前缀不破坏行内的字色 span（票 08 回归钉死）', () => {
+		const service = new EpubLinkService({} as any);
+		const decorated = '第一行有<span style="color:#2563eb">蓝字</span>\n第二行继续';
+
+		expect(service.buildQuoteBlock(
+			'Books/demo.epub',
+			'readium:multiline',
+			decorated,
+			3,
+			'blue',
+			'第三章',
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			'underline'
+		)).toMatch(
+			/^> \[!EPUB\|blue\+underline\] \[\[Books\/demo\.epub#weave-cfi=readium:multiline(?:&[^|]+)*\|demo\]\] \[第三章\]\n> 第一行有<span style="color:#2563eb">蓝字<\/span>\n> 第二行继续\n$/
+		);
+	});
+
 	it('背景涂色与字色并存：callout 元信息带背景色、正文带字色 span，两通道互不干扰', () => {
 		const service = new EpubLinkService({} as any);
 		const decorated = '萤光底 + <span style="color:#16a34a">绿字</span> 并存';

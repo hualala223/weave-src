@@ -147,8 +147,14 @@ import {
 	buildFontMarkHighlightCss,
 	getFontMarkHighlightName,
 	groupFontMarksBySectionIndex,
+	recoverExportFontMarkRanges,
+	recoverFontMarkRange,
 } from "./font-mark-render";
-import { findFontMarkAtCaret, type FontMarkHitCandidate } from "./font-mark-hit-test";
+import {
+	buildFontMarkHitCandidates,
+	findFontMarkAtCaret,
+	type FontMarkHitCandidate,
+} from "./font-mark-hit-test";
 import {
 	buildExcerptDecorationSegments,
 	computeRangeTextOffsets,
@@ -436,6 +442,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private fontMarksByCfiKey = new Map<string, ReaderFontMark>();
 	private loadedDocumentSectionIndexes = new WeakMap<Document, number>();
 	private lastSelectionByDocument = new WeakMap<Document, string>();
+	/** 已对「不支持 Custom Highlight」发过一次诊断日志的帧（防刷屏）。 */
+	private fontMarkHighlightUnsupportedDocs = new WeakSet<Document>();
 	private overlayerModulePromise: Promise<FoliateOverlayerModule> | null = null;
 	private renderContainerWheelCleanup: (() => void) | null = null;
 	private themeChangeCleanup: (() => void) | null = null;
@@ -1866,9 +1874,11 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	/**
-	 * 摘录导出的字色切段（票 05）：把落在划线范围内的标记换算成摘录文本偏移。
+	 * 摘录导出的字色切段：把落在划线范围内的标记换算成摘录文本偏移。
 	 * 只在可见帧的章节 doc 里做精确 Range 解析——同一章节才能算出可靠偏移；
-	 * 解析失败由编排函数回退字符串匹配，再失败该标记被跳过。
+	 * 偏移计算走「块感知 + trim 容差」坐标系（computeFontMarkOffsets），与
+	 * selection.toString().trim() 对齐；标记必须由 Range 证明落在划线内才染色
+	 * （严格包含性，票 07：不做字符串回退），解析失败/无重叠的标记被跳过。
 	 * 无可见帧/无标记/任何异常一律返回 []：字色只是增强，导出永不因它阻塞。
 	 */
 	getExcerptFontMarkSegments(
@@ -1903,35 +1913,49 @@ export class FoliateReaderService implements EpubReaderEngine {
 			if (sameSectionMarks.length === 0) {
 				return [];
 			}
-			const resolveRange = (cfiRange: string): Range | null => {
-				try {
-					const sectionIndex = this.parser.getSectionIndexForCfi(cfiRange);
-					// 节号不匹配绝不进 resolveRangeInLoadedSection：否则解析器会把
-					// 其它节的结构锚点执行到本文档上，得到看似成功的错位 Range。
-					if (sectionIndex === null || sectionIndex !== frame.index) {
+			// 导出侧找回编排（票 08）：划线基线结构解析 + 标记三路共用找回
+			// （CFI 锚 → 同节文本 hint → 节内唯一短词兜底）。修复「书内渲染有找回、
+			// 导出没有」的不对称——短词锚解析失败时导出不再静默丢色；找回仍限
+			// 可证明同节 + 唯一出现（宁可漏染，不可错染），划线基线不传 hint。
+			const resolvedRanges = recoverExportFontMarkRanges({
+				doc: frame.frameDocument,
+				sectionIndex: frame.index,
+				highlightCfiRange,
+				marks: sameSectionMarks,
+				resolveSectionIndex: (cfiRange) => {
+					try {
+						return this.parser.getSectionIndexForCfi(cfiRange);
+					} catch {
 						return null;
 					}
-					// 不传 textHint：字符串回退由编排函数按摘录文本执行，
-					// 比在整章文档里全文搜索更贴近「标记必须落在摘录内」的语义。
-					return this.parser.resolveRangeInLoadedSection(
+				},
+				resolveRangeInDocument: (cfiRange, textHint) =>
+					this.parser.resolveRangeInLoadedSection(
 						cfiRange,
 						frame.frameDocument,
-						sectionIndex
-					);
-				} catch (error) {
-					logger.warn("[FoliateReaderService] Failed to resolve excerpt font mark range:", {
-						cfiRange,
-						error,
-					});
-					return null;
-				}
-			};
-			return buildExcerptDecorationSegments({
+						frame.index,
+						textHint
+					),
+			});
+			const segments = buildExcerptDecorationSegments({
 				text,
 				highlightCfiRange,
 				marks: sameSectionMarks,
-				resolveRange,
+				resolveRange: (cfiRange) => resolvedRanges.get(cfiRange) ?? null,
 			});
+			// 不可静默：本节确有候选标记、但导出切段为空（长度守卫/包含判定失败）时
+			// 落日志，供「笔记不带色」症状定位是守卫跳过还是包含排斥。
+			if (sameSectionMarks.length > 0 && segments.length === 0) {
+				logger.warn(
+					"[FoliateReaderService] Excerpt font mark segments empty despite same-section candidates:",
+					{
+						highlightCfiRange,
+						textLength: text.length,
+						candidates: sameSectionMarks.length,
+					}
+				);
+			}
+			return segments;
 		} catch (error) {
 			logger.warn("[FoliateReaderService] Failed to build excerpt font mark segments:", error);
 			return [];
@@ -2855,16 +2879,27 @@ export class FoliateReaderService implements EpubReaderEngine {
 	): void {
 		const frameWindow = doc.defaultView;
 		if (!frameWindow || !supportsCustomHighlight(frameWindow)) {
+			// 不可静默（票 07 用户故事 11）：环境不支持 Custom Highlight API 时，
+			// 书内字色按规格降级不显示，但必须落一次诊断日志，供「书内从无颜色」
+			// 症状区分「环境不支持」与「渲染接线失败」两类根因。每帧只告警一次。
+			if (this.fontMarksByCfiKey.size > 0 && !this.fontMarkHighlightUnsupportedDocs.has(doc)) {
+				this.fontMarkHighlightUnsupportedDocs.add(doc);
+				logger.warn(
+					"[FoliateReaderService] Font mark in-book rendering skipped: frame realm lacks CSS Custom Highlight API (CSS.highlights / Highlight)",
+					{ sectionIndex, frameWindow: Boolean(frameWindow) }
+				);
+			}
+			return;
+		}
+		const registry = getFrameHighlightRegistry(frameWindow);
+		if (!registry) {
+			// 特性检测通过但拿不到注册表（异常环境）——同样不可静默。
+			logger.warn("[FoliateReaderService] Font mark in-book rendering skipped: frame highlight registry unavailable");
 			return;
 		}
 		// 全书无标记时只做注册清理，不注入样式元素（避免给无标记的书塞空样式）。
 		if (this.fontMarksByCfiKey.size > 0) {
 			this.injectFontMarkHighlightStyle(doc);
-		}
-
-		const registry = getFrameHighlightRegistry(frameWindow);
-		if (!registry) {
-			return;
 		}
 		for (const token of FONT_MARK_COLOR_TOKENS) {
 			registry.delete(getFontMarkHighlightName(token));
@@ -2926,24 +2961,21 @@ export class FoliateReaderService implements EpubReaderEngine {
 			} catch {
 				markSection = null;
 			}
-			const textHint =
-				allowSectionTextHint && markSection === sectionIndex ? mark.text : undefined;
-			let range: Range | null = null;
-			try {
-				range = this.parser.resolveRangeInLoadedSection(
-					mark.cfiRange,
-					doc,
-					sectionIndex,
-					textHint
-				);
-			} catch {
-				range = null;
-			}
+			// 三路共用找回（票 08）：CFI 锚 + 同节文本 hint + 节内唯一短词兜底，
+			// 文本验证两处闸（结构解析出的 Range 与兜底 Range 都必须覆盖标记文本），
+			// 语义与既有渲染路径逐条等价（textHint 仅限可证明同节；短词兜底只认
+			// 可证明同节 + 唯一出现；锚错位/多次出现一律不注册——宁可漏染，不可错染）。
+			const range = recoverFontMarkRange({
+				doc,
+				sectionIndex,
+				markSection,
+				allowSectionTextHint,
+				cfiRange: mark.cfiRange,
+				text: mark.text || "",
+				resolveRangeInDocument: (cfiRange, textHint) =>
+					this.parser.resolveRangeInLoadedSection(cfiRange, doc, sectionIndex, textHint),
+			});
 			if (!range) {
-				continue;
-			}
-			// 文本验证：Range 必须覆盖标记文本才允许注册（防跨节错位 Range / 文本兜底误配）。
-			if (mark.text && !resolvedRangeCoversHighlightText(range, mark.text)) {
 				continue;
 			}
 			const bucket = rangesByToken.get(mark.color);
@@ -2965,23 +2997,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 			}
 		}
 		return registered;
-	}
-
-	private resolveFontMarkRange(
-		mark: ReaderFontMark,
-		doc: Document,
-		sectionIndex: number
-	): Range | null {
-		try {
-			// 标记文本作为 textHint 兜底：CFI 解析失败时按文本引述找回范围。
-			return this.parser.resolveRangeInLoadedSection(mark.cfiRange, doc, sectionIndex, mark.text);
-		} catch (error) {
-			logger.warn("[FoliateReaderService] Failed to resolve font mark range:", {
-				cfiRange: mark.cfiRange,
-				error,
-			});
-			return null;
-		}
 	}
 
 	/** 向章节 head 注入独立的字色样式元素（内容静态：浅色基线 + data-weave-host-scheme 深色覆盖）。 */
@@ -5568,17 +5583,24 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return false;
 		}
 
-		const candidates: FontMarkHitCandidate[] = [];
-		for (const mark of this.fontMarksByCfiKey.values()) {
-			// 先按节过滤再解析 Range：跨节 CFI 在本文档解析必然失败，省去无效解析。
-			if (this.parser.getSectionIndexForCfi(mark.cfiRange) !== frame.index) {
-				continue;
-			}
-			const range = this.resolveFontMarkRange(mark, doc, frame.index);
-			if (range) {
-				candidates.push({ mark, range });
-			}
-		}
+		// 候选构建（票 08）：节过滤 + 三路共用找回，短词兜底纳入点击路径——
+		// 「书内显示有色、点击无响应」的修复：CFI 锚解析失败的 2~3 字短词
+		// （textHint 引述有 ≥4 字门槛）以「节内唯一出现」补成候选；异节/无法
+		// 证明归属/多次出现一律不参与（宁可点不动，不错配）。
+		const candidates = buildFontMarkHitCandidates({
+			doc,
+			frameIndex: frame.index,
+			marks: [...this.fontMarksByCfiKey.values()],
+			resolveSectionIndex: (cfiRange) => {
+				try {
+					return this.parser.getSectionIndexForCfi(cfiRange);
+				} catch {
+					return null;
+				}
+			},
+			resolveRangeInDocument: (cfiRange, textHint) =>
+				this.parser.resolveRangeInLoadedSection(cfiRange, doc, frame.index, textHint),
+		});
 
 		const hit = findFontMarkAtCaret(
 			{ node: caretRange.startContainer, offset: caretRange.startOffset },

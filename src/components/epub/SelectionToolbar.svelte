@@ -322,9 +322,10 @@
 	async function handleHighlight(color: string, style?: EpubHighlightStyle) {
 		if (!book || !selectedText || !currentCfiRange) { clearAndHide(); return; }
 		lastUsedColor = color;
-		try {
-			readerService.addHighlight({ cfiRange: currentCfiRange, color, style, text: selectedText });
-		} catch (e) { logger.warn('[SelectionToolbar] Failed to apply highlight:', e); }
+		// 立即显示统一走 onInsertToNote → persistInlineHighlight 那条带 excerptId（eid 身份键）
+		// 的乐观绘制，与「写想法」路径完全同构。不再在此直接 readerService.addHighlight 自造
+		// 一条无 eid（cfi+text 身份键）的标记——否则随后 reload→applyHighlights 会清空画布、
+		// 仅按落盘的 eid 记录重建，刚画上去的那条会被冲掉（划线/背景色要关掉重开才可见的根因）。
 		onInsertToNote?.(selectedText, currentCfiRange, color, style);
 		clearAndHide();
 	}

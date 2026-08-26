@@ -7,9 +7,17 @@ import {
 import type { ReaderFontMark } from "../reader-engine-types";
 import {
 	buildFontMarkHighlightCss,
+	findUniqueShortWordRangeInSection,
 	getFontMarkHighlightName,
 	groupFontMarksBySectionIndex,
 } from "../font-mark-render";
+
+function buildDoc(html: string): Document {
+	return new DOMParser().parseFromString(
+		`<!DOCTYPE html><html><body>${html}</body></html>`,
+		"text/html",
+	);
+}
 
 describe("getFontMarkHighlightName（高亮注册名）", () => {
 	it("每个 token 生成 weave-fontmark-<token> 注册名", () => {
@@ -92,5 +100,31 @@ describe("groupFontMarksBySectionIndex（按节分组）", () => {
 		const { grouped, dropped } = groupFontMarksBySectionIndex([], () => 0);
 		expect(grouped.size).toBe(0);
 		expect(dropped).toHaveLength(0);
+	});
+});
+
+describe("findUniqueShortWordRangeInSection（书内短词唯一出现找回）", () => {
+	it("2~3 字短词在节文档中唯一出现 → 返回覆盖该词的精确 Range", () => {
+		const doc = buildDoc("<p>这本书讲经济学原理</p>");
+		const range = findUniqueShortWordRangeInSection(doc, "经济学");
+		expect(range).not.toBeNull();
+		expect(range!.toString()).toBe("经济学");
+	});
+
+	it("短词出现多次（同词多段）→ 无从判断标记对象，返回 null（不误配）", () => {
+		const doc = buildDoc("<p>经济学第一段</p><p>经济学第二段</p>");
+		expect(findUniqueShortWordRangeInSection(doc, "经济学")).toBeNull();
+	});
+
+	it("≥4 字不为短词找回兜底（由引述找回等既有路径处理）", () => {
+		const doc = buildDoc("<p>这是一句足够长的引述</p>");
+		expect(findUniqueShortWordRangeInSection(doc, "这是一句足够长")).toBeNull();
+	});
+
+	it("找不到、空文档、空词均返回 null 不抛异常", () => {
+		const doc = buildDoc("<p>不相关的内容</p>");
+		expect(findUniqueShortWordRangeInSection(doc, "天气")).toBeNull();
+		expect(findUniqueShortWordRangeInSection(doc, "")).toBeNull();
+		expect(findUniqueShortWordRangeInSection(null, "天气")).toBeNull();
 	});
 });

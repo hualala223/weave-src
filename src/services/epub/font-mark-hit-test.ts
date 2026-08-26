@@ -10,11 +10,63 @@
  */
 
 import type { ReaderFontMark } from "./reader-engine-types";
+import { recoverFontMarkRange } from "./font-mark-render";
 
 /** 已解析出章节文档 Range 的字色标记候选（服务侧解析，本模块只做筛选）。 */
 export interface FontMarkHitCandidate {
 	mark: ReaderFontMark;
 	range: Range;
+}
+
+/**
+ * 点击候选构建（票 08）：把标记列表按「节过滤 + 三路共用找回」统一为命中候选。
+ *
+ * - 只收**可证明与本帧同节**的标记（节号解析失败/异节一律不参与——异节标记
+ *   若按文本找回会被钉到本帧首次出现的同文处，造成没标过的词可被点击）；
+ * - 每个标记经 recoverFontMarkRange 找回：CFI 锚精解析失败时，textHint 引述有
+ *   ≥4 字门槛（2~3 字短词无此找回途径），此处以「节内唯一出现」短词兜底补上，
+ *   使锚解析失败的短词同样成为候选（修复「书内显示有色、点击无响应」）；
+ * - 短词多次出现/无法唯一判定 → 放弃（宁可点不动，不错配）。
+ *
+ * 任何失败都不抛异常：候选为空即点击不响应，绝不阻塞翻页等默认交互。
+ */
+export interface FontMarkHitCandidateBuildInput {
+	doc: Document | null;
+	frameIndex: number;
+	marks: readonly ReaderFontMark[];
+	resolveSectionIndex: (cfiRange: string) => number | null;
+	resolveRangeInDocument: (cfiRange: string, textHint?: string) => Range | null;
+}
+
+export function buildFontMarkHitCandidates(
+	input: FontMarkHitCandidateBuildInput
+): FontMarkHitCandidate[] {
+	const { doc, frameIndex, marks, resolveSectionIndex, resolveRangeInDocument } = input;
+	const candidates: FontMarkHitCandidate[] = [];
+	for (const mark of marks) {
+		let markSection: number | null = null;
+		try {
+			markSection = resolveSectionIndex(mark.cfiRange);
+		} catch {
+			markSection = null;
+		}
+		if (markSection === null || markSection !== frameIndex) {
+			continue;
+		}
+		const range = recoverFontMarkRange({
+			doc,
+			sectionIndex: frameIndex,
+			markSection,
+			allowSectionTextHint: true,
+			cfiRange: mark.cfiRange,
+			text: mark.text || "",
+			resolveRangeInDocument,
+		});
+		if (range) {
+			candidates.push({ mark, range });
+		}
+	}
+	return candidates;
 }
 
 export interface CaretPosition {

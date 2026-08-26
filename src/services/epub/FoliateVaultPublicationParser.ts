@@ -509,7 +509,11 @@ export class FoliateVaultPublicationParser {
 
 	getSectionIndexForCfi(cfi: string): number | null {
 		const resolved = this.resolveCfiTarget(cfi);
-		return typeof resolved?.index === "number" ? resolved.index : null;
+		// foliate 的 resolveCFI 对 idref 失配返回 { index: -1, anchor }（对象仍 truthy）：
+		// -1 不是合法节号，必须归一化为 null——否则会穿透调用方的 `??` 回退，
+		// 让 resolveRange/分组判定「-1 !== frame.index」把整组标记静默丢弃。
+		const index = typeof resolved?.index === "number" ? resolved.index : null;
+		return index !== null && index >= 0 ? index : null;
 	}
 
 	getLoadedFilePath(): string {

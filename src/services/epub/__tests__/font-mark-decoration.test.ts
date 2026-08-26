@@ -148,9 +148,13 @@ describe("computeFontMarkOffsets（DOM Range 偏移计算）", () => {
 		mark.setStart(paragraphs[0].firstChild!, 4);
 		mark.setEnd(paragraphs[1].firstChild!, 6);
 
-		// 摘录按文本节点拼接长度计（段落一尾部 4 字 + 段落二前 4 字）；
-		// 标记越出划线终点的部分被裁剪。
-		expect(computeFontMarkOffsets(highlight, mark, 8)).toEqual({ start: 2, end: 8 });
+		// 摘录按「块感知文本」长度计（段落一尾部 4 字 + 块间 "\n" + 段落二前 4 字）；
+		// 与 selection.toString() 语义一致（跨块插 "\n"，对齐真实选区）。
+		const excerpt = "段落文字\n第二段落";
+		expect(computeFontMarkOffsets(highlight, mark, excerpt.length)).toEqual({
+			start: 2,
+			end: excerpt.length,
+		});
 	});
 });
 

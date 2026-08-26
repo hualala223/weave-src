@@ -155,12 +155,14 @@ describe("FoliateReaderService.getExcerptFontMarkSegments（摘录导出的字�
 	it("多可见帧时选与划线同节的帧解析，而非盲取第一帧", () => {
 		const service = new FoliateReaderService(createMockApp());
 		try {
-			// 帧 11 在前但划线在节 12；标记文本刻意不在摘录里，
-			// 字符串回退救不回来——只有选对帧才能得到精确切段。
+			// 帧 11 在前但划线在节 12；标记文本与 CFI 对应文本一致（"太高"）。
+			// 只有选对帧才能通过解析 + 三路共用找回的文本验证闸、得到精确切段；
+			// 选错帧（节 11）时 resolveRangeInLoadedSection 按同节约束返回 null，
+			// 切段必然为空——字符串回退在任何情况下都救不回来（严格包含性）。
 			installFrameEnvironment(service, [11, 12], 12);
 
 			const segments = service.getExcerptFontMarkSegments(HIGHLIGHT_CFI, EXCERPT_TEXT, [
-				{ cfiRange: "seg:3:5", color: "green", text: "绝不在摘录里的词" },
+				{ cfiRange: "seg:3:5", color: "green", text: "太高" },
 			]);
 
 			expect(segments).toEqual<FontMarkSegment[]>([{ start: 3, end: 5, color: "green" }]);

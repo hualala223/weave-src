@@ -27,6 +27,7 @@
 		AnnotationMutationQueue,
 		applyFontMarkMutations,
 		applyHighlightMutations,
+		type FontMarkMutation,
 	} from '../../services/epub/annotation-mutation-queue';
 	import { extractImageToNote } from '../../services/epub/image-note-extractor';
 	import { DirectoryUtils } from '../../utils/directory-utils';
@@ -241,6 +242,8 @@
 	// 字色标记（Font mark）：阅读器就绪前的暂存集合，与划线的 pending 加载同型。
 	let pendingLoadedFontMarks: EpubStoredFontMark[] | null = null;
 	let fontMarkReloadToken = 0;
+	/** 已对「当前书无字色标记」告警过的书 id（防每条摘录刷屏；书切换时清空）。 */
+	let fontMarkEmptyWarnedBookIds = new Set<string>();
 	// per-book 变更队列（新接缝）：划线 / 字色各一条串行队列，从根上消除
 	// 「全量读→变换→全量写」的并发覆盖（删除连坐根因）。load/save 绑定当前书；
 	// onFlush 在每轮排干末尾统一触发一次「读最新→重建」刷新合并。
@@ -1042,6 +1045,7 @@
 		highlightReloading = false;
 		pendingLoadedHighlights = null;
 		pendingLoadedFontMarks = null;
+		fontMarkEmptyWarnedBookIds = new Set<string>();
 		// 切换书：重建 per-book 变更队列（丢弃上一本书的在途变更，重新绑定当前书）。
 		createAnnotationMutationQueues();
 		highlightToolbarInfo = null;
@@ -1904,6 +1908,15 @@
 	function decorateExcerptForOutput(text: string, cfiRange: string): string {
 		try {
 			if (!text || !pendingLoadedFontMarks?.length) {
+				// 不可静默（票 07 用户故事 11）：有摘录文本但内存中无字色标记时，
+				// 落一条诊断日志，供「笔记不带色」症状区分「该书确实没有标记」与
+				// 「标记未加载/加载失败」。每书只告警一次，避免逐条摘录刷屏。
+				if (text && book?.id && !fontMarkEmptyWarnedBookIds.has(book.id)) {
+					fontMarkEmptyWarnedBookIds.add(book.id);
+					logger.warn(
+						'[EpubReaderApp] Font mark decoration skipped: no marks loaded for book (pendingLoadedFontMarks empty); note will be plain text'
+					);
+				}
 				return text;
 			}
 			if (typeof readerService.getExcerptFontMarkSegments !== 'function') {
@@ -1929,14 +1942,16 @@
 		}
 	}
 
-	function handleInsertToNote(
+	async function handleInsertToNote(
 		text: string,
 		cfiRange: string,
 		color?: string,
 		style?: EpubHighlightStyle
 	) {
 		outputNote(text, cfiRange, color, style);
-		void persistInlineHighlight(cfiRange, text, color, style);
+		// await 持久化（含其中的乐观 eid 身份绘制）：保证划线/背景色与「写想法」路径一致，
+		// 用同一带 excerptId 的记录立即上屏，避免重载整组重建时把临时标记冲掉。
+		await persistInlineHighlight(cfiRange, text, color, style);
 	}
 
 	function resolveBookDisplayTitle(): string {
@@ -2814,20 +2829,27 @@
 				typeof readerService.getFontMarksContainedInSelection === 'function'
 					? readerService.getFontMarksContainedInSelection(trimmedRange)
 					: [];
-			await fontMarkMutationQueue.enqueue((items) =>
-				applyFontMarkMutations(items, [
-					...containedMarks.map((cfiRange) => ({ type: 'remove' as const, cfiRange })),
-					{
-						type: 'upsert',
-						record: {
-							id: generateBlockID(),
-							cfiRange: trimmedRange,
-							color,
-							text,
-							createdTime: Date.now(),
-						},
+			const mutations: FontMarkMutation[] = [
+				...containedMarks.map((cfiRange) => ({ type: 'remove' as const, cfiRange })),
+				{
+					type: 'upsert',
+					record: {
+						id: generateBlockID(),
+						cfiRange: trimmedRange,
+						color,
+						text,
+						createdTime: Date.now(),
 					},
-				]).items
+				},
+			];
+			// 乐观更新内存数组：队列 flush 前的 reloadFontMarks 是异步的，若用户标完词
+			// 立刻划线输出，decorateExcerptForOutput 读到的是旧数组（新标记缺失）→ 无色。
+			// 用与持久化完全相同的纯函数先应用到 pendingLoadedFontMarks，保证导出装饰
+			// 与存储同构（替换/去重语义一致），队列 flush 后的 reload 只是幂等刷新。
+			const nextItems = applyFontMarkMutations(pendingLoadedFontMarks ?? [], mutations).items;
+			pendingLoadedFontMarks = nextItems;
+			await fontMarkMutationQueue.enqueue((items) =>
+				applyFontMarkMutations(items, mutations).items
 			);
 			if (containedMarks.length > 0) {
 				logger.warn(
@@ -2849,9 +2871,16 @@
 		if (!cfiRange || color === info.color) return;
 		fontMarkToolbarInfo = null;
 		try {
+			const mutations: FontMarkMutation[] = [{ type: 'patch', cfiRange, patch: { color } }];
+			// 乐观更新内存数组（与创建同构）：换色后立刻划线输出也应带新色，
+			// 不等队列 flush 的异步 reloadFontMarks。
+			pendingLoadedFontMarks = applyFontMarkMutations(
+				pendingLoadedFontMarks ?? [],
+				mutations
+			).items;
 			if (fontMarkMutationQueue) {
 				await fontMarkMutationQueue.enqueue((items) =>
-					applyFontMarkMutations(items, [{ type: 'patch', cfiRange, patch: { color } }]).items
+					applyFontMarkMutations(items, mutations).items
 				);
 			}
 			if (typeof readerService.updateFontMarkColor === 'function') {
@@ -2873,9 +2902,15 @@
 		}
 		fontMarkToolbarInfo = null;
 		try {
+			const mutations: FontMarkMutation[] = [{ type: 'remove', cfiRange }];
+			// 乐观更新内存数组：删除后立刻划线输出也不再带色，不等异步 reload。
+			pendingLoadedFontMarks = applyFontMarkMutations(
+				pendingLoadedFontMarks ?? [],
+				mutations
+			).items;
 			if (fontMarkMutationQueue) {
 				await fontMarkMutationQueue.enqueue((items) =>
-					applyFontMarkMutations(items, [{ type: 'remove', cfiRange }]).items
+					applyFontMarkMutations(items, mutations).items
 				);
 			}
 			if (typeof readerService.removeFontMark === 'function') {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	buildFontMarkHitCandidates,
 	caretIsInsideFontMarkRange,
 	findFontMarkAtCaret,
 	type FontMarkHitCandidate,
@@ -126,5 +127,119 @@ describe("findFontMarkAtCaret（候选标记筛选）", () => {
 		];
 		expect(findFontMarkAtCaret({ node: text, offset: 6 }, candidates)).toBeNull();
 		expect(findFontMarkAtCaret({ node: text, offset: 3 }, [])).toBeNull();
+	});
+});
+
+describe("buildFontMarkHitCandidates（点击候选构建：锚失败时短词兜底同样可用）", () => {
+	const MARK_CFI = "epubcfi(/6/4!/4/2,/1:3,/1:6)";
+
+	function buildSectionResolver(mapping: Record<string, number | null>) {
+		return (cfiRange: string) => mapping[cfiRange] ?? null;
+	}
+
+	it("锚解析失败但短词节内唯一出现 → 该标记进入候选（兜底找回 Range）", () => {
+		const doc = buildDoc("<p>这本书讲经济学原理</p>");
+		const candidates = buildFontMarkHitCandidates({
+			doc,
+			frameIndex: 0,
+			marks: [{ cfiRange: MARK_CFI, text: "经济学", color: "red" }],
+			resolveSectionIndex: buildSectionResolver({ [MARK_CFI]: 0 }),
+			resolveRangeInDocument: () => null, // 模拟 CFI 锚解析失败
+		});
+		expect(candidates).toHaveLength(1);
+		expect(candidates[0].range.toString()).toBe("经济学");
+		expect(candidates[0].mark.cfiRange).toBe(MARK_CFI);
+	});
+
+	it("锚解析失败 + 短词出现多次（无法唯一判定）→ 该标记不进候选（点击不响应）", () => {
+		const doc = buildDoc("<p>经济学第一段</p><p>经济学第二段</p>");
+		const candidates = buildFontMarkHitCandidates({
+			doc,
+			frameIndex: 0,
+			marks: [{ cfiRange: MARK_CFI, text: "经济学", color: "red" }],
+			resolveSectionIndex: buildSectionResolver({ [MARK_CFI]: 0 }),
+			resolveRangeInDocument: () => null,
+		});
+		expect(candidates).toHaveLength(0);
+	});
+
+	it("锚解析失败 + ≥4 字词（引述门槛不适用短词兜底）→ 不进候选", () => {
+		const doc = buildDoc("<p>这是一句足够长的引述文字</p>");
+		const candidates = buildFontMarkHitCandidates({
+			doc,
+			frameIndex: 0,
+			marks: [{ cfiRange: MARK_CFI, text: "这是一句足够长", color: "red" }],
+			resolveSectionIndex: buildSectionResolver({ [MARK_CFI]: 0 }),
+			resolveRangeInDocument: () => null,
+		});
+		expect(candidates).toHaveLength(0);
+	});
+
+	it("异节标记（节号不同）不参与候选，即使其文本在本节唯一出现", () => {
+		const doc = buildDoc("<p>这本书讲经济学原理</p>");
+		const candidates = buildFontMarkHitCandidates({
+			doc,
+			frameIndex: 0,
+			marks: [{ cfiRange: MARK_CFI, text: "经济学", color: "red" }],
+			resolveSectionIndex: buildSectionResolver({ [MARK_CFI]: 1 }), // 异节
+			resolveRangeInDocument: (cfi, textHint) =>
+				textHint ? rangeForParagraph(doc, 0, 4, 7) : null,
+		});
+		expect(candidates).toHaveLength(0);
+	});
+
+	it("节号解析失败（无法证明归属）不参与候选", () => {
+		const doc = buildDoc("<p>这本书讲经济学原理</p>");
+		const candidates = buildFontMarkHitCandidates({
+			doc,
+			frameIndex: 0,
+			marks: [{ cfiRange: MARK_CFI, text: "经济学", color: "red" }],
+			resolveSectionIndex: buildSectionResolver({ [MARK_CFI]: null }),
+			resolveRangeInDocument: () => null,
+		});
+		expect(candidates).toHaveLength(0);
+	});
+
+	it("锚解析成功 → 候选直接用解析出的 Range", () => {
+		const doc = buildDoc("<p>这本书讲经济学原理</p>");
+		const range = rangeForParagraph(doc, 0, 4, 7);
+		const candidates = buildFontMarkHitCandidates({
+			doc,
+			frameIndex: 0,
+			marks: [{ cfiRange: MARK_CFI, text: "经济学", color: "red" }],
+			resolveSectionIndex: buildSectionResolver({ [MARK_CFI]: 0 }),
+			resolveRangeInDocument: () => range,
+		});
+		expect(candidates).toHaveLength(1);
+		expect(candidates[0].range).toBe(range);
+	});
+
+	it("解析器抛异常 → 视为解析失败：短词唯一出现仍兜底进候选（与渲染路径一致），不冒泡", () => {
+		const doc = buildDoc("<p>这本书讲经济学原理</p>");
+		const candidates = buildFontMarkHitCandidates({
+			doc,
+			frameIndex: 0,
+			marks: [{ cfiRange: MARK_CFI, text: "经济学", color: "red" }],
+			resolveSectionIndex: buildSectionResolver({ [MARK_CFI]: 0 }),
+			resolveRangeInDocument: () => {
+				throw new Error("boom");
+			},
+		});
+		expect(candidates).toHaveLength(1);
+		expect(candidates[0].range.toString()).toBe("经济学");
+	});
+
+	it("解析器抛异常 + 短词多次出现（无唯一判定）→ 不进候选，不冒泡", () => {
+		const doc = buildDoc("<p>经济学第一段</p><p>经济学第二段</p>");
+		const candidates = buildFontMarkHitCandidates({
+			doc,
+			frameIndex: 0,
+			marks: [{ cfiRange: MARK_CFI, text: "经济学", color: "red" }],
+			resolveSectionIndex: buildSectionResolver({ [MARK_CFI]: 0 }),
+			resolveRangeInDocument: () => {
+				throw new Error("boom");
+			},
+		});
+		expect(candidates).toHaveLength(0);
 	});
 });
