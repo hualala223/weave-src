@@ -392,6 +392,29 @@
 	--epub-callout-title: #6b2e93;
 }
 
+/* EPUB Callout Block Background (摘录块背景：横平竖直的标准矩形)
+   粘贴/自动插入到笔记文档的 [!EPUB] 摘录块，背景固定为规整矩形色块：
+   无论 Obsidian 主题 / CSS 片段如何装饰通用 callout（斜切、旋转、
+   混合模式、异形背景），[!EPUB] 块自身始终是横平竖直的方块。 */
+.callout[data-callout="epub"] {
+	background-color: rgba(var(--callout-color), 0.12);
+	background-color: color-mix(in srgb, rgb(var(--callout-color)) 12%, transparent);
+	background-image: none !important;
+	mix-blend-mode: normal !important;
+	clip-path: none !important;
+	transform: none !important;
+	border-radius: var(--callout-radius, 8px);
+}
+
+.callout[data-callout="epub"] .callout-title,
+.callout[data-callout="epub"] .callout-content,
+.callout[data-callout="epub"] .callout-content blockquote {
+	background-color: transparent !important;
+	background-image: none !important;
+	clip-path: none !important;
+	transform: none !important;
+}
+
 .callout[data-callout="epub"] .callout-title,
 .callout[data-callout="epub"] .callout-icon,
 .callout[data-callout="epub"] .callout-title-inner {
