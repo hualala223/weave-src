@@ -1277,6 +1277,75 @@
 		}
 	}
 
+	async function addBookmarkNoteById(bookmarkId: string, text: string): Promise<boolean> {
+		if (!book) {
+			new Notice('未加载书籍');
+			return false;
+		}
+		try {
+			const result = await bookmarkService.addBookmarkNote(book, bookmarkId, text);
+			if (!result.bookmark) {
+				new Notice('书签不存在或已删除');
+				return false;
+			}
+			if (result.changed) {
+				bookmarkRevision += 1;
+				epubActiveDocumentStore.setSharedState({ bookmarkRevision });
+			}
+			return result.changed;
+		} catch (error) {
+			logger.error('[EpubReaderApp] Failed to add bookmark note:', error);
+			new Notice('备注操作失败');
+			return false;
+		}
+	}
+
+	async function updateBookmarkNoteById(bookmarkId: string, noteId: string, text: string): Promise<boolean> {
+		if (!book) {
+			new Notice('未加载书籍');
+			return false;
+		}
+		try {
+			const result = await bookmarkService.updateBookmarkNote(book, bookmarkId, noteId, text);
+			if (!result.bookmark) {
+				new Notice('书签不存在或已删除');
+				return false;
+			}
+			if (result.changed) {
+				bookmarkRevision += 1;
+				epubActiveDocumentStore.setSharedState({ bookmarkRevision });
+			}
+			return result.changed;
+		} catch (error) {
+			logger.error('[EpubReaderApp] Failed to update bookmark note:', error);
+			new Notice('备注操作失败');
+			return false;
+		}
+	}
+
+	async function deleteBookmarkNoteById(bookmarkId: string, noteId: string): Promise<boolean> {
+		if (!book) {
+			new Notice('未加载书籍');
+			return false;
+		}
+		try {
+			const result = await bookmarkService.deleteBookmarkNote(book, bookmarkId, noteId);
+			if (!result.bookmark) {
+				new Notice('书签不存在或已删除');
+				return false;
+			}
+			if (result.deleted) {
+				bookmarkRevision += 1;
+				epubActiveDocumentStore.setSharedState({ bookmarkRevision });
+			}
+			return result.deleted;
+		} catch (error) {
+			logger.error('[EpubReaderApp] Failed to delete bookmark note:', error);
+			new Notice('备注操作失败');
+			return false;
+		}
+	}
+
 	async function buildReadingReferencePoint(position?: ReadingPosition | null): Promise<EpubReadingReferencePoint | null> {
 		if (!book) {
 			return null;
@@ -2435,6 +2504,9 @@
 				excerptSettings,
 				highlightViewSnapshotService: canUseExcerptNotes ? highlightViewSnapshotService : null,
 				onDeleteBookmark: null,
+				onAddBookmarkNote: null,
+				onUpdateBookmarkNote: null,
+				onDeleteBookmarkNote: null,
 				onDeleteHighlight: null,
 				onSettingsClick: showSettingsMenu,
 			});
@@ -2457,6 +2529,9 @@
 			chapterHref: readerService.getCurrentChapterHref?.() || '',
 			paginationInfo,
 			onDeleteBookmark: deleteBookmarkById,
+			onAddBookmarkNote: addBookmarkNoteById,
+			onUpdateBookmarkNote: updateBookmarkNoteById,
+			onDeleteBookmarkNote: deleteBookmarkNoteById,
 			onDeleteHighlight: canUseExcerptNotes ? deleteDisplayHighlight : null,
 			onNavigate: requestBookLocate,
 			onSettingsClick: showSettingsMenu,

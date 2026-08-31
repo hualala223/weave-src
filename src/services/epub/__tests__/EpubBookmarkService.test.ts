@@ -234,3 +234,249 @@ describe("EpubBookmarkService", () => {
 		expect(await service.getBookmarkCountForBook(makeBook({ id: "missing" }))).toBe(0);
 	});
 });
+
+describe("EpubBookmarkService bookmark notes", () => {
+	beforeEach(() => {
+		getSchemaV2Store(new App(), () => DATA_PATH).resetForTests();
+	});
+
+	async function seedBookmarkWithNotes(files: Map<string, string>, bookmarks: Record<string, unknown>[]) {
+		seedAggregate(files, {
+			notes: {
+				bookmarks,
+				highlights: [],
+				excerpts: [],
+			},
+		});
+	}
+
+	it("adds a bookmark note at the top of the thread and persists it", async () => {
+		const { app, files } = createApp();
+		seedAggregate(files);
+		const service = new EpubBookmarkService(app);
+		const created = await service.addBookmark(makeBook(), {
+			cfi: "epubcfi(/6/4!/4/2/1:0)",
+			chapterIndex: 2,
+			percent: 45,
+			chapterTitle: "第三章",
+			createdAt: 1_700_000_000_000,
+		});
+
+		const first = await service.addBookmarkNote(makeBook(), created.bookmark.id, "第一条备注");
+		expect(first.changed).toBe(true);
+		expect(first.note?.id).toMatch(/^epub-bmn-/);
+		expect(first.bookmark?.notes?.[0].text).toBe("第一条备注");
+
+		const second = await service.addBookmarkNote(makeBook(), created.bookmark.id, "第二条更新鲜");
+		expect(second.changed).toBe(true);
+		expect(second.bookmark?.notes).toHaveLength(2);
+		expect(second.bookmark?.notes?.[0].text).toBe("第二条更新鲜");
+		expect((second.bookmark?.notes?.[0].createdAt ?? 0) >= (second.bookmark?.notes?.[1].createdAt ?? 1)).toBe(true);
+
+		await flushStore(app);
+		const persisted = readPersistedBookmarks(files)[0];
+		expect(persisted.notes).toHaveLength(2);
+		expect(persisted.notes[0].text).toBe("第二条更新鲜");
+	});
+
+	it("rejects empty or whitespace-only note text as a no-op", async () => {
+		const { app, files } = createApp();
+		seedAggregate(files);
+		const service = new EpubBookmarkService(app);
+		const created = await service.addBookmark(makeBook(), {
+			cfi: "epubcfi(/6/4!/4/2/1:0)",
+			chapterIndex: 2,
+			percent: 45,
+			chapterTitle: "第三章",
+			createdAt: 1_700_000_000_000,
+		});
+
+		const result = await service.addBookmarkNote(makeBook(), created.bookmark.id, "   \n  ");
+		expect(result.changed).toBe(false);
+		expect(result.note).toBeNull();
+		expect(result.bookmark?.id).toBe(created.bookmark.id);
+
+		await flushStore(app);
+		expect(readPersistedBookmarks(files)[0].notes ?? []).toEqual([]);
+	});
+
+	it("returns changed=false when the bookmark is missing", async () => {
+		const { app } = createApp();
+		const service = new EpubBookmarkService(app);
+
+		const result = await service.addBookmarkNote(makeBook(), "missing-bookmark", "备注");
+		expect(result.changed).toBe(false);
+		expect(result.bookmark).toBeNull();
+		expect(result.note).toBeNull();
+	});
+
+	it("updates a note in place, keeping its id, createdAt and thread position", async () => {
+		const { app, files } = createApp();
+		seedAggregate(files);
+		const service = new EpubBookmarkService(app);
+		const created = await service.addBookmark(makeBook(), {
+			cfi: "epubcfi(/6/4!/4/2/1:0)",
+			chapterIndex: 2,
+			percent: 45,
+			chapterTitle: "第三章",
+			createdAt: 1_700_000_000_000,
+		});
+		const added = await service.addBookmarkNote(makeBook(), created.bookmark.id, "有错字");
+		const noteId = added.note?.id ?? "";
+		const originalCreatedAt = added.note?.createdAt ?? -1;
+		expect(noteId).toBeTruthy();
+
+		const updated = await service.updateBookmarkNote(makeBook(), created.bookmark.id, noteId, "改好了");
+		expect(updated.changed).toBe(true);
+		expect(updated.note?.id).toBe(noteId);
+		expect(updated.note?.createdAt).toBe(originalCreatedAt);
+		expect(updated.bookmark?.notes).toHaveLength(1);
+		expect(updated.bookmark?.notes?.[0].text).toBe("改好了");
+
+		const same = await service.updateBookmarkNote(makeBook(), created.bookmark.id, noteId, "改好了");
+		expect(same.changed).toBe(false);
+
+		const empty = await service.updateBookmarkNote(makeBook(), created.bookmark.id, noteId, "  ");
+		expect(empty.changed).toBe(false);
+
+		await flushStore(app);
+		const persisted = readPersistedBookmarks(files)[0];
+		expect(persisted.notes[0].text).toBe("改好了");
+		expect(persisted.notes[0].id).toBe(noteId);
+		expect(persisted.notes[0].createdAt).toBe(originalCreatedAt);
+	});
+
+	it("returns changed=false when updating a missing note", async () => {
+		const { app, files } = createApp();
+		seedAggregate(files);
+		const service = new EpubBookmarkService(app);
+		const created = await service.addBookmark(makeBook(), {
+			cfi: "epubcfi(/6/4!/4/2/1:0)",
+			chapterIndex: 2,
+			percent: 45,
+			chapterTitle: "第三章",
+			createdAt: 1_700_000_000_000,
+		});
+
+		const result = await service.updateBookmarkNote(makeBook(), created.bookmark.id, "missing-note", "备注");
+		expect(result.changed).toBe(false);
+		expect(result.bookmark?.id).toBe(created.bookmark.id);
+		expect(result.note).toBeNull();
+	});
+
+	it("deletes a single note without touching the others or the bookmark", async () => {
+		const { app, files } = createApp();
+		seedAggregate(files);
+		const service = new EpubBookmarkService(app);
+		const created = await service.addBookmark(makeBook(), {
+			cfi: "epubcfi(/6/4!/4/2/1:0)",
+			chapterIndex: 2,
+			percent: 45,
+			chapterTitle: "第三章",
+			createdAt: 1_700_000_000_000,
+		});
+		const firstResult = await service.addBookmarkNote(makeBook(), created.bookmark.id, "第一");
+		const secondResult = await service.addBookmarkNote(makeBook(), created.bookmark.id, "第二");
+		const firstId = firstResult.note?.id ?? "";
+		const secondId = secondResult.note?.id ?? "";
+		expect(firstId).toBeTruthy();
+		expect(secondId).toBeTruthy();
+
+		const result = await service.deleteBookmarkNote(makeBook(), created.bookmark.id, firstId);
+		expect(result.deleted).toBe(true);
+		expect(result.bookmark?.notes?.map((n) => n.id)).toEqual([secondId]);
+
+		const missing = await service.deleteBookmarkNote(makeBook(), created.bookmark.id, "missing");
+		expect(missing.deleted).toBe(false);
+		expect(missing.bookmark?.id).toBe(created.bookmark.id);
+
+		await flushStore(app);
+		expect(readPersistedBookmarks(files)[0].notes).toHaveLength(1);
+	});
+
+	it("preserves notes when re-adding a bookmark for the same cfi (upsert-by-CFI)", async () => {
+		const { app, files } = createApp();
+		seedAggregate(files);
+		const service = new EpubBookmarkService(app);
+		const first = await service.addBookmark(makeBook(), {
+			cfi: "epubcfi(/6/4!/4/2/1:0)",
+			chapterIndex: 2,
+			percent: 45,
+			chapterTitle: "第三章",
+			createdAt: 1_700_000_000_000,
+		});
+		const added = await service.addBookmarkNote(makeBook(), first.bookmark.id, "重加书签不能丢的备注");
+		expect(added.changed).toBe(true);
+
+		const second = await service.addBookmark(makeBook(), {
+			cfi: "epubcfi(/6/4!/4/2/1:0)",
+			chapterIndex: 2,
+			percent: 46,
+			chapterTitle: "第三章",
+			createdAt: 1_700_000_100_000,
+		});
+		expect(second.created).toBe(false);
+		expect(second.bookmark.id).toBe(first.bookmark.id);
+		expect(second.bookmark.notes).toHaveLength(1);
+		expect(second.bookmark.notes?.[0].text).toBe("重加书签不能丢的备注");
+
+		await flushStore(app);
+		expect(readPersistedBookmarks(files)[0].notes?.[0].text).toBe("重加书签不能丢的备注");
+	});
+
+	it("loads legacy bookmarks without notes and normalizes note order newest-first", async () => {
+		const { app, files } = createApp();
+		await seedBookmarkWithNotes(files, [
+			{
+				id: "bm-1",
+				cfi: "epubcfi(/6/2!/4/2/1:0)",
+				chapterIndex: 1,
+				percent: 10,
+				chapterTitle: "第一章",
+				createdAt: 1_700_000_000_000,
+				notes: [
+					{ id: "bn-old", text: "旧", createdAt: 1_700_000_000_000 },
+					{ id: "bn-new", text: "新", createdAt: 1_700_000_100_000 },
+				],
+			},
+			{
+				id: "bm-2",
+				cfi: "epubcfi(/6/6!/4/2/1:0)",
+				chapterIndex: 3,
+				percent: 60,
+				chapterTitle: "第四章",
+				createdAt: 1_700_000_100_000,
+			},
+		]);
+		const service = new EpubBookmarkService(app);
+
+		const loaded = await service.loadBookmarksForBook(makeBook());
+		expect(loaded).toHaveLength(2);
+		const withNotes = loaded.find((b) => b.id === "bm-1") ?? null;
+		expect(withNotes).not.toBeNull();
+		expect(withNotes?.notes?.[0]?.id).toBe("bn-new");
+		const plain = loaded.find((b) => b.id === "bm-2") ?? null;
+		expect(plain?.notes ?? []).toEqual([]);
+	});
+
+	it("deleting a bookmark removes its notes with it", async () => {
+		const { app, files } = createApp();
+		seedAggregate(files);
+		const service = new EpubBookmarkService(app);
+		const created = await service.addBookmark(makeBook(), {
+			cfi: "epubcfi(/6/4!/4/2/1:0)",
+			chapterIndex: 2,
+			percent: 45,
+			chapterTitle: "第三章",
+			createdAt: 1_700_000_000_000,
+		});
+		await service.addBookmarkNote(makeBook(), created.bookmark.id, "随书签一起走");
+
+		const deleted = await service.deleteBookmark(makeBook(), created.bookmark.id);
+		expect(deleted).toBe(true);
+		expect(await service.loadBookmarksForBook(makeBook())).toHaveLength(0);
+
+		await flushStore(app);
+		expect(readPersistedBookmarks(files)).toHaveLength(0);
+	});
+});

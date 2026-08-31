@@ -42,6 +42,9 @@ export interface EpubSharedState {
 	searchQuerySeed: string;
 	searchRequestNonce: number;
 	onDeleteBookmark: ((bookmarkId: string) => Promise<boolean>) | null;
+	onAddBookmarkNote: ((bookmarkId: string, text: string) => Promise<boolean>) | null;
+	onUpdateBookmarkNote: ((bookmarkId: string, noteId: string, text: string) => Promise<boolean>) | null;
+	onDeleteBookmarkNote: ((bookmarkId: string, noteId: string) => Promise<boolean>) | null;
 	onDeleteHighlight: ((highlight: EpubDisplayHighlight) => Promise<boolean>) | null;
 	onSettingsClick: ((evt: MouseEvent) => void) | null;
 	onSwitchBook: ((filePath: string) => void) | null;
@@ -70,6 +73,9 @@ const EMPTY_STATE: EpubSharedState = {
 	searchQuerySeed: "",
 	searchRequestNonce: 0,
 	onDeleteBookmark: null,
+	onAddBookmarkNote: null,
+	onUpdateBookmarkNote: null,
+	onDeleteBookmarkNote: null,
 	onDeleteHighlight: null,
 	onSettingsClick: null,
 	onSwitchBook: null,

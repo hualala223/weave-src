@@ -570,6 +570,27 @@
 		return sharedState.onDeleteBookmark(bookmark.id);
 	}
 
+	async function handleAddBookmarkNote(bookmark: EpubBookmarkRecord, text: string) {
+		if (!sharedState?.onAddBookmarkNote) {
+			return false;
+		}
+		return sharedState.onAddBookmarkNote(bookmark.id, text);
+	}
+
+	async function handleUpdateBookmarkNote(bookmark: EpubBookmarkRecord, noteId: string, text: string) {
+		if (!sharedState?.onUpdateBookmarkNote) {
+			return false;
+		}
+		return sharedState.onUpdateBookmarkNote(bookmark.id, noteId, text);
+	}
+
+	async function handleDeleteBookmarkNote(bookmark: EpubBookmarkRecord, noteId: string) {
+		if (!sharedState?.onDeleteBookmarkNote) {
+			return false;
+		}
+		return sharedState.onDeleteBookmarkNote(bookmark.id, noteId);
+	}
+
 	$effect(() => {
 		if (sharedState?.book) {
 			void loadToc();
@@ -916,6 +937,9 @@
 						book={sharedState.book}
 						bookmarkRevision={sharedState.bookmarkRevision}
 						onDeleteBookmark={handleDeleteBookmark}
+						onAddBookmarkNote={handleAddBookmarkNote}
+						onUpdateBookmarkNote={handleUpdateBookmarkNote}
+						onDeleteBookmarkNote={handleDeleteBookmarkNote}
 						onNavigate={handleHighlightNavigate}
 					/>
 				{:else if activeTab === 'highlights'}
