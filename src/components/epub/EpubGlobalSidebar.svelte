@@ -954,6 +954,7 @@
 							currentChapterTitle={sharedState.chapterTitle}
 							currentChapterIndex={sharedState.readerService?.getCurrentChapterIndex?.() ?? -1}
 							onDeleteHighlight={sharedState.onDeleteHighlight ?? undefined}
+							onPasteHighlights={sharedState?.onPasteHighlightsToNote ?? undefined}
 							bind:searchQuery={searchQuery}
 							bind:searchMeta={highlightSearchMeta}
 							onNavigate={handleHighlightNavigate}

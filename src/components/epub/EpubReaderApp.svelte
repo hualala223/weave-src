@@ -11,10 +11,15 @@
 	import EpubCommentEditorPopover from './EpubCommentEditorPopover.svelte';
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
 	import { createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress } from '../../services/epub';
-	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubStoredFontMark, FontMarkClickInfo, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderImageTapInfo, ReaderTapEvent, ReadingPosition } from '../../services/epub';
+	import type { EpubBook, EpubChapterLocationFormat, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubStoredFontMark, FontMarkClickInfo, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderImageTapInfo, ReaderTapEvent, ReadingPosition } from '../../services/epub';
 	import type { EpubStoredHighlight } from '../../services/epub/schema-v2';
 	import { decorateExcerptText, type FontMarkColorToken } from '../../services/epub/font-mark-decoration';
 	import { insertIntoMarkdownEditor, NO_EDITOR_MESSAGE } from '../../services/epub/note-editor-insert';
+	import {
+		buildExcerptPasteBlocks,
+		type ExcerptPasteBlockItem,
+	} from '../../services/epub/excerpt-batch-paste';
+	import { formatExcerptEntryTimestamp, formatExcerptTimestamp } from '../../services/epub/epub-time-format';
 	import {
 	renderIdeaQuoteBlock,
 	upsertIdeaEntry,
@@ -1919,7 +1924,7 @@
 	): string {
 		const chapterIndex = readerService.getCurrentChapterIndex();
 		const chapterTitle = resolveExcerptChapterTitle();
-		const timestamp = excerptSettings.addCreationTime ? formatTimestamp(new Date()) : undefined;
+		const timestamp = excerptSettings.addCreationTime ? formatExcerptTimestamp(new Date()) : undefined;
 		return linkService.buildQuoteBlock(
 			filePath,
 			cfiRange,
@@ -1934,12 +1939,6 @@
 			style,
 			resolveExcerptChapterLabelMaxLength()
 		);
-	}
-
-	const pad2 = (value: number) => String(value).padStart(2, '0');
-
-	function formatTimestamp(date: Date): string {
-		return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 	}
 
 	function resolveActiveMarkdownView(): MarkdownView | null {
@@ -2025,6 +2024,84 @@
 		await persistInlineHighlight(cfiRange, text, color, style);
 	}
 
+	/** 章节标签：优先按「章节标签格式」设置用引擎重新解析该章节，其次用条目自带标题兜底。 */
+	function resolveChapterLabel(
+		entry: { chapterIndex?: number; chapterTitle?: string },
+		format: EpubChapterLocationFormat
+	): string | undefined {
+		if (
+			typeof readerService.getSectionLocationLabelByIndex === 'function' &&
+			typeof entry.chapterIndex === 'number'
+		) {
+			const label = readerService.getSectionLocationLabelByIndex(entry.chapterIndex, format);
+			if (String(label || '').trim()) {
+				return label;
+			}
+		}
+		return String(entry.chapterTitle || '').trim() || undefined;
+	}
+
+	/**
+	 * 摘录面板「粘贴所选摘录到笔记」（批量选择后单击粘贴按钮 / 卡片右键单条）：
+	 * - 与划线自动粘贴同款格式：buildQuoteBlock 引用块 + 追加到最近激活笔记文档末尾；
+	 * - 块顺序与面板显示相反：按 createdTime 升序（最早摘录在最上）；
+	 * - 时间戳用摘录原始创建时间（而非粘贴时刻），保留真实时间；
+	 * - 带想法的摘录直接把想法条目渲染进块（所见即所得，不依赖事后合并）；
+	 * - 无打开的 Markdown 编辑器时仅提示，不隐式复制（与自动插入一致）。
+	 * 块构建（排序/时间戳/样式位/想法条目/拼接）全部收拢在纯函数服务
+	 * excerpt-batch-paste 内，此处只做装饰、章节标签解析与插入两类胶水。
+	 */
+	async function pasteSelectedHighlightsToNote(highlights: EpubDisplayHighlight[]): Promise<boolean> {
+		if (!book || !filePath || highlights.length === 0) {
+			return false;
+		}
+		// 先确认有打开的 MD 笔记文档，避免块已构建却无处插入（无副作用原则）。
+		if (!resolveActiveMarkdownView()) {
+			new Notice(NO_EDITOR_MESSAGE);
+			return false;
+		}
+		const chapterLocationFormat = excerptSettings.chapterLocationFormat ?? 'leaf';
+		const items: ExcerptPasteBlockItem[] = [];
+		for (const highlight of highlights) {
+			try {
+				items.push({
+					cfiRange: highlight.cfiRange,
+					text: decorateExcerptForOutput(highlight.text || '', highlight.cfiRange),
+					chapterIndex: highlight.chapterIndex,
+					chapterLabel: resolveChapterLabel(highlight, chapterLocationFormat),
+					color: highlight.color,
+					excerptId: highlight.excerptId,
+					createdTime: highlight.createdTime,
+					noteTypeKey: highlight.noteTypeKey,
+					commentText: highlight.commentText,
+					hasCommentDivider: highlight.hasCommentDivider,
+				});
+			} catch {
+				// 单条字色装饰/章节标签解析异常不阻塞整批（用户故事 21）：跳过该条继续。
+			}
+		}
+		if (items.length === 0) {
+			return false;
+		}
+		const result = buildExcerptPasteBlocks(items, {
+			filePath,
+			sourceId: book.sourceId,
+			sourcePath: resolveExcerptLinkSourcePath(true),
+			addCreationTime: excerptSettings.addCreationTime,
+			chapterLabelMaxLength: resolveExcerptChapterLabelMaxLength(),
+			buildQuoteBlock: (...args) => linkService.buildQuoteBlock(...args),
+		});
+		if (result.count === 0) {
+			return false;
+		}
+		const inserted = insertToEditor(result.content);
+		if (inserted) {
+			new Notice(`已粘贴 ${result.count} 条摘录到笔记末尾`);
+			return true;
+		}
+		return false;
+	}
+
 	function resolveBookDisplayTitle(): string {
 		const metaTitle = book?.metadata.title?.trim();
 		if (metaTitle) {
@@ -2052,13 +2129,7 @@
 				return;
 			}
 			// 章节标签遵循「章节标签格式」设置（root/leaf/full），与被点击章节对应而非当前章节。
-			const chapterTitle =
-				typeof readerService.getSectionLocationLabelByIndex === 'function'
-					? readerService.getSectionLocationLabelByIndex(
-							info.chapterIndex,
-							excerptSettings.chapterLocationFormat ?? 'leaf'
-						) || info.chapterTitle
-					: info.chapterTitle;
+			const chapterTitle = resolveChapterLabel(info, excerptSettings.chapterLocationFormat ?? 'leaf');
 			const adapter = app.vault.adapter;
 			const result = await extractImageToNote(
 				{
@@ -2069,7 +2140,7 @@
 					cfi: info.cfi,
 					alt: info.alt,
 					timestamp: excerptSettings.addCreationTime
-						? formatTimestamp(new Date())
+						? formatExcerptTimestamp(new Date())
 						: undefined,
 				},
 				source,
@@ -2508,6 +2579,7 @@
 				onUpdateBookmarkNote: null,
 				onDeleteBookmarkNote: null,
 				onDeleteHighlight: null,
+				onPasteHighlightsToNote: null,
 				onSettingsClick: showSettingsMenu,
 			});
 			return;
@@ -2533,6 +2605,7 @@
 			onUpdateBookmarkNote: updateBookmarkNoteById,
 			onDeleteBookmarkNote: deleteBookmarkNoteById,
 			onDeleteHighlight: canUseExcerptNotes ? deleteDisplayHighlight : null,
+			onPasteHighlightsToNote: canUseExcerptNotes ? pasteSelectedHighlightsToNote : null,
 			onNavigate: requestBookLocate,
 			onSettingsClick: showSettingsMenu,
 			onSwitchBook,
@@ -2706,11 +2779,6 @@
 		}
 	}
 
-	/** 紧凑条目时间戳（月-日 时:分），独立于「摘录时间戳」设置。 */
-	function formatShortTimestamp(date: Date): string {
-		return `${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
-	}
-
 	/**
 	 * 想法入笔记（票03 起覆盖创建/编辑两路径）：
 	 * - 创建：首写建块 / 同句重写追加条目 / 相同 noop；
@@ -2731,7 +2799,7 @@
 		const quoteBlock = buildNoteContent(decorateExcerptForOutput(info.text, info.cfiRange), info.cfiRange, info.color, info.style, true, excerptId);
 		const view = resolveActiveMarkdownView();
 		const doc = view?.editor?.getValue() ?? '';
-		const entry = { text: ideaText, timestamp: formatShortTimestamp(new Date()) };
+		const entry = { text: ideaText, timestamp: formatExcerptEntryTimestamp(new Date()) };
 
 		let result: IdeaNoteResult | null = null;
 		if (commentEditorMode === 'create' || commentEditorMode === 'append') {

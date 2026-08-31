@@ -46,7 +46,7 @@ export type {
 export {
 	DEFAULT_EPUB_BOOKSHELF_SETTINGS,
 } from "./EpubStorageService";
-export type { EpubExcerptSettings } from "./epub-excerpt-settings";
+export type { EpubChapterLocationFormat, EpubExcerptSettings } from "./epub-excerpt-settings";
 export { DEFAULT_EPUB_EXCERPT_SETTINGS } from "./epub-excerpt-settings";
 export {
 	type FontMarkColorToken,
