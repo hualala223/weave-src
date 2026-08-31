@@ -509,9 +509,10 @@ export class FoliateVaultPublicationParser {
 
 	getSectionIndexForCfi(cfi: string): number | null {
 		const resolved = this.resolveCfiTarget(cfi);
-		// foliate 的 resolveCFI 对 idref 失配返回 { index: -1, anchor }（对象仍 truthy）：
-		// -1 不是合法节号，必须归一化为 null——否则会穿透调用方的 `??` 回退，
-		// 让 resolveRange/分组判定「-1 !== frame.index」把整组标记静默丢弃。
+		// resolveCfiTarget 已对 foliate idref 失配（index: -1）做过前缀推断修复；
+		// 此处归一化仍保留为防御：任何解析不出合法节号的路径统一返回 null，
+		// 避免 -1 穿透调用方的 `??` 回退，让分组/命中判定「-1 !== frame.index」
+		// 把整组标记静默丢弃。
 		const index = typeof resolved?.index === "number" ? resolved.index : null;
 		return index !== null && index >= 0 ? index : null;
 	}
@@ -1351,7 +1352,22 @@ export class FoliateVaultPublicationParser {
 			const wrapped = this.wrapCfi(cfi);
 			const resolved = this.getBook().resolveCFI?.(wrapped);
 			if (resolved) {
-				return resolved;
+				// folio 的 resolveCFI 对 idref 失配返回 { index: -1, anchor }（truthy 对象）：
+				// 其 anchor 基于「已剥离 OPF 前缀的 parts」（resolveCFI 内部 shift 过原数组），
+				// 是可靠的节内解析器；但 -1 不是合法节号，若原样透传会让上层
+				// `resolved.index === sectionIndex` 判假、CFI 锚精确解析被整体跳过，
+				// 字色标记/划线随之掉进文本首现兜底（"标第二个 A 染到第一个 A"的根因之一）。
+				const resolvedIndex = typeof resolved.index === "number" ? resolved.index : -1;
+				if (resolvedIndex >= 0) {
+					return resolved;
+				}
+				// idref 失配：用 CFI 前缀推断节号（字符串前缀匹配 base cfi，不依赖 OPF 结构），
+				// 保留 folio 的 anchor——prefix 证明归属 + 节内锚精确解析，双闸后即可信任。
+				const indexedByPrefix = this.findSectionIndexFromCfiPrefix(wrapped);
+				if (indexedByPrefix !== null && typeof resolved.anchor === "function") {
+					return { index: indexedByPrefix, anchor: resolved.anchor };
+				}
+				// prefix 推断失败或无可用 anchor：落回下方 parse 兜底（保持原 fallback 行为）。
 			}
 
 			const parsed = EpubCfi.parse(wrapped);

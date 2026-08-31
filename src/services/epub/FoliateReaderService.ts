@@ -1986,6 +1986,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return [];
 		}
 		const targetSectionIndex = this.parser.getSectionIndexForCfi(trimmed);
+		logger.warn(
+			`[DEBUG-ReplaceDiag] fm sel cfi=${trimmed.slice(0, 48)} section=${String(targetSectionIndex)} frames=${visibleFrames.length}`
+		);
 		const frame =
 			visibleFrames.find((item) => item.index === targetSectionIndex) ?? visibleFrames[0];
 		if (!frame) {
@@ -1998,6 +2001,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 			frame.index
 		);
 		if (!selectionRange) {
+			logger.warn(
+				`[DEBUG-ReplaceDiag] fm sel range resolve FAILED cfi=${trimmed.slice(0, 48)}`
+			);
 			return [];
 		}
 		const selectionSpan = computeRangeTextOffsets(frameDoc, selectionRange);
@@ -2005,10 +2011,13 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return [];
 		}
 		const contained: string[] = [];
+		let sectionSkipped = 0;
+		let resolveFailed = 0;
 		for (const mark of this.fontMarksByCfiKey.values()) {
 			try {
 				const markSectionIndex = this.parser.getSectionIndexForCfi(mark.cfiRange);
 				if (markSectionIndex === null || markSectionIndex !== targetSectionIndex) {
+					sectionSkipped += 1;
 					continue;
 				}
 				const markRange = this.parser.resolveRangeInLoadedSection(
@@ -2018,6 +2027,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 					mark.text
 				);
 				if (!markRange) {
+					resolveFailed += 1;
+					logger.warn(
+						`[DEBUG-ReplaceDiag] fm mark resolve FAILED cfi=${String(mark.cfiRange).slice(0, 48)} text=${String(mark.text || "").slice(0, 20)}`
+					);
 					continue;
 				}
 				const markSpan = computeRangeTextOffsets(frameDoc, markRange);
@@ -2026,8 +2039,12 @@ export class FoliateReaderService implements EpubReaderEngine {
 				}
 			} catch {
 				// 单条解析失败不影响其他标记；保守跳过（不删除）。
+				resolveFailed += 1;
 			}
 		}
+		logger.warn(
+			`[DEBUG-ReplaceDiag] fm done sel=${trimmed.slice(0, 48)} considered=${this.fontMarksByCfiKey.size} sectionSkipped=${sectionSkipped} resolveFailed=${resolveFailed} contained=${contained.length}`
+		);
 		return contained;
 	}
 
@@ -2051,6 +2068,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 		// 节号解析失败（真实书常态，票 08 实测）不再直接放弃：回退首个可见帧继续解析，
 		// 与字色替换路径 getFontMarksContainedInSelection 保持同一兜底哲学。
 		const targetSectionIndex = this.parser.getSectionIndexForCfi(trimmed);
+		logger.warn(
+			`[DEBUG-ReplaceDiag] hl sel cfi=${trimmed.slice(0, 48)} section=${String(targetSectionIndex)} frames=${visibleFrames.length}`
+		);
 		const frame =
 			visibleFrames.find((item) => item.index === targetSectionIndex) ?? visibleFrames[0];
 		const frameDoc = frame.frameDocument;
@@ -2060,6 +2080,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 			frame.index
 		);
 		if (!selectionRange) {
+			logger.warn(
+				`[DEBUG-ReplaceDiag] hl sel range resolve FAILED cfi=${trimmed.slice(0, 48)}`
+			);
 			return [];
 		}
 		const selectionSpan = computeRangeTextOffsets(frameDoc, selectionRange);
@@ -2067,6 +2090,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return [];
 		}
 		const contained: string[] = [];
+		let sectionSkipped = 0;
+		let resolveFailed = 0;
 		for (const highlight of this.highlightDataMap.values()) {
 			try {
 				// 节过滤仅在节号可解时启用；不可解时交给「同一文档两边都解析出偏移 + 完全包含」
@@ -2077,6 +2102,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 							? highlight.chapterIndex
 							: this.parser.getSectionIndexForCfi(highlight.cfiRange);
 					if (highlightSection !== targetSectionIndex) {
+						sectionSkipped += 1;
 						continue;
 					}
 				}
@@ -2087,6 +2113,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 					String(highlight.text || "")
 				);
 				if (!highlightRange) {
+					resolveFailed += 1;
+					logger.warn(
+						`[DEBUG-ReplaceDiag] hl mark resolve FAILED cfi=${String(highlight.cfiRange).slice(0, 48)} text=${String(highlight.text || "").slice(0, 20)}`
+					);
 					continue;
 				}
 				const highlightSpan = computeRangeTextOffsets(frameDoc, highlightRange);
@@ -2095,8 +2125,12 @@ export class FoliateReaderService implements EpubReaderEngine {
 				}
 			} catch {
 				// 单条解析失败不影响其他划线；保守跳过（不删除）。
+				resolveFailed += 1;
 			}
 		}
+		logger.warn(
+			`[DEBUG-ReplaceDiag] hl done sel=${trimmed.slice(0, 48)} considered=${this.highlightDataMap.size} sectionSkipped=${sectionSkipped} resolveFailed=${resolveFailed} contained=${contained.length}`
+		);
 		return contained;
 	}
 

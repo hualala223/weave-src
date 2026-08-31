@@ -236,4 +236,90 @@ describe("FoliateVaultPublicationParser", () => {
       readBlobSpy.mockRestore();
     }
   });
+
+  it("repairs foliate resolveCFI idref mismatch: index -1 is replaced by CFI-prefix section index while keeping the anchor", () => {
+    // foliate Book#resolveCFI 对 idref 失配返回 { index: -1, anchor }（truthy 对象）。
+    // 修复前 resolveCfiTarget 原样透传 -1，导致上层 `resolved.index === sectionIndex`
+    // 判假、CFI 锚精确解析被跳过，重复短词标记掉进"节内首现"兜底。
+    const parser = new FoliateVaultPublicationParser({} as any);
+    const parserAny = parser as any;
+    const anchor = vi.fn((doc: Document) => {
+      const p = doc.querySelector("p");
+      if (!p?.firstChild) return null;
+      const range = doc.createRange();
+      range.setStart(p.firstChild, 0);
+      range.setEnd(p.firstChild, 1);
+      return range;
+    });
+    parserAny.currentBook = {
+      sections: [
+        { cfi: "epubcfi(/6/12)", href: "Text/00001.htm" },
+        { cfi: "epubcfi(/6/14)", href: "Text/00002.htm" },
+      ],
+      resolveCFI: () => ({ index: -1, anchor }),
+    };
+
+    try {
+      // CFI 前缀 /6/12 应推断到 section 0（而非 -1），anchor 原样保留。
+      const resolved = parserAny.resolveCfiTarget(
+        "epubcfi(/6/12!/4/2,/1:0,/1:1)"
+      );
+      expect(resolved).not.toBeNull();
+      expect(resolved.index).toBe(0);
+      expect(resolved.anchor).toBe(anchor);
+
+      const doc = document.implementation.createHTMLDocument("draft");
+      doc.body.innerHTML = "<p>目标</p>";
+      const range = resolved.anchor(doc);
+      expect(range).not.toBeNull();
+      expect(range.toString()).toBe("目");
+    } finally {
+      parser.dispose();
+    }
+  });
+
+  it("resolves a repeated short word to its exact CFI position when the section idref mismatches (index -1)", () => {
+    // 用户场景：同一页两个相同短词（如两个 B），标记第二个时被染到第一个。
+    // 修复后即使 book.resolveCFI 返回 index -1，resolveCfiTarget 也恢复节号，
+    // resolveRangeInLoadedSection 的 CFI 锚路径仍能精确返回第二个 B 的 Range，
+    // 而不是走文本首现兜底。
+    const parser = new FoliateVaultPublicationParser({} as any);
+    const parserAny = parser as any;
+    const doc = document.implementation.createHTMLDocument("draft");
+    doc.body.innerHTML = "<p>第一段</p><p>第二段</p><p>头尾</p>";
+    const secondText = doc.querySelectorAll("p")[1]!.firstChild as Text;
+    const secondBRange = doc.createRange();
+    secondBRange.setStart(secondText, 1);
+    secondBRange.setEnd(secondText, 2);
+    const anchor = vi.fn(() => secondBRange);
+
+    parserAny.currentBook = {
+      sections: [
+        { cfi: "epubcfi(/6/12)", href: "Text/00001.htm" },
+        { cfi: "epubcfi(/6/14)", href: "Text/00002.htm" },
+      ],
+      resolveCFI: () => ({ index: -1, anchor }),
+    };
+    parserAny.sectionDescriptors = [
+      { index: 0, href: "Text/00001.htm", title: "Chapter 1" },
+      { index: 1, href: "Text/00002.htm", title: "Chapter 2" },
+    ];
+
+    try {
+      // 标记文本是单字 B，textHint 引述找回有 ≥4 字门槛本来就不可用，
+      // 因此正确行为唯一可能是 CFI 锚精确解析（index 修复后可达）。
+      const range = parserAny.resolveRangeInLoadedSection(
+        "epubcfi(/6/12!/4/2,/1:1,/1:2)",
+        doc,
+        0,
+        "B"
+      );
+      expect(range).not.toBeNull();
+      expect(range.startContainer).toBe(secondText);
+      expect(range.startOffset).toBe(1);
+      expect(range.toString()).toBe("二");
+    } finally {
+      parser.dispose();
+    }
+  });
 });
