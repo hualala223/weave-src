@@ -98,7 +98,7 @@ describe('toolbar-positioning', () => {
 		expect(result.mode).toBe('docked');
 	});
 
-	it('places floating toolbars above the anchor when space is available', () => {
+	it('flips below when the selection sits in the upper half (more room below)', () => {
 		const result = computeToolbarPosition({
 			anchorRect: { top: 120, left: 100, bottom: 144, right: 164, width: 64, height: 24 },
 			containerWidth: 360,
@@ -109,10 +109,130 @@ describe('toolbar-positioning', () => {
 		});
 
 		expect(result.mode).toBe('floating');
-		expect(result.isBelowAnchor).toBe(false);
-		expect(result.top).toBe(48);
+		expect(result.isBelowAnchor).toBe(true);
+		expect(result.top).toBe(156);
 		expect(result.left).toBe(62);
 		expect(result.arrowOffset).toBe(0);
+	});
+
+	it('stays above when the selection sits in the lower half (more room above)', () => {
+		const result = computeToolbarPosition({
+			anchorRect: { top: 168, left: 100, bottom: 192, right: 164, width: 64, height: 24 },
+			containerWidth: 360,
+			containerHeight: 280,
+			toolbarWidth: 140,
+			toolbarHeight: 60,
+			mobile: false,
+		});
+
+		expect(result.mode).toBe('floating');
+		expect(result.isBelowAnchor).toBe(false);
+		expect(result.top).toBe(96);
+		expect(result.left).toBe(62);
+		expect(result.arrowOffset).toBe(0);
+	});
+
+	it('stays above when clearance is exactly tied (default preferred side)', () => {
+		const result = computeToolbarPosition({
+			anchorRect: { top: 148, left: 100, bottom: 172, right: 164, width: 64, height: 24 },
+			containerWidth: 360,
+			containerHeight: 320,
+			toolbarWidth: 140,
+			toolbarHeight: 60,
+			mobile: false,
+		});
+
+		expect(result.mode).toBe('floating');
+		expect(result.isBelowAnchor).toBe(false);
+		expect(result.top).toBe(76);
+		expect(result.left).toBe(62);
+	});
+
+	it('breaks an exact tie downward when preferredSide is bottom', () => {
+		const result = computeToolbarPosition({
+			anchorRect: { top: 148, left: 100, bottom: 172, right: 164, width: 64, height: 24 },
+			containerWidth: 360,
+			containerHeight: 320,
+			toolbarWidth: 140,
+			toolbarHeight: 60,
+			mobile: false,
+			preferredSide: 'bottom',
+		});
+
+		expect(result.mode).toBe('floating');
+		expect(result.isBelowAnchor).toBe(true);
+		expect(result.top).toBe(184);
+	});
+
+	it('places above exclusively when only the above side fits', () => {
+		const result = computeToolbarPosition({
+			anchorRect: { top: 150, left: 40, bottom: 174, right: 96, width: 56, height: 24 },
+			containerWidth: 240,
+			containerHeight: 240,
+			toolbarWidth: 140,
+			toolbarHeight: 60,
+			mobile: false,
+		});
+
+		expect(result.mode).toBe('floating');
+		expect(result.isBelowAnchor).toBe(false);
+		expect(result.top).toBe(78);
+		expect(result.left).toBe(12);
+		expect(result.arrowOffset).toBe(-14);
+	});
+
+	it('treats clearance exactly equal to toolbar height as usable (boundary)', () => {
+		// 上方净空 == 工具条高度（60），刚够放得下 → 可用即选上方，零重叠（>= 边界）
+		const result = computeToolbarPosition({
+			anchorRect: { top: 84, left: 100, bottom: 108, right: 164, width: 64, height: 24 },
+			containerWidth: 360,
+			containerHeight: 180,
+			toolbarWidth: 140,
+			toolbarHeight: 60,
+			mobile: false,
+		});
+
+		expect(result.mode).toBe('floating');
+		expect(result.isBelowAnchor).toBe(false);
+		expect(result.top).toBe(12);
+	});
+
+	it('overlaps minimally with clamped placement when neither side fits (larger clearance side)', () => {
+		const result = computeToolbarPosition({
+			anchorRect: { top: 60, left: 40, bottom: 160, right: 96, width: 56, height: 100 },
+			containerWidth: 320,
+			containerHeight: 200,
+			toolbarWidth: 220,
+			toolbarHeight: 72,
+			mobile: false,
+		});
+
+		expect(result.mode).toBe('floating');
+		// 上方净空 36 > 下方净空 16 → 取上方，钳制在容器顶部
+		expect(result.isBelowAnchor).toBe(false);
+		expect(result.top).toBe(12);
+		// 最小重叠由构造保证：工具条 12–84 侵入选区 24px（84−60）；
+		// 若取对侧（下方）会钳至 116–188，侵入 44px——选中的正是侵入更小的一侧。
+		expect(result.top + 72).toBeGreaterThan(60);
+	});
+
+	it('overlaps minimally below when neither side fits and below has more clearance', () => {
+		const result = computeToolbarPosition({
+			anchorRect: { top: 20, left: 40, bottom: 170, right: 96, width: 56, height: 150 },
+			containerWidth: 320,
+			containerHeight: 200,
+			toolbarWidth: 220,
+			toolbarHeight: 72,
+			mobile: false,
+		});
+
+		expect(result.mode).toBe('floating');
+		// 下方净空 6 > 上方净空 -4 → 取下方，钳制在容器底部可用区
+		expect(result.isBelowAnchor).toBe(true);
+		expect(result.top).toBe(116);
+		// 最小重叠由构造保证：工具条 116–188 侵入选区 54px（170−116）；
+		// 若取对侧（上方）会钳至 12–84，侵入 64px——选中的正是侵入更小的一侧。
+		expect(result.top).toBeLessThan(170);
 	});
 
 	it('flips below and clamps arrow offset near viewport edges', () => {
@@ -131,12 +251,12 @@ describe('toolbar-positioning', () => {
 		expect(result.arrowOffset).toBe(-42);
 	});
 
-	it('chooses the top-most line rect for multi-line selections when floating above', () => {
+	it('chooses the top-most line rect for multi-line selections when only the above side fits', () => {
 		const result = computeToolbarPosition({
-			anchorRect: { top: 80, left: 24, bottom: 152, right: 212, width: 188, height: 72 },
+			anchorRect: { top: 150, left: 24, bottom: 222, right: 212, width: 188, height: 72 },
 			anchorRects: [
-				{ top: 80, left: 120, bottom: 104, right: 212, width: 92, height: 24 },
-				{ top: 128, left: 24, bottom: 152, right: 116, width: 92, height: 24 },
+				{ top: 150, left: 120, bottom: 174, right: 212, width: 92, height: 24 },
+				{ top: 198, left: 24, bottom: 222, right: 116, width: 92, height: 24 },
 			],
 			containerWidth: 320,
 			containerHeight: 260,
@@ -146,12 +266,13 @@ describe('toolbar-positioning', () => {
 		});
 
 		expect(result.isBelowAnchor).toBe(false);
-		expect(result.anchorRect).toEqual({ top: 80, left: 120, bottom: 104, right: 212, width: 92, height: 24 });
-		expect(result.top).toBe(12);
+		expect(result.anchorRect).toEqual({ top: 150, left: 120, bottom: 174, right: 212, width: 92, height: 24 });
+		expect(result.top).toBe(82);
 		expect(result.left).toBe(106);
+		expect(result.arrowOffset).toBe(0);
 	});
 
-	it('chooses the bottom-most line rect and anchor point when preferred below', () => {
+	it('chooses the bottom-most line rect and anchor point when only the below side fits', () => {
 		const result = computeToolbarPosition({
 			anchorRect: { top: 48, left: 32, bottom: 136, right: 196, width: 164, height: 88 },
 			anchorRects: [

@@ -51,6 +51,8 @@ export const TOOLBAR_GAP = 12;
 export const TOOLBAR_ARROW_PADDING = 18;
 export const NATIVE_SELECTION_MENU_HEIGHT = 48;
 export const MOBILE_FLOATING_BOTTOM_BASE_INSET = 16;
+/** 净空平局容差：真实选区矩形是亚像素几何，±0.5px 内视为相等，使「居中→稳定上方」在产线真实生效。 */
+const CLEARANCE_TIE_EPSILON = 0.5;
 
 export type NativeSelectionMenuSide = "above" | "below";
 
@@ -105,6 +107,45 @@ function normalizeAnchorRects(anchorRect: ToolbarRect, anchorRects?: ToolbarRect
 	return normalized.length ? normalized : [anchorRect];
 }
 
+/** 侧向净空（含 gap/margin/inset）：某侧「可用」⇔ 净空 ≥ 工具条高度。 */
+function sideClearance(
+	side: "top" | "bottom",
+	anchorRect: ToolbarRect,
+	containerHeight: number,
+	gap: number,
+	edgeMargin: number,
+	insetTop: number,
+	insetBottom: number
+): number {
+	if (side === "bottom") {
+		return containerHeight - insetBottom - anchorRect.bottom - gap - edgeMargin;
+	}
+	return anchorRect.top - gap - edgeMargin - insetTop;
+}
+
+/** 净空决选：大者胜出；±0.5px 内视为平局走偏好侧（桌面默认 top；preferredSide:'bottom' 平局走 bottom）。 */
+function decideSideByClearance(
+	availableAbove: number,
+	availableBelow: number,
+	preferredSide: FloatingSidePreference
+): "top" | "bottom" {
+	if (availableAbove > availableBelow + CLEARANCE_TIE_EPSILON) {
+		return "top";
+	}
+	if (availableBelow > availableAbove + CLEARANCE_TIE_EPSILON) {
+		return "bottom";
+	}
+	return preferredSide === "bottom" ? "bottom" : "top";
+}
+
+/**
+ * 选边避让硬规则（票 09，见 docs/specs/toolbar-selection-avoidance.md）：
+ * 净空已含 gap/margin/inset，某侧「可用」⇔ 净空 ≥ 工具条高度，可用即零重叠
+ * （computeFloatingPlacement 的 preferredTop 天然落在钳制区间内，不会压进选区）。
+ * 两侧可用取净空更大侧（上半区→下方、下半区→上方）；净空相等取偏好侧
+ * （桌面默认 top）；两侧都不可用（选区近乎占满视口）取净空更大侧，
+ * 由现有钳制达成最小重叠——这是唯一允许重叠的极端兜底。
+ */
 function chooseFloatingSide(
 	anchorRect: ToolbarRect,
 	containerHeight: number,
@@ -115,14 +156,21 @@ function chooseFloatingSide(
 	insetBottom: number,
 	preferredSide: FloatingSidePreference
 ): "top" | "bottom" {
-	const availableAbove = anchorRect.top - gap - edgeMargin - insetTop;
-	const availableBelow = containerHeight - insetBottom - anchorRect.bottom - gap - edgeMargin;
+	const availableAbove = sideClearance("top", anchorRect, containerHeight, gap, edgeMargin, insetTop, insetBottom);
+	const availableBelow = sideClearance("bottom", anchorRect, containerHeight, gap, edgeMargin, insetTop, insetBottom);
+	const aboveFits = availableAbove >= toolbarHeight;
+	const belowFits = availableBelow >= toolbarHeight;
 
-	if (preferredSide === "bottom") {
-		return availableBelow >= toolbarHeight || availableBelow >= availableAbove ? "bottom" : "top";
+	if (aboveFits && belowFits) {
+		return decideSideByClearance(availableAbove, availableBelow, preferredSide);
 	}
-
-	return availableAbove >= toolbarHeight || availableAbove >= availableBelow ? "top" : "bottom";
+	if (aboveFits) {
+		return "top";
+	}
+	if (belowFits) {
+		return "bottom";
+	}
+	return decideSideByClearance(availableAbove, availableBelow, preferredSide);
 }
 
 function chooseAnchorRectForSide(
@@ -264,14 +312,7 @@ function mobileMirrorSideHasRoom(
 	insetTop: number,
 	insetBottom: number
 ): boolean {
-	if (side === "bottom") {
-		const availableBelow =
-			containerHeight - insetBottom - anchorRect.bottom - gap - edgeMargin;
-		return availableBelow >= toolbarHeight;
-	}
-
-	const availableAbove = anchorRect.top - gap - edgeMargin - insetTop;
-	return availableAbove >= toolbarHeight;
+	return sideClearance(side, anchorRect, containerHeight, gap, edgeMargin, insetTop, insetBottom) >= toolbarHeight;
 }
 
 function toolbarOverlapsNativeMenu(
