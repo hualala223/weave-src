@@ -102,6 +102,8 @@ export interface ReaderHighlightInput {
 	excerptId?: string;
 	sourceLocators?: HighlightSourceLocator[];
 	createdTime?: number;
+	/** 最近一次成功粘贴到笔记的时刻（可选：缺省 = 未粘贴，仅作面板筛选标记）。 */
+	pastedAt?: number;
 	presentation?: ReaderHighlightPresentation;
 	pageLabel?: string;
 	pageNumber?: number;

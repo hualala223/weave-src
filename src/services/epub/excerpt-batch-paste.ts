@@ -31,6 +31,11 @@ export interface ExcerptPasteBlockItem {
 	noteTypeKey?: string;
 	commentText?: string;
 	hasCommentDivider?: boolean;
+	/**
+	 * 条目 key（宿主口径 = cfiRange）：结果回传实际构建成功的 key 集合，
+	 * 供宿主只对真正写入笔记的条目回写已粘贴标记；缺失 key 的条目不参与回写。
+	 */
+	key?: string;
 }
 
 export interface ExcerptPasteBuildContext {
@@ -125,17 +130,23 @@ function buildSingleExcerptPasteBlock(
 export function buildExcerptPasteBlocks(
 	items: ExcerptPasteBlockItem[],
 	context: ExcerptPasteBuildContext
-): { content: string; count: number } {
-	const blocks: string[] = [];
+): { content: string; count: number; keys: string[] } {
+	const blocks: { block: string; key?: string }[] = [];
 	for (const item of sortExcerptsForPaste(items)) {
 		try {
-			blocks.push(buildSingleExcerptPasteBlock(item, context));
+			blocks.push({ block: buildSingleExcerptPasteBlock(item, context), key: item.key });
 		} catch {
 			// 单条构建异常（如注入的块构建器抛错）不阻塞整批：跳过该条继续。
 		}
 	}
-	const content = joinExcerptPasteBlocks(blocks);
-	return { content, count: blocks.filter((block) => block.trim().length > 0).length };
+	const content = joinExcerptPasteBlocks(blocks.map((entry) => entry.block));
+	const keys: string[] = [];
+	for (const entry of blocks) {
+		if (entry.block.trim().length > 0 && entry.key) {
+			keys.push(entry.key);
+		}
+	}
+	return { content, count: blocks.filter((entry) => entry.block.trim().length > 0).length, keys };
 }
 
 /**

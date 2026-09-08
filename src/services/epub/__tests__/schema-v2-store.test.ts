@@ -290,4 +290,48 @@ describe("schema-v2-store", () => {
 		expect(storeA).not.toBe(storeC);
 		storeA.resetForTests();
 	});
+
+	it("highlight pastedAt round-trips through saveBookNotes (已粘贴标记向后兼容)", async () => {
+		const { app, files } = createApp();
+		const store = new SchemaV2Store(app, () => DATA_PATH);
+
+		store.upsertBook(createAggregate("bk_001", "Book"));
+		store.saveBookNotes("bk_001", {
+			bookmarks: [],
+			highlights: [
+				{
+					id: "hl_1",
+					text: "已粘贴的划线",
+					color: "yellow",
+					chapterIndex: 0,
+					cfiRange: "epubcfi(/6/4)",
+					createdTime: 1_700_000_000_000,
+					pastedAt: 1_790_000_000_000,
+				},
+				{
+					// 旧记录：无 pastedAt 字段 = 未粘贴，读取原样保留
+					id: "hl_2",
+					text: "旧划线",
+					color: "green",
+					chapterIndex: 1,
+					cfiRange: "epubcfi(/6/8)",
+					createdTime: 1_700_000_100_000,
+				},
+			],
+			excerpts: [],
+		});
+		await store.flush();
+
+		// 落盘 JSON：pastedAt 原样序列化，旧记录不带该字段
+		const parsed = JSON.parse(files.get(FILE_PATH) as string);
+		expect(parsed.books.bk_001.notes.highlights[0].pastedAt).toBe(1_790_000_000_000);
+		expect(parsed.books.bk_001.notes.highlights[1].pastedAt).toBeUndefined();
+
+		// 重读：字段保留（旧记录缺省视为未粘贴）
+		const store2 = new SchemaV2Store(app, () => DATA_PATH);
+		const book = await store2.getBook("bk_001");
+		expect(book?.notes.highlights[0].pastedAt).toBe(1_790_000_000_000);
+		expect(book?.notes.highlights[1].pastedAt).toBeUndefined();
+		store2.resetForTests();
+	});
 });

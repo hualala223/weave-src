@@ -11,7 +11,7 @@ const {
 
 const DIST_DIR = path.resolve(__dirname, "..", "dist");
 // 默认本地测试库（个人路径，仅本机有效；其他机器上该目录不存在会自动跳过）
-const DEFAULT_DEPLOY_DIR = "E:/Obsidian/叫我包仔/.obsidian/plugins/weave-epub-reader";
+const DEFAULT_DEPLOY_DIR = "N:/仓库/仓库-新/-0.笔记汇总库/.obsidian/plugins/fork-weave-epub-reader";
 
 // 仅部署构建产物；data.json / state / cache 等用户数据一律不动
 const DEPLOY_ARTIFACTS = ["main.js", "manifest.json", "styles.css"];

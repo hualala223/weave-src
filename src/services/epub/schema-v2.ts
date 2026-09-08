@@ -36,6 +36,7 @@ export interface WeaveUiMemory {
 		strikethroughDisplayMode: "strikethrough";
 		showStrikethroughInSidebar: boolean;
 		ideaAutoToNote: boolean;
+		newestExcerptOnTop?: boolean;
 	};
 }
 
@@ -86,6 +87,8 @@ export interface EpubStoredHighlight extends Highlight {
 	excerptId?: string;
 	sourceFile?: string;
 	sourceRef?: string;
+	/** 最近一次成功粘贴到笔记的时刻（可选：旧记录无此字段 = 未粘贴，仅作筛选标记）。 */
+	pastedAt?: number;
 }
 
 /**

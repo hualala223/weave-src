@@ -2066,6 +2066,7 @@
 			try {
 				items.push({
 					cfiRange: highlight.cfiRange,
+					key: highlight.cfiRange,
 					text: decorateExcerptForOutput(highlight.text || '', highlight.cfiRange),
 					chapterIndex: highlight.chapterIndex,
 					chapterLabel: resolveChapterLabel(highlight, chapterLocationFormat),
@@ -2097,6 +2098,14 @@
 		const inserted = insertToEditor(result.content);
 		if (inserted) {
 			new Notice(`已粘贴 ${result.count} 条摘录到笔记末尾`);
+			// 已粘贴回写（票02）：只对实际构建成功并写入的条目打标记（缺省 = 未粘贴），
+			// 供「选中未粘贴摘录」筛选；入队经既有变更队列串行落盘，失败静默不阻塞。
+			if (result.keys.length > 0) {
+				const pastedAt = Date.now();
+				for (const key of result.keys) {
+					void updateInlineHighlightFields(key, { pastedAt });
+				}
+			}
 			return true;
 		}
 		return false;
@@ -2934,6 +2943,7 @@
 						hasCommentDivider: !!(item.commentText),
 						createdTime: item.createdTime,
 						excerptId: item.excerptId,
+						pastedAt: item.pastedAt,
 						sourceFile: item.sourceFile || '__inline__',
 						sourceRef: item.sourceRef || '',
 						presentation: 'highlight',

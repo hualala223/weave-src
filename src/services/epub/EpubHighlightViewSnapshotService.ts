@@ -24,6 +24,8 @@ export interface EpubDisplayHighlight {
 	sourceFile?: string;
 	sourceRef?: string;
 	excerptId?: string;
+	/** 最近一次成功粘贴到笔记的时刻（可选：缺省 = 未粘贴，「选中未粘贴摘录」的谓词输入）。 */
+	pastedAt?: number;
 	searchableValues: string[];
 	/** 摘要预览的彩色 HTML（字色标记装饰后），缺省时面板回退纯文本。 */
 	quoteHtml?: string;
@@ -405,6 +407,10 @@ export class EpubHighlightViewSnapshotService {
 			sourceFile: highlight.sourceFile,
 			sourceRef: highlight.sourceRef,
 			excerptId: highlight.excerptId,
+			pastedAt:
+				typeof highlight.pastedAt === "number" && Number.isFinite(highlight.pastedAt)
+					? highlight.pastedAt
+					: undefined,
 			searchableValues: [],
 		};
 

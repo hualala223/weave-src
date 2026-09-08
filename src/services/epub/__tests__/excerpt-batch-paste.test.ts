@@ -363,4 +363,37 @@ describe("buildExcerptPasteBlocks", () => {
 		expect(output.content).toBe("");
 		expect(output.count).toBe(0);
 	});
+
+	it("keys 只回传实际构建成功的条目 key（cfiRange 口径），供宿主精确回写已粘贴标记", () => {
+		const { context } = createBuildHarness();
+		const output = buildExcerptPasteBlocks(
+			[
+				item({ cfiRange: "cfi-good-1", key: "cfi-good-1", createdTime: 300 }),
+				item({ cfiRange: "cfi-bad", key: "cfi-bad", text: "", createdTime: 200 }),
+				item({ cfiRange: "cfi-good-2", key: "cfi-good-2", createdTime: 100 }),
+			],
+			context
+		);
+		expect(output.keys).toEqual(["cfi-good-2", "cfi-good-1"]);
+	});
+
+	it("缺失 key 或构建失败的条目不出现在 keys 中", () => {
+		const { context } = createBuildHarness();
+		const output = buildExcerptPasteBlocks(
+			[
+				item({ cfiRange: "cfi-no-key", createdTime: 200 }),
+				item({ cfiRange: "cfi-throw", key: "cfi-throw", createdTime: 100 }),
+			],
+			{
+				...context,
+				buildQuoteBlock: (...args: Parameters<ExcerptPasteBuildContext["buildQuoteBlock"]>) => {
+					if (args[1] === "cfi-throw") {
+						throw new Error("构建器异常");
+					}
+					return "B";
+				},
+			}
+		);
+		expect(output.keys).toEqual([]);
+	});
 });
