@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { App } from 'obsidian';
-	import { Menu, Notice, setIcon } from 'obsidian';
+	import { Menu, Notice, Platform, setIcon } from 'obsidian';
 	import { showObsidianConfirm } from '../../utils/obsidian-confirm';
 	import { logger } from '../../utils/logger';
 	import { parseSearchQuery, type DateRange, type SearchQuery } from '../../utils/search-parser';
@@ -103,6 +103,9 @@
 	let annotationLoadToken = 0;
 	let panelDisposed = false;
 	let lastLoadContextKey = '';
+	// 移动端没有可靠的右键（contextmenu 长按触发因平台而异），
+	// 面板级操作需要显式按钮入口（与桌面右键共用同一套菜单项）。
+	const isMobilePanel = Platform.isMobile || document.body.classList.contains('is-mobile');
 
 	function normalizeSearchText(value: string | undefined): string {
 		return typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -617,11 +620,8 @@
 		});
 	}
 
-	function showPanelContextMenu(event: MouseEvent) {
-		event.preventDefault();
-		const menu = new Menu();
-		attachMenuApp(menu);
-
+	/** 面板级菜单项（批量模式=批量菜单；非批量=批量选择/粘贴全部）。 */
+	function fillPanelMenuItems(menu: Menu) {
 		if (selectionMode) {
 			fillBatchSelectionMenuItems(menu);
 		} else {
@@ -641,8 +641,26 @@
 				});
 			});
 		}
+	}
 
+	function openPanelMenu(event: MouseEvent) {
+		const menu = new Menu();
+		attachMenuApp(menu);
+		fillPanelMenuItems(menu);
 		menu.showAtMouseEvent(event);
+	}
+
+	/** 批量工具条「更多操作」按钮：弹出与右键一致的批量菜单（移动端无右键的主入口）。 */
+	function openBatchMenu(event: MouseEvent) {
+		const menu = new Menu();
+		attachMenuApp(menu);
+		fillBatchSelectionMenuItems(menu);
+		menu.showAtMouseEvent(event);
+	}
+
+	function showPanelContextMenu(event: MouseEvent) {
+		event.preventDefault();
+		openPanelMenu(event);
 	}
 
 	function showHighlightContextMenu(event: MouseEvent, highlight: EpubDisplayHighlight) {
@@ -932,6 +950,19 @@
 			{/if}
 		</div>
 	{:else}
+		{#if isMobilePanel && !selectionMode}
+			<div class="epub-notes-more-row">
+				<button
+					type="button"
+					class="clickable-icon epub-notes-more-btn"
+					title={'更多操作'}
+					aria-label={'更多操作'}
+					onclick={(event) => openPanelMenu(event)}
+				>
+					<span use:iconAction={'more-horizontal'}></span>
+				</button>
+			</div>
+		{/if}
 		{#if selectionMode}
 			<div
 				class="epub-notes-selection-float"
@@ -966,6 +997,15 @@
 						onclick={() => void deleteSelectedHighlights()}
 					>
 						<span use:iconAction={'trash-2'}></span>
+					</button>
+					<button
+						type="button"
+						class="clickable-icon epub-notes-selection-icon-btn"
+						title={'更多操作'}
+						aria-label={'更多操作'}
+						onclick={(event) => openBatchMenu(event)}
+					>
+						<span use:iconAction={'more-horizontal'}></span>
 					</button>
 					<button
 						type="button"
@@ -1024,6 +1064,17 @@
 		position: relative;
 		min-height: 100%;
 		box-sizing: border-box;
+	}
+
+	/* 移动端「更多操作」入口：右键不可靠，面板级操作收进这个按钮。 */
+	.epub-notes-more-row {
+		display: flex;
+		justify-content: flex-end;
+		margin: -4px 0 -8px;
+	}
+
+	.epub-notes-more-btn {
+		color: var(--text-muted);
 	}
 
 	.epub-notes-panel.selection-mode {
