@@ -1,0 +1,82 @@
+/* ========================================
+   段落预览浮框（笔记文档中悬停摘录块预览完整段落）
+   ======================================== */
+
+.weave-excerpt-paragraph-popover {
+	position: fixed;
+	z-index: var(--layer-popover, 1000);
+	width: max-content;
+	max-width: 480px;
+	max-height: 50vh;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	background-color: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+	box-shadow: var(--shadow-s);
+	padding: 10px 14px;
+	font-size: var(--font-ui-smaller);
+	line-height: 1.6;
+	pointer-events: auto;
+}
+
+.weave-excerpt-paragraph-popover__content {
+	overflow-y: auto;
+	min-height: 0;
+}
+
+.weave-excerpt-paragraph-popover__chapter {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smallest);
+	margin-bottom: 4px;
+}
+
+.weave-excerpt-paragraph-popover__paragraph {
+	color: var(--text-normal);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.weave-excerpt-paragraph-popover__highlight {
+	background-color: rgba(var(--callout-color, 255, 235, 59), 0.4);
+	border-radius: 2px;
+	padding: 0 1px;
+}
+
+.weave-excerpt-paragraph-popover__loading,
+.weave-excerpt-paragraph-popover__missing {
+	color: var(--text-muted);
+	font-style: italic;
+}
+
+.weave-excerpt-paragraph-popover__fallback {
+	margin-top: 6px;
+	padding-top: 6px;
+	border-top: 1px solid var(--background-modifier-border);
+	color: var(--text-normal);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+/* 与摘录块相同的颜色映射（高亮背景取 --callout-color）。 */
+.weave-excerpt-paragraph-popover[data-weave-epub-color="yellow"] {
+	--callout-color: 255, 235, 59;
+}
+
+.weave-excerpt-paragraph-popover[data-weave-epub-color="green"] {
+	--callout-color: 76, 175, 80;
+}
+
+.weave-excerpt-paragraph-popover[data-weave-epub-color="blue"] {
+	--callout-color: 66, 165, 245;
+}
+
+.weave-excerpt-paragraph-popover[data-weave-epub-color="red"],
+.weave-excerpt-paragraph-popover[data-weave-epub-color="pink"] {
+	--callout-color: 239, 68, 68;
+}
+
+.weave-excerpt-paragraph-popover[data-weave-epub-color="purple"] {
+	--callout-color: 171, 71, 188;
+}

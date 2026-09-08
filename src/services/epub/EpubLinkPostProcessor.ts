@@ -4,6 +4,96 @@ import { isSupportedBookLocatorHref, stripSupportedBookExtension } from "./book-
 import { EpubLinkService } from "./EpubLinkService";
 import { resolveEpubSourceNavigationTextHint } from "./epub-source-navigation-text-hint";
 import { isSupportedEpubProtocolName } from "./epub-runtime";
+import {
+	ExcerptHoverPopoverController,
+	bindExcerptHoverPreview,
+} from "./excerpt-hover-popover";
+import { ExcerptParagraphPreviewService } from "./excerpt-paragraph-preview-service";
+
+type EpubLinkPostProcessorOptions = {
+	/** 段落预览浮框总开关（读插件设置，默认开启）。 */
+	isHoverPreviewEnabled?: () => boolean;
+};
+
+const hoverControllers = new WeakMap<App, ExcerptHoverPopoverController>();
+const previewServices = new WeakMap<App, ExcerptParagraphPreviewService>();
+
+/** 插件卸载时释放 hover 浮框与离线解析引擎（避免 blob/内存泄漏）。 */
+export function disposeEpubExcerptHoverPreview(app: App): void {
+	hoverControllers.get(app)?.hide();
+	hoverControllers.delete(app);
+	previewServices.get(app)?.dispose();
+	previewServices.delete(app);
+}
+
+function getHoverController(app: App): ExcerptHoverPopoverController {
+	let controller = hoverControllers.get(app);
+	if (!controller) {
+		controller = new ExcerptHoverPopoverController();
+		hoverControllers.set(app, controller);
+	}
+	return controller;
+}
+
+function getPreviewService(app: App): ExcerptParagraphPreviewService {
+	let service = previewServices.get(app);
+	if (!service) {
+		service = new ExcerptParagraphPreviewService(app);
+		previewServices.set(app, service);
+	}
+	return service;
+}
+
+/**
+ * 合并粘贴块（一个 callout 多条摘录，深链仅首条定位）不可做单段预览：
+ * 引用区出现多条非想法（非 💡 开头）的引文段即视为合并形态。
+ */
+function isMergedExcerptCallout(calloutEl: HTMLElement): boolean {
+	const quoteParagraphs = Array.from(
+		calloutEl.querySelectorAll<HTMLElement>(".callout-content blockquote p")
+	);
+	let quoteCount = 0;
+	for (const paragraph of quoteParagraphs) {
+		if (String(paragraph.textContent || "").trim().startsWith("💡")) {
+			continue;
+		}
+		quoteCount += 1;
+		if (quoteCount > 1) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function bindExcerptCalloutHoverPreview(params: {
+	app: App;
+	calloutEl: HTMLElement;
+	filePath: string;
+	cfi: string;
+	options: EpubLinkPostProcessorOptions | undefined;
+}): void {
+	const cfi = String(params.cfi || "").trim();
+	if (!cfi) {
+		return;
+	}
+	const calloutEl = params.calloutEl;
+	const excerptText = extractCalloutQuoteText(calloutEl);
+	const excerptColor = calloutEl.getAttribute("data-weave-epub-color") || "";
+	bindExcerptHoverPreview({
+		calloutEl,
+		controller: getHoverController(params.app),
+		isEnabled: () => params.options?.isHoverPreviewEnabled?.() !== false,
+		isSupportedBlock: () => !isMergedExcerptCallout(calloutEl),
+		excerptColor,
+		excerptText,
+		loadPreview: () =>
+			getPreviewService(params.app).getPreview({
+				filePath: params.filePath,
+				cfi,
+				excerptText,
+			}),
+	});
+}
 
 type BoundEpubLinkElement = HTMLAnchorElement & {
 	__weaveEpubClickHandler?: (event: MouseEvent) => void;
@@ -133,7 +223,8 @@ function bindEpubLocatorLink(
 	linkEl: HTMLAnchorElement,
 	locatorHref: string,
 	ctx: MarkdownPostProcessorContext,
-	displayText?: string
+	displayText?: string,
+	options?: EpubLinkPostProcessorOptions
 ): void {
 	const boundLinkEl = linkEl as BoundEpubLinkElement;
 	const hashIdx = locatorHref.indexOf("#");
@@ -199,9 +290,14 @@ function bindEpubLocatorLink(
 	// Capture phase runs before Obsidian's obsidian:// default handler opens a new tab.
 	linkEl.addEventListener("click", boundLinkEl.__weaveEpubClickHandler, true);
 	linkEl.addEventListener("click", boundLinkEl.__weaveEpubClickHandler);
+
+	const calloutEl = boundLinkEl.closest<HTMLElement>('.callout[data-callout="epub"]');
+	if (calloutEl) {
+		bindExcerptCalloutHoverPreview({ app, calloutEl, filePath, cfi: parsed.cfi, options });
+	}
 }
 
-export function createEpubLinkPostProcessor(app: App) {
+export function createEpubLinkPostProcessor(app: App, options?: EpubLinkPostProcessorOptions) {
 	return (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
 		applyEpubCalloutAppearanceAttributes(el);
 
@@ -222,7 +318,7 @@ export function createEpubLinkPostProcessor(app: App) {
 			}
 
 			const displayText = protocolLocatorHref ? linkEl.textContent || undefined : undefined;
-			bindEpubLocatorLink(app, linkEl, locatorHref, ctx, displayText);
+			bindEpubLocatorLink(app, linkEl, locatorHref, ctx, displayText, options);
 		});
 	};
 }

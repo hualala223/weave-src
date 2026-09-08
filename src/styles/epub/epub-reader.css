@@ -4,6 +4,7 @@
 @import "./epub-toolbar.css";
 @import "./epub-nav-sidebar.css";
 @import "./epub-highlights.css";
+@import "./excerpt-hover-preview.css";
 @import "./epub-progress-ring.css";
 
 /* ===== 大翻页按钮模式（enableLargeNavButtons）===== */

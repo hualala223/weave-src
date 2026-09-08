@@ -17,6 +17,7 @@ export interface EpubBasicSettingsActionDeps {
 	getContinuousReadingPositionAutoSaveEnabled: () => boolean;
 	getContinuousReadingPositionAutoSavePages: () => number;
 	getSourceNavigationOpenInNewTab: () => boolean;
+	getExcerptParagraphHoverPreviewEnabled: () => boolean;
 	getLargeNavButtonsEnabled: () => boolean;
 	getDebugModeEnabled: () => boolean;
 	getAutoSavePagesTextControl: () => TextComponent | null;
@@ -97,6 +98,15 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 			}
 
 			plugin.settings.sourceNavigationOpenInNewTab = enabled;
+			await deps.save();
+		},
+
+		async updateExcerptParagraphHoverPreview(enabled: boolean): Promise<void> {
+			if (deps.getExcerptParagraphHoverPreviewEnabled() === enabled) {
+				return;
+			}
+
+			plugin.settings.excerptParagraphHoverPreviewEnabled = enabled;
 			await deps.save();
 		},
 

@@ -122,6 +122,17 @@ export function mountEpubBasicSettings(options: EpubBasicSettingsMountOptions): 
 		});
 
 	new Setting(hosts.diagnostics)
+		.setName('摘录段落悬停预览')
+		.setDesc('在笔记文档中鼠标悬停摘录块时，浮框预览该摘录在书中的完整段落（划线部分按摘录颜色高亮）；按住 Ctrl 悬停可立即显示。默认开启。')
+		.setClass("epub-excerpt-hover-preview-setting")
+		.addToggle((toggle) => {
+			toggle.setValue(snapshot.excerptParagraphHoverPreviewEnabled);
+			toggle.onChange(async (value) => {
+				await callbacks.updateExcerptParagraphHoverPreview(value);
+			});
+		});
+
+	new Setting(hosts.diagnostics)
 		.setName('溯源跳转时在新标签页打开笔记')
 		.setDesc('从阅读器跳转到 Markdown、canvas 或 json 来源时，优先复用已打开的标签页；关闭后会在新标签页打开，便于与当前书籍并排阅读。')
 		.setClass("epub-source-navigation-setting")

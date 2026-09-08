@@ -28,6 +28,7 @@ import { configureNavigationHub } from "./services/navigation/navigation-hub-acc
 import { getBookSessionManager } from "./services/epub/session/book-session-manager-access";
 import { syncLargeNavButtonStyle } from "./services/epub/epub-large-nav-style";
 import {
+	disposeEpubExcerptHoverPreview,
 	openEpubBookshelf,
 	openEpubReader,
 	registerEpubMarkdownPostProcessor,
@@ -56,6 +57,8 @@ interface StandaloneEpubPluginSettings {
 	continuousReadingPositionAutoSavePages: number;
 	selectionQuickCreateLastFolder: string;
 	sourceNavigationOpenInNewTab: boolean;
+	/** 笔记文档中悬停摘录块预览所在完整段落的浮框（默认开）。 */
+	excerptParagraphHoverPreviewEnabled: boolean;
 }
 
 const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
@@ -71,6 +74,7 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 	continuousReadingPositionAutoSavePages: DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
 	selectionQuickCreateLastFolder: "",
 	sourceNavigationOpenInNewTab: true,
+	excerptParagraphHoverPreviewEnabled: true,
 };
 
 type PersistedStandaloneEpubPluginSettings = Omit<
@@ -308,7 +312,10 @@ export default class StandaloneEpubPlugin extends Plugin {
 			const { EpubSettingsTab } = await import("./components/settings/EpubSettingsTab");
 		this.addSettingTab(new EpubSettingsTab(this.app, this));
 		this.registerWorkspaceViews();
-		registerEpubMarkdownPostProcessor(this, this.app);
+		registerEpubMarkdownPostProcessor(this, this.app, {
+			isHoverPreviewEnabled: () =>
+				this.settings.excerptParagraphHoverPreviewEnabled !== false,
+		});
 		registerEpubProtocolHandler(this, this.app, "[Standalone EPUB Protocol]");
 		this.registerBookshelfVaultRefreshBridge();
 		this.addRibbonIcon("library", '我的书架', () => {
@@ -341,6 +348,7 @@ export default class StandaloneEpubPlugin extends Plugin {
 			window.clearTimeout(this.pendingBookshelfRefreshTimer);
 			this.pendingBookshelfRefreshTimer = null;
 		}
+		disposeEpubExcerptHoverPreview(this.app);
 		this.epubStorageService = null;
 		resetEpubStorageServiceCache(this.app);
 		logger.setDebugMode(false);
