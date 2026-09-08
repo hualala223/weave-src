@@ -56,6 +56,13 @@ function buildPopoverContent(contentEl: HTMLElement, preview: ExcerptParagraphPr
 			cls: `${POPOVER_CLASS}__missing`,
 			text: reasonLabel ? `无法加载原文段落（${reasonLabel}）` : "无法加载原文段落",
 		});
+		const detail = String(preview.failureDetail || "").trim();
+		if (detail) {
+			contentEl.createDiv({
+				cls: `${POPOVER_CLASS}__detail`,
+				text: detail.length > 160 ? `${detail.slice(0, 160)}…` : detail,
+			});
+		}
 		const fallback = String(excerptText || "").trim();
 		if (fallback) {
 			contentEl.createDiv({ cls: `${POPOVER_CLASS}__fallback`, text: fallback });

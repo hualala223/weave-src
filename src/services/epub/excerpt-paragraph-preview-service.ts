@@ -24,10 +24,13 @@ export interface ExcerptParagraphPreview {
 	highlight: ExcerptParagraphHighlight | null;
 	/** status 为 unavailable 时的失败原因。 */
 	failureReason?: ExcerptParagraphPreviewFailureReason;
+	/** 首个异常的原始错误信息（用于浮框内直接呈现，便于定位环境差异）。 */
+	failureDetail?: string;
 }
 
 export function unavailablePreview(
-	failureReason?: ExcerptParagraphPreviewFailureReason
+	failureReason?: ExcerptParagraphPreviewFailureReason,
+	failureDetail?: string
 ): ExcerptParagraphPreview {
 	return {
 		status: "unavailable",
@@ -35,6 +38,7 @@ export function unavailablePreview(
 		paragraphText: "",
 		highlight: null,
 		failureReason,
+		failureDetail,
 	};
 }
 
@@ -49,6 +53,13 @@ interface PreviewRequest {
 /** 全书文本扫描的章节上限（仅在主路径失败时触发，命中前逐章解析并有引擎级缓存）。 */
 const MAX_SCAN_CHAPTERS = 2000;
 const MAX_CACHED_BOOKS = 4;
+
+function describeError(error: unknown): string {
+	if (error instanceof Error) {
+		return error.message;
+	}
+	return String(error);
+}
 
 /**
  * 段落预览浮框的数据源：以「脱离 UI 的引擎实例」离线加载书籍
@@ -98,20 +109,42 @@ export class ExcerptParagraphPreviewService {
 		excerptText: string
 	): Promise<ExcerptParagraphPreview> {
 		let resolvedAnyChapter = false;
+		let firstError: unknown = null;
+		// 单步容错包装：任何一步抛错都记录下来继续兜底，不中断整条链。
+		const attempt = async <T>(operation: () => Promise<T> | T): Promise<T | null> => {
+			try {
+				return await operation();
+			} catch (error) {
+				firstError ||= error;
+				logger.warn("[ExcerptParagraphPreview] Step failed (continuing fallback):", error);
+				return null;
+			}
+		};
+
 		try {
+			// 前置检查：书文件已被删除/改名/移动时给出明确原因，而非笼统的加载失败。
+			const vault = (this.app as { vault?: { getAbstractFileByPath?: (path: string) => unknown } })
+				.vault;
+			if (
+				typeof vault?.getAbstractFileByPath === "function" &&
+				!vault.getAbstractFileByPath(filePath)
+			) {
+				logger.warn(`[ExcerptParagraphPreview] Book file not found in vault: ${filePath}`);
+				return unavailablePreview("book-load-failed", `书库中找不到书籍文件：${filePath}`);
+			}
 			const engine = await this.getEngine(filePath);
 
 			// 1) CFI 直接解析；2) 文本纠偏（canonicalizeLocation）后的章节。
 			const candidateIndexes: number[] = [];
-			const primaryIndex = await engine.getSectionIndexForCfi?.(cfi);
+			const primaryIndex = await attempt(() => engine.getSectionIndexForCfi?.(cfi));
 			if (typeof primaryIndex === "number" && primaryIndex >= 0) {
 				candidateIndexes.push(primaryIndex);
 			}
 			if (excerptText) {
-				const canonical = await engine.canonicalizeLocation?.(cfi, excerptText);
+				const canonical = await attempt(() => engine.canonicalizeLocation?.(cfi, excerptText));
 				const canonicalIndex =
 					typeof canonical === "string" && canonical
-						? await engine.getSectionIndexForCfi?.(canonical)
+						? await attempt(() => engine.getSectionIndexForCfi?.(canonical))
 						: null;
 				if (typeof canonicalIndex === "number" && canonicalIndex >= 0) {
 					candidateIndexes.push(canonicalIndex);
@@ -123,7 +156,7 @@ export class ExcerptParagraphPreviewService {
 				(index, position, all) => index >= 0 && all.indexOf(index) === position
 			);
 			for (const chapterIndex of orderedIndexes) {
-				const found = await this.tryMatchChapter(engine, chapterIndex, cfi, excerptText);
+				const found = await this.tryMatchChapter(engine, chapterIndex, cfi, excerptText, attempt);
 				if (found) {
 					return found;
 				}
@@ -133,11 +166,11 @@ export class ExcerptParagraphPreviewService {
 			// 4) 全书逐章文本扫描（最重的一档，仅在以上全部落空时）。
 			if (excerptText) {
 				for (let chapterIndex = 0; chapterIndex < MAX_SCAN_CHAPTERS; chapterIndex++) {
-					const href = await engine.getSectionHrefByChapterIndex?.(chapterIndex);
+					const href = await attempt(() => engine.getSectionHrefByChapterIndex?.(chapterIndex));
 					if (!href) {
 						break;
 					}
-					const found = await this.tryMatchChapter(engine, chapterIndex, cfi, excerptText);
+					const found = await this.tryMatchChapter(engine, chapterIndex, cfi, excerptText, attempt);
 					if (found) {
 						logger.warn(
 							"[ExcerptParagraphPreview] Resolved via full-book scan at chapter",
@@ -149,9 +182,17 @@ export class ExcerptParagraphPreviewService {
 				}
 			}
 		} catch (error) {
-			logger.warn("[ExcerptParagraphPreview] Failed to resolve paragraph preview:", error);
+			// getEngine（书籍加载）失败：不缓存结果，下次悬停重试。
+			firstError ||= error;
+			logger.warn("[ExcerptParagraphPreview] Book load failed:", error);
 			this.enginePromises.delete(filePath);
-			return unavailablePreview("book-load-failed");
+			return unavailablePreview("book-load-failed", describeError(error));
+		}
+		if (firstError) {
+			const failureReason: ExcerptParagraphPreviewFailureReason = resolvedAnyChapter
+				? "text-not-found"
+				: "chapter-unresolved";
+			return unavailablePreview(failureReason, describeError(firstError));
 		}
 		const failureReason: ExcerptParagraphPreviewFailureReason = resolvedAnyChapter
 			? "text-not-found"
@@ -166,10 +207,12 @@ export class ExcerptParagraphPreviewService {
 		engine: EpubReaderEngine,
 		chapterIndex: number,
 		cfi: string,
-		excerptText: string
+		excerptText: string,
+		attempt: <T>(operation: () => Promise<T> | T) => Promise<T | null>
 	): Promise<ExcerptParagraphPreview | null> {
 		const paragraphs: ReaderParagraph[] =
-			(await engine.getParagraphsForChapter?.(chapterIndex, { includeHtml: false })) || [];
+			(await attempt(() => engine.getParagraphsForChapter?.(chapterIndex, { includeHtml: false }))) ||
+			[];
 		if (!paragraphs.length) {
 			return null;
 		}

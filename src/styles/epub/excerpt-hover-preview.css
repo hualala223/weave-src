@@ -50,6 +50,14 @@
 	font-style: italic;
 }
 
+.weave-excerpt-paragraph-popover__detail {
+	margin-top: 4px;
+	color: var(--text-faint);
+	font-size: var(--font-ui-smallest);
+	word-break: break-all;
+	user-select: text;
+}
+
 .weave-excerpt-paragraph-popover__fallback {
 	margin-top: 6px;
 	padding-top: 6px;
