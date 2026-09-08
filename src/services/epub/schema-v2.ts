@@ -164,6 +164,8 @@ export interface EpubReaderSettingsV2 {
 	layoutMode: EpubReaderSettings["layoutMode"];
 	flowMode: EpubReaderSettings["flowMode"];
 	showScrolledSideNav: boolean;
+	showMobilePageArrows: boolean;
+	mobilePageArrowPosition: EpubReaderSettings["mobilePageArrowPosition"];
 	footnoteClickAction: EpubReaderSettings["footnoteClickAction"];
 	showTopSticker: boolean;
 	topStickerLayout: EpubReaderSettings["topStickerLayout"];

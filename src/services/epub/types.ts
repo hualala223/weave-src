@@ -135,6 +135,12 @@ export type EpubParagraphModeTransitionStyle =
 	| "curtain"
 	| "pulse";
 
+/** 移动端翻页箭头停放位置（相对自由区间的比例，跨设备/旋屏稳定）。 */
+export interface EpubPageArrowPosition {
+	xRatio: number;
+	yRatio: number;
+}
+
 export interface EpubReaderSettings {
 	lineHeight: number;
 	letterSpacing: number;
@@ -145,6 +151,10 @@ export interface EpubReaderSettings {
 	layoutMode: EpubLayoutMode;
 	flowMode: EpubFlowMode;
 	showScrolledSideNav: boolean;
+	/** 移动端滚动模式翻页箭头开关（桌面不受影响）。 */
+	showMobilePageArrows: boolean;
+	/** 移动端翻页箭头停放位置；null = 未拖过，用默认左下角。 */
+	mobilePageArrowPosition: EpubPageArrowPosition | null;
 	footnoteClickAction: EpubFootnoteClickAction;
 	showTopSticker: boolean;
 	topStickerLayout: EpubTopStickerLayout;

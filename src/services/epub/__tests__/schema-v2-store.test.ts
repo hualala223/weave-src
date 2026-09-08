@@ -218,6 +218,8 @@ describe("schema-v2-store", () => {
 				layoutMode: "paginated",
 				flowMode: "paginated",
 				showScrolledSideNav: true,
+				showMobilePageArrows: true,
+				mobilePageArrowPosition: null,
 				footnoteClickAction: "preview",
 				showTopSticker: true,
 				topStickerLayout: "auto",

@@ -12,6 +12,8 @@ export const DEFAULT_READER_SETTINGS: EpubReaderSettings = {
 	layoutMode: "paginated",
 	flowMode: "paginated",
 	showScrolledSideNav: true,
+	showMobilePageArrows: true,
+	mobilePageArrowPosition: null,
 	footnoteClickAction: "preview",
 	showTopSticker: true,
 	topStickerLayout: "auto",
@@ -70,6 +72,11 @@ export function normalizeEpubReaderSettingsForDevice(
 			typeof settings.showScrolledSideNav === "boolean"
 				? settings.showScrolledSideNav
 				: defaults.showScrolledSideNav,
+		showMobilePageArrows:
+			typeof settings.showMobilePageArrows === "boolean"
+				? settings.showMobilePageArrows
+				: defaults.showMobilePageArrows,
+		mobilePageArrowPosition: normalizePageArrowPosition(settings.mobilePageArrowPosition),
 		footnoteClickAction:
 			settings.footnoteClickAction === "navigate" || settings.footnoteClickAction === "preview"
 				? settings.footnoteClickAction
@@ -135,6 +142,25 @@ function normalizeLayoutMode(value: unknown, fallback: EpubLayoutMode): EpubLayo
 
 function normalizeFlowMode(value: unknown, fallback: EpubFlowMode): EpubFlowMode {
 	return value === "scrolled" || value === "paginated" ? value : fallback;
+}
+
+function normalizePageArrowPosition(
+	value: unknown
+): EpubReaderSettings["mobilePageArrowPosition"] {
+	if (!value || typeof value !== "object") {
+		return null;
+	}
+	const candidate = value as { xRatio?: unknown; yRatio?: unknown };
+	if (
+		typeof candidate.xRatio !== "number" ||
+		!Number.isFinite(candidate.xRatio) ||
+		typeof candidate.yRatio !== "number" ||
+		!Number.isFinite(candidate.yRatio)
+	) {
+		return null;
+	}
+	const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+	return { xRatio: clamp01(candidate.xRatio), yRatio: clamp01(candidate.yRatio) };
 }
 
 function clamp(value: number, min: number, max: number): number {

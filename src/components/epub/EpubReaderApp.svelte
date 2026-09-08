@@ -5,13 +5,14 @@
 	import EpubReaderView from './EpubReaderView.svelte';
 	import BookshelfView from './BookshelfView.svelte';
 	import BottomNav from './BottomNav.svelte';
+	import MobilePageArrows from './MobilePageArrows.svelte';
 	import EpubLoadingState from './EpubLoadingState.svelte';
 	import SelectionToolbar from './SelectionToolbar.svelte';
 	import EpubAIPanel from './EpubAIPanel.svelte';
 	import EpubCommentEditorPopover from './EpubCommentEditorPopover.svelte';
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
 	import { createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, EPUB_RUNTIME, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress } from '../../services/epub';
-	import type { EpubBook, EpubChapterLocationFormat, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubStoredFontMark, FontMarkClickInfo, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderImageTapInfo, ReaderTapEvent, ReadingPosition } from '../../services/epub';
+	import type { EpubBook, EpubChapterLocationFormat, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubLayoutMode, EpubPageArrowPosition, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubStoredFontMark, FontMarkClickInfo, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderImageTapInfo, ReaderTapEvent, ReadingPosition } from '../../services/epub';
 	import type { EpubStoredHighlight } from '../../services/epub/schema-v2';
 	import { decorateExcerptText, type FontMarkColorToken } from '../../services/epub/font-mark-decoration';
 	import { insertIntoMarkdownEditor, NO_EDITOR_MESSAGE } from '../../services/epub/note-editor-insert';
@@ -305,8 +306,16 @@
 		layoutMode: 'paginated',
 		flowMode: getDefaultReaderFlowMode(),
 		showScrolledSideNav: true,
+		showMobilePageArrows: true,
+		mobilePageArrowPosition: null,
 		footnoteClickAction: 'preview',
+		showTopSticker: true,
+		topStickerLayout: 'auto',
 		paragraphModeEnabled: false,
+		paragraphModeFontSize: 'medium',
+		paragraphModeFontScale: 100,
+		paragraphModeSurfaceStyle: 'spotlight',
+		paragraphModeTransitionStyle: 'settle',
 	});
 
 	let hostTheme = $state<'light' | 'dark'>(
@@ -490,6 +499,8 @@
 			pageMargin: getDefaultReaderPageMargin(),
 			widthMode: settings.layoutMode === 'double' ? 'fit' : getDefaultReaderWidthMode(),
 			showScrolledSideNav: true,
+			showMobilePageArrows: true,
+			mobilePageArrowPosition: null,
 			footnoteClickAction: 'preview',
 		});
 	}
@@ -1688,6 +1699,25 @@
 
 	function showBottomNav() {
 		return settings.flowMode !== 'scrolled' || (!isMobileReader() && settings.showScrolledSideNav);
+	}
+
+	/** 移动端滚动模式翻页箭头（桌面侧边导航的移动端对应物）。 */
+	function showMobilePageArrows() {
+		return isMobileReader() && settings.flowMode === 'scrolled' && settings.showMobilePageArrows;
+	}
+
+	function handleMobilePageArrowsToggle(enabled: boolean) {
+		applyAndPersistReaderSettings({
+			...settings,
+			showMobilePageArrows: enabled
+		});
+	}
+
+	function handleMobilePageArrowsPositionChange(position: EpubPageArrowPosition) {
+		applyAndPersistReaderSettings({
+			...settings,
+			mobilePageArrowPosition: position
+		});
 	}
 
 	function useVerticalNav() {
@@ -3531,6 +3561,16 @@
 				/>
 			{/if}
 
+			{#if showMobilePageArrows()}
+				<MobilePageArrows
+					onPrev={handlePrevPage}
+					onNext={handleNextPage}
+					position={settings.mobilePageArrowPosition}
+					boundsEl={viewportEl}
+					onPositionChange={handleMobilePageArrowsPositionChange}
+				/>
+			{/if}
+
 			{#if useVerticalNav() && showScrolledChapterNavActions}
 				<div class="epub-scrolled-chapter-action-slot">
 					<div class="epub-scrolled-chapter-action-start">
@@ -3722,6 +3762,19 @@
 							<span class="epub-export-notes-popover__toggle-slider"></span>
 						</label>
 					</div>
+					{#if isMobileReader()}
+						<div class="epub-settings-row">
+							<span class="label">{'移动端翻页箭头'}</span>
+							<label class="epub-export-notes-popover__toggle-switch">
+								<input
+									type="checkbox"
+									checked={settings.showMobilePageArrows}
+									onchange={(event) => handleMobilePageArrowsToggle((event.currentTarget as HTMLInputElement).checked)}
+								/>
+								<span class="epub-export-notes-popover__toggle-slider"></span>
+							</label>
+						</div>
+					{/if}
 					<div class="epub-settings-row">
 						<span class="label">{'点击脚注序号'}</span>
 						<div class="epub-settings-mode-group">

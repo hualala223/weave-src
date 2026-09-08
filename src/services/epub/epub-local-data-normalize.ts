@@ -46,6 +46,8 @@ const LEGACY_DESKTOP_READER_SETTINGS: EpubReaderSettings = {
 	layoutMode: "paginated",
 	flowMode: "paginated",
 	showScrolledSideNav: true,
+	showMobilePageArrows: true,
+	mobilePageArrowPosition: null,
 	footnoteClickAction: "preview",
 	showTopSticker: true,
 	topStickerLayout: "auto",

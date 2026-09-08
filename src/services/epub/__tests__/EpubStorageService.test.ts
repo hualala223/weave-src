@@ -394,6 +394,8 @@ describe('EpubStorageService', () => {
         layoutMode: 'paginated',
         flowMode: 'scrolled',
         showScrolledSideNav: true,
+        showMobilePageArrows: true,
+        mobilePageArrowPosition: null,
         footnoteClickAction: 'navigate',
 		showTopSticker: true,
         topStickerLayout: 'auto',
