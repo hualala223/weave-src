@@ -1,7 +1,10 @@
 import type { App } from "obsidian";
 import { createEpubReaderEngine } from "./reader-engine-factory";
-import type { EpubReaderEngine } from "./reader-engine-types";
-import { resolveExcerptParagraph, type ExcerptParagraphHighlight } from "./excerpt-paragraph-resolver";
+import type { EpubReaderEngine, ReaderParagraph } from "./reader-engine-types";
+import {
+	resolveExcerptParagraph,
+	type ExcerptParagraphHighlight,
+} from "./excerpt-paragraph-resolver";
 import { logger } from "../../utils/logger";
 
 export type ExcerptParagraphPreviewStatus = "found" | "unavailable";
@@ -16,33 +19,43 @@ export interface ExcerptParagraphPreview {
 	highlight: ExcerptParagraphHighlight | null;
 }
 
-interface PreviewRequestKey {
+export function unavailablePreview(): ExcerptParagraphPreview {
+	return { status: "unavailable", chapterTitle: "", paragraphText: "", highlight: null };
+}
+
+export type ExcerptPreviewEngineFactory = (app: App) => EpubReaderEngine;
+
+interface PreviewRequest {
 	filePath: string;
 	cfi: string;
 	excerptText: string;
 }
 
+/** 全书文本扫描的章节上限（仅在主路径失败时触发，命中前逐章解析并有引擎级缓存）。 */
+const MAX_SCAN_CHAPTERS = 2000;
 const MAX_CACHED_BOOKS = 4;
 
 /**
  * 段落预览浮框的数据源：以「脱离 UI 的引擎实例」离线加载书籍
  * （loadEpub 不 renderTo），解析 CFI → 章节 → 段落列表 → 命中段落。
+ *
+ * 章节归属按层级兜底（真实摘录的 CFI 可能因书改版/引擎索引偏移对不上）：
+ * 1) CFI 直接解析章节；2) canonicalizeLocation 以摘录文本纠偏后的章节；
+ * 3) 上述章节的邻居；4) 全书逐章文本扫描。
  * 按书籍文件缓存引擎实例（单飞），解析结果按 定位+文本 缓存，会话生命周期内有效。
  */
-export function unavailablePreview(): ExcerptParagraphPreview {
-	return { status: "unavailable", chapterTitle: "", paragraphText: "", highlight: null };
-}
-
 export class ExcerptParagraphPreviewService {
 	private app: App;
+	private engineFactory: ExcerptPreviewEngineFactory;
 	private enginePromises = new Map<string, Promise<EpubReaderEngine>>();
 	private resultCache = new Map<string, ExcerptParagraphPreview>();
 
-	constructor(app: App) {
+	constructor(app: App, engineFactory: ExcerptPreviewEngineFactory = createEpubReaderEngine) {
 		this.app = app;
+		this.engineFactory = engineFactory;
 	}
 
-	async getPreview(request: PreviewRequestKey): Promise<ExcerptParagraphPreview> {
+	async getPreview(request: PreviewRequest): Promise<ExcerptParagraphPreview> {
 		const filePath = String(request?.filePath || "").trim();
 		const cfi = String(request?.cfi || "").trim();
 		const excerptText = String(request?.excerptText || "").trim();
@@ -66,32 +79,82 @@ export class ExcerptParagraphPreviewService {
 		cfi: string,
 		excerptText: string
 	): Promise<ExcerptParagraphPreview> {
-		const unavailable = unavailablePreview();
 		try {
 			const engine = await this.getEngine(filePath);
-			const chapterIndex = await engine.getSectionIndexForCfi?.(cfi);
-			if (typeof chapterIndex !== "number" || chapterIndex < 0) {
-				return unavailable;
+
+			// 1) CFI 直接解析；2) 文本纠偏（canonicalizeLocation）后的章节。
+			const candidateIndexes: number[] = [];
+			const primaryIndex = await engine.getSectionIndexForCfi?.(cfi);
+			if (typeof primaryIndex === "number" && primaryIndex >= 0) {
+				candidateIndexes.push(primaryIndex);
 			}
-			const paragraphs = (await engine.getParagraphsForChapter?.(chapterIndex, { includeHtml: false })) || [];
-			if (!paragraphs.length) {
-				return unavailable;
+			if (excerptText) {
+				const canonical = await engine.canonicalizeLocation?.(cfi, excerptText);
+				const canonicalIndex =
+					typeof canonical === "string" && canonical
+						? await engine.getSectionIndexForCfi?.(canonical)
+						: null;
+				if (typeof canonicalIndex === "number" && canonicalIndex >= 0) {
+					candidateIndexes.push(canonicalIndex);
+				}
 			}
-			const match = resolveExcerptParagraph({ excerptCfi: cfi, excerptText, paragraphs });
-			if (match.status !== "matched" || !match.paragraph) {
-				return unavailable;
+			// 3) 邻居章节（foliate 索引偶发 off-by-one）。
+			const neighborIndexes = candidateIndexes.flatMap((index) => [index - 1, index + 1]);
+			const orderedIndexes = [...candidateIndexes, ...neighborIndexes].filter(
+				(index, position, all) => index >= 0 && all.indexOf(index) === position
+			);
+			for (const chapterIndex of orderedIndexes) {
+				const found = await this.tryMatchChapter(engine, chapterIndex, cfi, excerptText);
+				if (found) {
+					return found;
+				}
 			}
-			return {
-				status: "found",
-				chapterTitle: String(match.paragraph.chapterTitle || "").trim(),
-				paragraphText: String(match.paragraph.text || ""),
-				highlight: match.highlight,
-			};
+
+			// 4) 全书逐章文本扫描（最重的一档，仅在以上全部落空时）。
+			if (excerptText) {
+				for (let chapterIndex = 0; chapterIndex < MAX_SCAN_CHAPTERS; chapterIndex++) {
+					const href = await engine.getSectionHrefByChapterIndex?.(chapterIndex);
+					if (!href) {
+						break;
+					}
+					const found = await this.tryMatchChapter(engine, chapterIndex, cfi, excerptText);
+					if (found) {
+						logger.warn(
+							"[ExcerptParagraphPreview] Resolved via full-book scan at chapter",
+							chapterIndex
+						);
+						return found;
+					}
+				}
+			}
 		} catch (error) {
 			logger.warn("[ExcerptParagraphPreview] Failed to resolve paragraph preview:", error);
 			this.enginePromises.delete(filePath);
-			return unavailable;
 		}
+		return unavailablePreview();
+	}
+
+	private async tryMatchChapter(
+		engine: EpubReaderEngine,
+		chapterIndex: number,
+		cfi: string,
+		excerptText: string
+	): Promise<ExcerptParagraphPreview | null> {
+		const paragraphs: ReaderParagraph[] =
+			(await engine.getParagraphsForChapter?.(chapterIndex, { includeHtml: false })) || [];
+		if (!paragraphs.length) {
+			return null;
+		}
+		const match = resolveExcerptParagraph({ excerptCfi: cfi, excerptText, paragraphs });
+		if (match.status !== "matched" || !match.paragraph) {
+			return null;
+		}
+		return {
+			status: "found",
+			chapterTitle: String(match.paragraph.chapterTitle || "").trim(),
+			paragraphText: String(match.paragraph.text || ""),
+			highlight: match.highlight,
+		};
 	}
 
 	private getEngine(filePath: string): Promise<EpubReaderEngine> {
@@ -100,7 +163,7 @@ export class ExcerptParagraphPreviewService {
 			return existing;
 		}
 		const created = (async () => {
-			const engine = createEpubReaderEngine(this.app);
+			const engine = this.engineFactory(this.app);
 			await engine.loadEpub(filePath);
 			return engine;
 		})();
