@@ -453,6 +453,17 @@ export class EpubView extends ItemView {
 			});
 
 			subMenu.addItem((item) => {
+				item.setTitle('最新摘录在最上');
+				item.setIcon("arrow-up-narrow-wide");
+				item.setChecked(excerptSettings.newestExcerptOnTop);
+				item.onClick(() => {
+					void this.actionHandlers.updateExcerptSettings?.({
+						newestExcerptOnTop: !excerptSettings.newestExcerptOnTop,
+					});
+				});
+			});
+
+			subMenu.addItem((item) => {
 				item.setTitle('摘录时间戳');
 				item.setIcon("clock");
 				item.setChecked(excerptSettings.addCreationTime);
