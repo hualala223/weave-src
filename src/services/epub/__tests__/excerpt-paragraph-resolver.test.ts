@@ -65,6 +65,60 @@ describe("resolveExcerptParagraph", () => {
 		});
 	});
 
+	it("中文短关键词跨段（片段不足 6 字）：按段尾头匹配归属到起始段", () => {
+		const paragraphs = [
+			makeParagraph({ text: "第一段讲阅读方法，重点是精读与思考。" }),
+			makeParagraph({ text: "后续段落展开别的论点。" }),
+		];
+		const match = resolveExcerptParagraph({
+			excerptCfi: "",
+			excerptText: "精读与思考。后续段落",
+			paragraphs,
+		});
+
+		expect(match.status).toBe("matched");
+		expect(match.paragraph).toBe(paragraphs[0]);
+		expect(match.highlight).toEqual({
+			start: paragraphs[0].text.indexOf("精读与思考"),
+			end: paragraphs[0].text.indexOf("精读与思考") + "精读与思考".length,
+		});
+	});
+
+	it("跨段摘录句读片段均未命中：起点贴着段尾时头匹配归属到起始段", () => {
+		const paragraphs = [
+			makeParagraph({ text: "前一段结束于夜色渐深" }),
+			makeParagraph({ text: "黎明时分众人启程，路上无话。" }),
+		];
+		const match = resolveExcerptParagraph({
+			excerptCfi: "",
+			excerptText: "夜色渐深，黎明时分众人启程",
+			paragraphs,
+		});
+
+		expect(match.status).toBe("matched");
+		expect(match.paragraph).toBe(paragraphs[0]);
+		const head = "夜色渐深";
+		expect(match.highlight).toEqual({
+			start: paragraphs[0].text.length - head.length,
+			end: paragraphs[0].text.length,
+		});
+	});
+
+	it("3 字短摘录完整落在单段内：全文包含直接命中并给出高亮", () => {
+		const paragraphs = [makeParagraph({ text: "他在雨中想起了往事与故乡。" })];
+		const match = resolveExcerptParagraph({
+			excerptCfi: "",
+			excerptText: "雨中想",
+			paragraphs,
+		});
+
+		expect(match.status).toBe("matched");
+		expect(match.highlight).toEqual({
+			start: paragraphs[0].text.indexOf("雨中想"),
+			end: paragraphs[0].text.indexOf("雨中想") + 3,
+		});
+	});
+
 	it("文本对不上但 CFI 段落级父路径一致时，返回该段落且无高亮（降级）", () => {
 		const cfiRange = "epubcfi(/6/4!/4/2,/1:0,/1:40)";
 		const paragraphs = [makeParagraph({ text: "段落原文变了，与摘录文本不再一致。", cfiRange })];

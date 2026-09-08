@@ -9,6 +9,11 @@ import { logger } from "../../utils/logger";
 
 export type ExcerptParagraphPreviewStatus = "found" | "unavailable";
 
+export type ExcerptParagraphPreviewFailureReason =
+	| "book-load-failed"
+	| "chapter-unresolved"
+	| "text-not-found";
+
 export interface ExcerptParagraphPreview {
 	status: ExcerptParagraphPreviewStatus;
 	/** 章节标题（解析失败时为空串）。 */
@@ -17,10 +22,20 @@ export interface ExcerptParagraphPreview {
 	paragraphText: string;
 	/** 划线覆盖区间（paragraphText 上的原始偏移）；不可计算时为 null。 */
 	highlight: ExcerptParagraphHighlight | null;
+	/** status 为 unavailable 时的失败原因。 */
+	failureReason?: ExcerptParagraphPreviewFailureReason;
 }
 
-export function unavailablePreview(): ExcerptParagraphPreview {
-	return { status: "unavailable", chapterTitle: "", paragraphText: "", highlight: null };
+export function unavailablePreview(
+	failureReason?: ExcerptParagraphPreviewFailureReason
+): ExcerptParagraphPreview {
+	return {
+		status: "unavailable",
+		chapterTitle: "",
+		paragraphText: "",
+		highlight: null,
+		failureReason,
+	};
 }
 
 export type ExcerptPreviewEngineFactory = (app: App) => EpubReaderEngine;
@@ -70,7 +85,10 @@ export class ExcerptParagraphPreviewService {
 		}
 
 		const preview = await this.resolvePreview(filePath, cfi, excerptText);
-		this.resultCache.set(cacheKey, preview);
+		// 书籍加载失败可能是暂时的（文件忙/首次解析超时），不缓存，允许下次悬停重试。
+		if (preview.status === "found" || preview.failureReason !== "book-load-failed") {
+			this.resultCache.set(cacheKey, preview);
+		}
 		return preview;
 	}
 
@@ -79,6 +97,7 @@ export class ExcerptParagraphPreviewService {
 		cfi: string,
 		excerptText: string
 	): Promise<ExcerptParagraphPreview> {
+		let resolvedAnyChapter = false;
 		try {
 			const engine = await this.getEngine(filePath);
 
@@ -108,6 +127,7 @@ export class ExcerptParagraphPreviewService {
 				if (found) {
 					return found;
 				}
+				resolvedAnyChapter = true;
 			}
 
 			// 4) 全书逐章文本扫描（最重的一档，仅在以上全部落空时）。
@@ -125,13 +145,21 @@ export class ExcerptParagraphPreviewService {
 						);
 						return found;
 					}
+					resolvedAnyChapter = true;
 				}
 			}
 		} catch (error) {
 			logger.warn("[ExcerptParagraphPreview] Failed to resolve paragraph preview:", error);
 			this.enginePromises.delete(filePath);
+			return unavailablePreview("book-load-failed");
 		}
-		return unavailablePreview();
+		const failureReason: ExcerptParagraphPreviewFailureReason = resolvedAnyChapter
+			? "text-not-found"
+			: "chapter-unresolved";
+		logger.warn(
+			`[ExcerptParagraphPreview] Unavailable (${failureReason}) for cfi=${cfi} text="${excerptText.slice(0, 40)}"`
+		);
+		return unavailablePreview(failureReason);
 	}
 
 	private async tryMatchChapter(

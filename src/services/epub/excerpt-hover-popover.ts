@@ -39,15 +39,22 @@ function positionPopover(popover: HTMLElement, anchorRect: DOMRect): void {
 	popover.style.top = `${Math.round(top)}px`;
 }
 
+const REASON_LABELS: Record<string, string> = {
+	"book-load-failed": "书籍加载失败",
+	"chapter-unresolved": "无法定位章节",
+	"text-not-found": "原文段落不匹配",
+};
+
 function buildPopoverContent(contentEl: HTMLElement, preview: ExcerptParagraphPreview, excerptText: string): void {
 	contentEl.empty();
 	if (preview.status !== "found" || !preview.paragraphText) {
 		if (preview.chapterTitle) {
 			contentEl.createDiv({ cls: `${POPOVER_CLASS}__chapter`, text: preview.chapterTitle });
 		}
+		const reasonLabel = preview.failureReason ? REASON_LABELS[preview.failureReason] : "";
 		contentEl.createDiv({
 			cls: `${POPOVER_CLASS}__missing`,
-			text: "无法加载原文段落",
+			text: reasonLabel ? `无法加载原文段落（${reasonLabel}）` : "无法加载原文段落",
 		});
 		const fallback = String(excerptText || "").trim();
 		if (fallback) {
@@ -133,7 +140,7 @@ export class ExcerptHoverPopoverController {
 				if (this.hoverTarget !== targetForThisShow || !this.popover) {
 					return;
 				}
-				buildPopoverContent(contentEl, unavailablePreview(), excerptText);
+				buildPopoverContent(contentEl, unavailablePreview("book-load-failed"), excerptText);
 				this.popover.style.visibility = "";
 				positionPopover(this.popover, targetForThisShow.getBoundingClientRect());
 			});
