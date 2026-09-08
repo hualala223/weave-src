@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { App } from 'obsidian';
-	import { Menu, Notice, Platform, setIcon } from 'obsidian';
+	import { Menu, Notice, setIcon } from 'obsidian';
 	import { showObsidianConfirm } from '../../utils/obsidian-confirm';
 	import { logger } from '../../utils/logger';
 	import { parseSearchQuery, type DateRange, type SearchQuery } from '../../utils/search-parser';
@@ -103,9 +103,10 @@
 	let annotationLoadToken = 0;
 	let panelDisposed = false;
 	let lastLoadContextKey = '';
-	// 移动端没有可靠的右键（contextmenu 长按触发因平台而异），
-	// 面板级操作需要显式按钮入口（与桌面右键共用同一套菜单项）。
-	const isMobilePanel = Platform.isMobile || document.body.classList.contains('is-mobile');
+	// 面板级操作提供显式按钮入口（更多操作），移动端没有可靠右键，桌面端免右键直达。
+	let panelEl: HTMLElement | undefined = $state();
+	let selectionFloatEl: HTMLElement | undefined = $state();
+	let selectionFloatStyle = $state('');
 
 	function normalizeSearchText(value: string | undefined): string {
 		return typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -932,11 +933,46 @@
 			annotationLoadToken += 1;
 		};
 	});
+
+	/**
+	 * 批量工具条跟随可视区（JS 固定定位，替代 sticky）：
+	 * 侧栏滚动层级复杂，CSS sticky 会被中间 overflow 容器劫持、只能在有限区段跟随。
+	 * 改为捕获阶段监听一切滚动，把工具条钉在「面板矩形 ∩ 视口」的顶部居中处——
+	 * 只要面板还在视野内，工具条始终可见；面板滚出视野则随其收敛到边界。
+	 */
+	$effect(() => {
+		const float = selectionFloatEl;
+		const host = panelEl;
+		if (!selectionMode || !float || !host) {
+			return;
+		}
+		const margin = 6;
+		const update = () => {
+			const hostRect = host.getBoundingClientRect();
+			const width = float.offsetWidth;
+			const height = float.offsetHeight;
+			let top = Math.max(hostRect.top + margin, margin);
+			top = Math.min(top, window.innerHeight - height - margin);
+			let left = hostRect.left + (hostRect.width - width) / 2;
+			left = Math.min(Math.max(left, hostRect.left + margin), hostRect.right - width - margin);
+			selectionFloatStyle = `position: fixed; top: ${Math.max(top, margin)}px; left: ${left}px;`;
+		};
+		update();
+		const onScroll = () => update();
+		window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+		window.addEventListener('resize', onScroll);
+		return () => {
+			window.removeEventListener('scroll', onScroll, { capture: true });
+			window.removeEventListener('resize', onScroll);
+			selectionFloatStyle = '';
+		};
+	});
 </script>
 
 <div
 	class="epub-notes-panel"
 	class:selection-mode={selectionMode}
+	bind:this={panelEl}
 	oncontextmenu={showPanelContextMenu}
 >
 	{#if preparing}
@@ -950,7 +986,7 @@
 			{/if}
 		</div>
 	{:else}
-		{#if isMobilePanel && !selectionMode}
+		{#if !selectionMode}
 			<div class="epub-notes-more-row">
 				<button
 					type="button"
@@ -966,6 +1002,8 @@
 		{#if selectionMode}
 			<div
 				class="epub-notes-selection-float"
+				bind:this={selectionFloatEl}
+				style={selectionFloatStyle}
 				role="toolbar"
 				aria-label={'批量选择'}
 				aria-live="polite"
@@ -1082,9 +1120,8 @@
 	}
 
 	.epub-notes-selection-float {
-		position: sticky;
-		top: 6px;
-		z-index: 6;
+		/* 定位由 JS 注入（position: fixed + top/left，跟随可视区），见脚本区 $effect。 */
+		z-index: 100;
 		display: flex;
 		align-items: center;
 		gap: 8px;
@@ -1098,10 +1135,8 @@
 			0 1px 0 color-mix(in srgb, white 8%, transparent) inset;
 		backdrop-filter: blur(14px);
 		-webkit-backdrop-filter: blur(14px);
-		align-self: center;
 		width: fit-content;
-		max-width: calc(100% - 8px);
-		margin-inline: auto;
+		max-width: calc(100vw - 16px);
 	}
 
 	.epub-notes-selection-count {
