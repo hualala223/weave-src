@@ -25,6 +25,7 @@ import {
 	type FontMarkColorToken,
 } from "./font-mark-decoration";
 import { resolvedRangeCoversHighlightText } from "./highlight/highlight-identity";
+import { computeRangeTextOffsets } from "./font-mark-decoration";
 import type { ReaderFontMark } from "./reader-engine-types";
 
 /** 章节 iframe 高亮注册表中字色标记的注册名前缀。 */
@@ -183,6 +184,11 @@ export interface FontMarkRangeRecoveryInput {
 	cfiRange: string;
 	/** 标记文本；空则不做文本验证、不传 hint、不兜底。 */
 	text: string;
+	/**
+	 * 创建时快照的上下文 hint（重复词消歧）：仅可证明同节时参与——「前文+词+
+	 * 后文」整串唯一锁定创建时的那一个出现。缺失/失配安静落回后续层级。
+	 */
+	contextHint?: FontMarkContextHint;
 	/** 注入的范围解析器（CFI 锚 + 文本引述）。 */
 	resolveRangeInDocument: (cfiRange: string, textHint?: string) => Range | null;
 	/**
@@ -215,6 +221,22 @@ export function recoverFontMarkRange(input: FontMarkRangeRecoveryInput): Range |
 	}
 	if (range && trimmedText && !resolvedRangeCoversHighlightText(range, text)) {
 		range = null;
+	}
+
+	// ①′ hint 整串消歧（仅当①失败、仅可证明同节）：创建时快照的「前文+词+后文」
+	// 在同节文本中唯一锁定那一个出现——同节重复词不再跌进首现兜底。hint 缺失
+	// （旧标记）或失配（正文变化）时安静落到后续层级，行为向后兼容。
+	if (!range && trimmedText && sameSectionProven && input.contextHint) {
+		try {
+			range = findContextWordRangeInSection(
+				doc,
+				trimmedText,
+				input.contextHint.before,
+				input.contextHint.after,
+			);
+		} catch {
+			range = null;
+		}
 	}
 
 	// ② 同节文本找回（仅当①失败）：引述找回钉的是「节内首个同文位置」——
@@ -263,6 +285,196 @@ export function recoverFontMarkRange(input: FontMarkRangeRecoveryInput): Range |
 		return null;
 	}
 	return range;
+}
+
+/**
+ * 上下文消歧 hint：创建标记时快照的选中词前后文本（各约 32 字符）。
+ * 同节重复词在 CFI 锚失败时，靠「前文 + 词 + 后文」整串唯一锁定创建时的那一个出现。
+ */
+export interface FontMarkContextHint {
+	before?: string;
+	after?: string;
+}
+
+/** 消歧匹配的空白容差：去除全部空白后比较（跨块 "\n"、多余空格不致失配）。 */
+function stripAllWhitespace(text: string | undefined): string {
+	return String(text || "").replace(/\s+/g, "");
+}
+
+/**
+ * 在节内拼接文本中按 hint 唯一锁定词的出现位置（纯函数）。
+ *
+ * 返回词在 sectionText 中的字符起点；仅当**恰好一个**出现的前后文与 hint
+ * 匹配时返回，0 个或多个匹配一律返回 null（宁可漏染，不可错配）。
+ * before/after 均为空（旧标记无 hint）时返回 null——消歧信息缺失时不猜测。
+ * 匹配带空白容差：hint 在词侧被节首/节尾截断时按可见部分匹配。
+ */
+export function findFontMarkContextOccurrence(
+	sectionText: string,
+	word: string,
+	before?: string,
+	after?: string,
+): number | null {
+	const haystack = String(sectionText || "");
+	const needle = String(word || "").trim();
+	if (!haystack || !needle) {
+		return null;
+	}
+	const hintBefore = stripAllWhitespace(before);
+	const hintAfter = stripAllWhitespace(after);
+	// 双侧皆空 = 没有消歧信息；只有单侧也允许锁定（单侧已足够区分常见重复）。
+	if (!hintBefore && !hintAfter) {
+		return null;
+	}
+	// 窗口长度 = hint 原文长度 + 去空白后 hint 长度 + slack：hint 原文含大量
+	// 空白（跨块多换行）时，去空白后的窗口仍足以完整容纳 hint，不致误判失配。
+	const slack = 16;
+	const beforeWindow = (before || "").length + hintBefore.length + slack;
+	const afterWindow = (after || "").length + hintAfter.length + slack;
+	let matched = -1;
+	let matchCount = 0;
+	let index = haystack.indexOf(needle);
+	while (index >= 0) {
+		let contextMatches = true;
+		if (hintBefore) {
+			const windowStart = Math.max(0, index - beforeWindow);
+			const window = stripAllWhitespace(haystack.slice(windowStart, index));
+			if (!window.endsWith(hintBefore)) {
+				contextMatches = false;
+			}
+		}
+		if (contextMatches && hintAfter) {
+			const windowEnd = Math.min(
+				haystack.length,
+				index + needle.length + afterWindow,
+			);
+			const window = stripAllWhitespace(haystack.slice(index + needle.length, windowEnd));
+			if (!window.startsWith(hintAfter)) {
+				contextMatches = false;
+			}
+		}
+		if (contextMatches) {
+			matchCount += 1;
+			if (matchCount > 1) {
+				return null;
+			}
+			matched = index;
+		}
+		index = haystack.indexOf(needle, index + 1);
+	}
+	return matchCount === 1 ? matched : null;
+}
+
+/** 上下文快照的默认窗口：前后各取多少字符（足以区分同页重复短词）。 */
+export const FONT_MARK_CONTEXT_SNAPSHOT_LIMIT = 32;
+
+/**
+ * 创建标记时的上下文快照：从选区 Range 提取前后各 limit 字符（纯函数，doc 注入）。
+ *
+ * 用文本节点拼接坐标定位选区边界（跨节点/元素容器边界均可用），前后文各截
+ * limit 字符——该 hint 随标记持久化，供找回链做重复词消歧。任何失败返回
+ * {before:"",after:""}（等价无 hint），绝不抛异常。
+ */
+export function extractFontMarkContextSnapshot(
+	doc: Document | null,
+	range: Range | null,
+	limit: number = FONT_MARK_CONTEXT_SNAPSHOT_LIMIT,
+): { before: string; after: string } {
+	try {
+		if (!doc || !range || limit <= 0) {
+			return { before: "", after: "" };
+		}
+		const offsets = computeRangeTextOffsets(doc, range);
+		if (!offsets) {
+			return { before: "", after: "" };
+		}
+		const index = buildSectionTextIndex(doc);
+		if (!index) {
+			return { before: "", after: "" };
+		}
+		return {
+			before: index.fullText.slice(Math.max(0, offsets.start - limit), offsets.start),
+			after: index.fullText.slice(offsets.end, offsets.end + limit),
+		};
+	} catch {
+		return { before: "", after: "" };
+	}
+}
+
+/** 节文档文本节点拼接索引：全文 + 各文本节点在全文中的起点（拼接坐标系共用底座）。 */
+interface SectionTextIndex {
+	fullText: string;
+	nodeStart: Map<Text, number>;
+}
+
+function buildSectionTextIndex(doc: Document): SectionTextIndex | null {
+	const root = doc.body ?? doc.documentElement;
+	if (!root) {
+		return null;
+	}
+	const nodeStart = new Map<Text, number>();
+	const parts: string[] = [];
+	let acc = 0;
+	const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+	while (walker.nextNode()) {
+		const textNode = walker.currentNode as Text;
+		nodeStart.set(textNode, acc);
+		parts.push(textNode.data);
+		acc += textNode.data.length;
+	}
+	return { fullText: parts.join(""), nodeStart };
+}
+
+/**
+ * 在节文档内按 hint 消歧定位词出现的 Range。
+ *
+ * 把文本节点按文档序**拼接**成全文（拼接坐标 + 节点起点表），交给纯函数
+ * findFontMarkContextOccurrence 唯一锁定后映射回文本节点 Range——拼接使
+ * 跨节点的上下文（前文落在上一段尾部）也能参与匹配。找不到唯一出现返回
+ * null。任何未知结构都不抛异常。
+ */
+export function findContextWordRangeInSection(
+	doc: Document | null,
+	word: string,
+	before?: string,
+	after?: string,
+): Range | null {
+	if (!doc) {
+		return null;
+	}
+	const needle = String(word || "").trim();
+	if (!needle) {
+		return null;
+	}
+	const index = buildSectionTextIndex(doc);
+	if (!index) {
+		return null;
+	}
+	const occurrence = findFontMarkContextOccurrence(index.fullText, needle, before, after);
+	if (occurrence === null) {
+		return null;
+	}
+	const locate = (offset: number): { node: Text; offset: number } | null => {
+		for (const [textNode, start] of index.nodeStart) {
+			if (offset >= start && offset <= start + textNode.data.length) {
+				return { node: textNode, offset: offset - start };
+			}
+		}
+		return null;
+	};
+	const start = locate(occurrence);
+	const end = locate(occurrence + needle.length);
+	if (!start || !end) {
+		return null;
+	}
+	try {
+		const range = doc.createRange();
+		range.setStart(start.node, start.offset);
+		range.setEnd(end.node, end.offset);
+		return range;
+	} catch {
+		return null;
+	}
 }
 
 /** 节文档中 needle 的出现次数（跨文本节点不拼接，与短词兜底同规；0 = 无/空文档）。 */
@@ -340,7 +552,7 @@ export interface FontMarkExportRecoveryInput {
 	doc: Document | null;
 	sectionIndex: number;
 	highlightCfiRange: string;
-	marks: readonly { cfiRange: string; text?: string }[];
+	marks: readonly { cfiRange: string; text?: string; before?: string; after?: string }[];
 	resolveSectionIndex: (cfiRange: string) => number | null;
 	resolveRangeInDocument: (cfiRange: string, textHint?: string) => Range | null;
 }
@@ -381,18 +593,19 @@ export function recoverExportFontMarkRanges(
 		} catch {
 			markSection = null;
 		}
-		ranges.set(
-			mark.cfiRange,
-			recoverFontMarkRange({
-				doc,
-				sectionIndex,
-				markSection,
-				allowSectionTextHint: true,
-				cfiRange: mark.cfiRange,
-				text: mark.text || "",
-				resolveRangeInDocument,
-			})
-		);
+			ranges.set(
+				mark.cfiRange,
+				recoverFontMarkRange({
+					doc,
+					sectionIndex,
+					markSection,
+					allowSectionTextHint: true,
+					cfiRange: mark.cfiRange,
+					text: mark.text || "",
+					contextHint: { before: mark.before, after: mark.after },
+					resolveRangeInDocument,
+				})
+			);
 	}
 	return ranges;
 }

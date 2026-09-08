@@ -60,6 +60,8 @@ export function buildFontMarkHitCandidates(
 			allowSectionTextHint: true,
 			cfiRange: mark.cfiRange,
 			text: mark.text || "",
+			// 重复词消歧：与渲染一致——hint 唯一锁定的就是用户看到染色的那个词。
+			contextHint: { before: mark.before, after: mark.after },
 			// 书内宽回退：与渲染一致——多出现的主题词也保证可点选。
 			allowFirstOccurrenceFallback: true,
 			resolveRangeInDocument,

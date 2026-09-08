@@ -11,6 +11,7 @@
 		HighlightClickInfo,
 	} from '../../services/epub';
 	import type { FontMarkColorToken } from '../../services/epub/font-mark-decoration';
+import { extractFontMarkContextSnapshot } from '../../services/epub/font-mark-render';
 	import type { ReaderAnchorPoint, ReaderFrame, ReaderViewportRect } from '../../services/epub/reader-engine-types';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import {
@@ -64,8 +65,14 @@
 		onDismiss?: () => void;
 		/** 创建状态：「想法」默认下划线后在宿主侧持久化并打开想法输入框。 */
 		onCommentCreate?: (text: string, cfiRange: string, color: string) => void;
-		/** 创建状态：字色标记——点圆点即把所选文字染成该色（纯字色，无背景无线型）。 */
-		onCreateFontMark?: (text: string, cfiRange: string, color: FontMarkColorToken) => void;
+		/** 创建状态：字色标记——点圆点即把所选文字染成该色（纯字色，无背景无线型）。
+		 *  context 为选区前后文快照（重复词消歧 hint），随标记持久化。 */
+		onCreateFontMark?: (
+			text: string,
+			cfiRange: string,
+			color: FontMarkColorToken,
+			context?: { before: string; after: string },
+		) => void;
 		/** 创建状态：溯源复制 [[溯源路径|选中内容]]。 */
 		onCopyTraceLink?: (text: string, cfiRange: string) => void;
 		/** 调起 AI 面板（创建/编辑状态通用）。 */
@@ -112,6 +119,8 @@
 	let arrowOffset = $state(0);
 	let selectedText = $state('');
 	let currentCfiRange = $state('');
+	// 选区同步时快照的上下文（重复词消歧 hint）：创建字色标记时随记录持久化。
+	let selectionContext = $state<{ before: string; after: string }>({ before: '', after: '' });
 	let lastUsedColor = $state('yellow');
 	let actionsOverflow = $state(false);
 	// 隐匿文本展示（conceal）在类型层面并未建模为单独值（ReaderHighlightPresentation 只有 "highlight"），
@@ -310,6 +319,7 @@
 		arrowOffset = 0;
 		selectedText = '';
 		currentCfiRange = '';
+		selectionContext = { before: '', after: '' };
 		activeClearSelection = null;
 		stopPositionTracking();
 	}
@@ -585,6 +595,8 @@
 
 			selectedText = text;
 			currentCfiRange = resolvedCfiRange;
+			// 快照选中词前后上下文（重复词消歧 hint）：此刻选区仍在，错过即失真。
+			selectionContext = extractFontMarkContextSnapshot(iframeDoc, range);
 			activeClearSelection = null;
 
 			const geometry = resolveSelectionGeometry(resolvedCfiRange, frame, selection);
@@ -713,7 +725,7 @@
 			return;
 		}
 		lastUsedFontColor = color;
-		onCreateFontMark?.(selectedText, currentCfiRange, color);
+		onCreateFontMark?.(selectedText, currentCfiRange, color, selectionContext);
 		// 点色即关 + 清选区：弹窗消失即成功信号（Q22 定案）。
 		// 也杜绝「第一词标完后工具栏持守陈旧选中态、第二次标词失效」的残留状态。
 		clearAndHide();

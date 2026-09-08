@@ -153,6 +153,28 @@ describe("normalizeEpubStoredFontMarks（字色标记持久化兜底纯函数）
 		]);
 		expect(result).toEqual([{ cfiRange: "epubcfi(/6/4)", color: "green" }]);
 	});
+
+	it("before/after 消歧 hint：字符串保留、非法类型归一为 undefined、旧记录无字段不受影响", () => {
+		const hinted = normalizeEpubStoredFontMarks([
+			{
+				cfiRange: "epubcfi(/6/4)",
+				color: "red",
+				text: "同意",
+				before: "第二个",
+				after: "在那里",
+			},
+		]);
+		expect(hinted).toEqual([
+			{ cfiRange: "epubcfi(/6/4)", color: "red", text: "同意", before: "第二个", after: "在那里" },
+		]);
+		const badTypes = normalizeEpubStoredFontMarks([
+			{ cfiRange: "epubcfi(/6/4)", color: "red", before: 42, after: {} },
+		]);
+		expect(badTypes).toEqual([{ cfiRange: "epubcfi(/6/4)", color: "red" }]);
+		expect(normalizeEpubStoredFontMarks([{ cfiRange: "epubcfi(/6/4)", color: "red" }])).toEqual([
+			{ cfiRange: "epubcfi(/6/4)", color: "red" },
+		]);
+	});
 });
 
 describe("EpubStorageService 字色标记存储回路（缝 2）", () => {

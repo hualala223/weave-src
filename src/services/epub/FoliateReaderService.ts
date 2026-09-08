@@ -3078,6 +3078,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 				allowSectionTextHint,
 				cfiRange: mark.cfiRange,
 				text: mark.text || "",
+				// 重复词消歧（规格：font-mark-repeated-word-disambiguation.md）：
+				// 创建时快照的前后文 hint 唯一锁定该出现；旧标记无 hint 走原链。
+				contextHint: { before: mark.before, after: mark.after },
 				// 书内宽回退：多出现的主题词（用户主场景）也保证可见。
 				allowFirstOccurrenceFallback: true,
 				resolveRangeInDocument: (cfiRange, textHint) =>

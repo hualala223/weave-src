@@ -2969,13 +2969,22 @@
 	 * 落盘与整组应用（刷新合并）由 per-book 队列串行完成。字色标记不进笔记面板、
 	 * 不触发摘录输出。
 	 */
-	async function handleCreateFontMark(text: string, cfiRange: string, color: FontMarkColorToken) {
+	async function handleCreateFontMark(
+		text: string,
+		cfiRange: string,
+		color: FontMarkColorToken,
+		context?: { before: string; after: string }
+	) {
 		const trimmedRange = String(cfiRange || '').trim();
 		if (!trimmedRange) {
 			logger.warn('[EpubReaderApp] Font mark upsert skipped: empty cfiRange');
 			return;
 		}
 		if (!book?.id || !fontMarkMutationQueue) return;
+		// 重复词消歧 hint（规格：font-mark-repeated-word-disambiguation.md）：
+		// 创建时快照的选区前后文随记录持久化，找回链据此唯一锁定该出现。
+		const before = String(context?.before || '').trim();
+		const after = String(context?.after || '').trim();
 		try {
 			// 替换语义（票 07）：选区内已有的标记先整体移除、再 upsert 一个新标记——
 			// 修复真实数据中「别」蓝 +「别具」红重叠共存、导出时一个词被劈成两色的问题。
@@ -2994,6 +3003,7 @@
 						color,
 						text,
 						createdTime: Date.now(),
+						...(before || after ? { before: before || undefined, after: after || undefined } : {}),
 					},
 				},
 			];
@@ -3586,7 +3596,7 @@
 					fontMarkToolbarInfo = null;
 				}}
 				onCommentCreate={handleCommentCreateOnSelection}
-				onCreateFontMark={(text, cfiRange, color) => void handleCreateFontMark(text, cfiRange, color)}
+				onCreateFontMark={(text, cfiRange, color, context) => void handleCreateFontMark(text, cfiRange, color, context)}
 				onCopyTraceLink={handleCopyTraceSelection}
 				onOpenAI={handleOpenAI}
 			/>

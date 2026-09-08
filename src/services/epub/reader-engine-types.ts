@@ -124,6 +124,12 @@ export interface ReaderFontMark {
 	color: FontMarkColorToken;
 	text?: string;
 	createdTime?: number;
+	/**
+	 * 创建时快照的选中词前后上下文（重复词消歧 hint）：CFI 锚解析失败时，
+	 * 找回链按「前文+词+后文」整串唯一锁定创建时的那一个出现。旧记录无此字段。
+	 */
+	before?: string;
+	after?: string;
 }
 
 /**

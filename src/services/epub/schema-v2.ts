@@ -98,6 +98,9 @@ export interface EpubStoredFontMark {
 	color: FontMarkColorToken;
 	text?: string;
 	createdTime?: number;
+	/** 创建时快照的选中词前后上下文（重复词消歧 hint，可选：旧记录无此字段）。 */
+	before?: string;
+	after?: string;
 }
 
 export interface EpubBookNotes {
@@ -135,6 +138,8 @@ export function normalizeEpubStoredFontMarks(input: unknown): EpubStoredFontMark
 				typeof candidate.createdTime === "number" && Number.isFinite(candidate.createdTime)
 					? candidate.createdTime
 					: undefined,
+			before: typeof candidate.before === "string" && candidate.before ? candidate.before : undefined,
+			after: typeof candidate.after === "string" && candidate.after ? candidate.after : undefined,
 		});
 	}
 	return marks;
