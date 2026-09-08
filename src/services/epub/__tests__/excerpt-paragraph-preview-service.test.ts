@@ -155,4 +155,56 @@ describe("ExcerptParagraphPreviewService", () => {
 		expect((await service.getPreview({ filePath: "b.epub", cfi: "", excerptText: TEXT })).status).toBe("unavailable");
 		service.dispose();
 	});
+
+	it("书路径省略文件夹时经 Obsidian 链接解析（getFirstLinkpathDest）命中真实文件", async () => {
+		const engine = createFakeEngine([{ texts: ["窗外的雨下个不停。"], cfiBase: "epubcfi(/6/2!/4/2" }]);
+		let loadPath = "";
+		const wrappedLoad = engine.loadEpub as unknown as (path: string) => Promise<never>;
+		engine.loadEpub = async (filePath: string) => {
+			loadPath = filePath;
+			return wrappedLoad(filePath);
+		};
+		const { factory } = createFactory(engine);
+		const app = {
+			vault: {
+				getAbstractFileByPath: (path: string) =>
+					path === "书库/交易心理分析.epub" ? { path } : null,
+			},
+			metadataCache: {
+				getFirstLinkpathDest: (linkpath: string) =>
+					linkpath === "交易心理分析.epub" ? { path: "书库/交易心理分析.epub" } : null,
+			},
+		};
+		const service = new ExcerptParagraphPreviewService(app as never, factory);
+
+		const preview = await service.getPreview({
+			filePath: "交易心理分析.epub",
+			cfi: CFI,
+			excerptText: TEXT,
+			sourcePath: "卡片盒/文献/某笔记.md",
+		});
+		expect(preview.status).toBe("found");
+		expect(loadPath).toBe("书库/交易心理分析.epub");
+		service.dispose();
+	});
+
+	it("书文件确实不在书库时返回 unavailable 且详情包含原始路径", async () => {
+		const engine = createFakeEngine([]);
+		const { factory } = createFactory(engine);
+		const app = {
+			vault: { getAbstractFileByPath: () => null },
+			metadataCache: { getFirstLinkpathDest: () => null },
+		};
+		const service = new ExcerptParagraphPreviewService(app as never, factory);
+
+		const preview = await service.getPreview({
+			filePath: "书库/已删除的书.epub",
+			cfi: CFI,
+			excerptText: TEXT,
+		});
+		expect(preview.status).toBe("unavailable");
+		expect(preview.failureReason).toBe("book-load-failed");
+		expect(preview.failureDetail).toContain("已删除的书.epub");
+		service.dispose();
+	});
 });

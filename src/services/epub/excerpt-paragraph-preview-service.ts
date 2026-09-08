@@ -48,6 +48,8 @@ interface PreviewRequest {
 	filePath: string;
 	cfi: string;
 	excerptText: string;
+	/** 承载摘录块的笔记路径（用于 Obsidian 链接解析的相对解析基准）。 */
+	sourcePath?: string;
 }
 
 /** 全书文本扫描的章节上限（仅在主路径失败时触发，命中前逐章解析并有引擎级缓存）。 */
@@ -59,6 +61,90 @@ function describeError(error: unknown): string {
 		return error.message;
 	}
 	return String(error);
+}
+
+interface VaultFileLike {
+	path: string;
+}
+
+interface VaultLike {
+	getAbstractFileByPath?: (path: string) => VaultFileLike | null;
+	getFiles?: () => VaultFileLike[];
+}
+
+interface MetadataCacheLike {
+	getFirstLinkpathDest?: (linkpath: string, sourcePath: string) => VaultFileLike | null;
+}
+
+/** 链接里写的路径 → vault 真实文件路径。 */
+export function resolveVaultBookFilePath(
+	app: App,
+	rawPath: string,
+	sourcePath?: string
+): string | null {
+	const vault = (app as { vault?: VaultLike }).vault;
+	if (!vault) {
+		return rawPath;
+	}
+	const candidates = [rawPath];
+	try {
+		const decoded = decodeURIComponent(rawPath);
+		if (decoded !== rawPath) {
+			candidates.push(decoded);
+		}
+	} catch {
+		// 非法编码序列：忽略，仅用原始串。
+	}
+
+	// 1) 全路径精确匹配。
+	for (const candidate of candidates) {
+		const file = vault.getAbstractFileByPath?.(candidate);
+		if (file?.path) {
+			return file.path;
+		}
+	}
+
+	// 2) Obsidian 链接解析（容忍省略文件夹、最短路径、缺扩展名等链接写法）。
+	const metadataCache = (app as { metadataCache?: MetadataCacheLike }).metadataCache;
+	if (typeof metadataCache?.getFirstLinkpathDest === "function") {
+		for (const candidate of candidates) {
+			const dest = metadataCache.getFirstLinkpathDest(candidate, String(sourcePath || ""));
+			if (dest?.path) {
+				return dest.path;
+			}
+		}
+	}
+
+	// 3) 全库扫描：按归一化路径后缀匹配，再退到唯一文件名匹配。
+	const files = typeof vault.getFiles === "function" ? vault.getFiles() : [];
+	const normalize = (value: string) =>
+		value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/{2,}/g, "/").toLowerCase();
+	const normalizedTargets = candidates.map(normalize);
+	const matchedBySuffix = files.filter((file) => {
+		const normalizedPath = normalize(file.path);
+		return normalizedTargets.some(
+			(target) => normalizedPath === target || normalizedPath.endsWith(`/${target}`)
+		);
+	});
+	if (matchedBySuffix.length === 1) {
+		return matchedBySuffix[0].path;
+	}
+	if (matchedBySuffix.length > 1) {
+		return matchedBySuffix[0].path;
+	}
+	for (const candidate of candidates) {
+		const baseName = normalize(candidate).split("/").pop() || "";
+		if (!baseName) {
+			continue;
+		}
+		const matchedByName = files.filter(
+			(file) => normalize(file.path).split("/").pop() === baseName
+		);
+		if (matchedByName.length >= 1) {
+			return matchedByName[0].path;
+		}
+	}
+	return null;
 }
 
 /**
@@ -82,11 +168,19 @@ export class ExcerptParagraphPreviewService {
 	}
 
 	async getPreview(request: PreviewRequest): Promise<ExcerptParagraphPreview> {
-		const filePath = String(request?.filePath || "").trim();
+		const rawPath = String(request?.filePath || "").trim();
 		const cfi = String(request?.cfi || "").trim();
 		const excerptText = String(request?.excerptText || "").trim();
-		if (!filePath || !cfi) {
+		const sourcePath = String(request?.sourcePath || "");
+		if (!rawPath || !cfi) {
 			return unavailablePreview();
+		}
+
+		// 链接里的书路径可能是省略文件夹/最短路径/URI 编码等写法，先解析为 vault 真实路径。
+		const filePath = resolveVaultBookFilePath(this.app, rawPath, sourcePath);
+		if (!filePath) {
+			logger.warn(`[ExcerptParagraphPreview] Book file not found in vault: ${rawPath}`);
+			return unavailablePreview("book-load-failed", `书库中找不到书籍文件：${rawPath}`);
 		}
 
 		const cacheKey = `${filePath}\u0000${cfi}\u0000${excerptText}`;
@@ -122,16 +216,6 @@ export class ExcerptParagraphPreviewService {
 		};
 
 		try {
-			// 前置检查：书文件已被删除/改名/移动时给出明确原因，而非笼统的加载失败。
-			const vault = (this.app as { vault?: { getAbstractFileByPath?: (path: string) => unknown } })
-				.vault;
-			if (
-				typeof vault?.getAbstractFileByPath === "function" &&
-				!vault.getAbstractFileByPath(filePath)
-			) {
-				logger.warn(`[ExcerptParagraphPreview] Book file not found in vault: ${filePath}`);
-				return unavailablePreview("book-load-failed", `书库中找不到书籍文件：${filePath}`);
-			}
 			const engine = await this.getEngine(filePath);
 
 			// 1) CFI 直接解析；2) 文本纠偏（canonicalizeLocation）后的章节。

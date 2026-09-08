@@ -73,6 +73,7 @@ function bindExcerptCalloutHoverPreview(params: {
 	calloutEl: HTMLElement;
 	filePath: string;
 	cfi: string;
+	sourcePath: string;
 	options: EpubLinkPostProcessorOptions | undefined;
 }): void {
 	const cfi = String(params.cfi || "").trim();
@@ -94,6 +95,7 @@ function bindExcerptCalloutHoverPreview(params: {
 				filePath: params.filePath,
 				cfi,
 				excerptText,
+				sourcePath: params.sourcePath,
 			}),
 	});
 }
@@ -296,7 +298,14 @@ function bindEpubLocatorLink(
 
 	const calloutEl = boundLinkEl.closest<HTMLElement>('.callout[data-callout="epub"]');
 	if (calloutEl) {
-		bindExcerptCalloutHoverPreview({ app, calloutEl, filePath, cfi: parsed.cfi, options });
+		bindExcerptCalloutHoverPreview({
+			app,
+			calloutEl,
+			filePath,
+			cfi: parsed.cfi,
+			sourcePath: String(ctx?.sourcePath || ""),
+			options,
+		});
 	}
 }
 
