@@ -951,6 +951,7 @@
 							filePath={sharedState.filePath ?? undefined}
 							highlightRevision={sharedState.annotationRevision}
 							showStrikethroughHighlights={Boolean(sharedState.excerptSettings?.showStrikethroughInSidebar)}
+							newestExcerptOnTop={sharedState.excerptSettings?.newestExcerptOnTop !== false}
 							currentChapterTitle={sharedState.chapterTitle}
 							currentChapterIndex={sharedState.readerService?.getCurrentChapterIndex?.() ?? -1}
 							onDeleteHighlight={sharedState.onDeleteHighlight ?? undefined}
@@ -994,7 +995,10 @@
 		height: 100%;
 		min-height: 0;
 		width: 100%;
-		overflow: hidden;
+		/* clip（而非 hidden）：hidden 会把摘录面板批量工具条的 position:sticky
+		 * 劫持到这个不滚动的容器上，工具条跟随内容滚出视野；clip 只裁剪不产生
+		 * 滚动容器，sticky 仍吸附真正的滚动祖先。 */
+		overflow: clip;
 		background: var(--weave-epub-sidebar-surface-background);
 	}
 
