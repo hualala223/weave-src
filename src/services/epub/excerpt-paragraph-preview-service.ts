@@ -29,6 +29,10 @@ const MAX_CACHED_BOOKS = 4;
  * （loadEpub 不 renderTo），解析 CFI → 章节 → 段落列表 → 命中段落。
  * 按书籍文件缓存引擎实例（单飞），解析结果按 定位+文本 缓存，会话生命周期内有效。
  */
+export function unavailablePreview(): ExcerptParagraphPreview {
+	return { status: "unavailable", chapterTitle: "", paragraphText: "", highlight: null };
+}
+
 export class ExcerptParagraphPreviewService {
 	private app: App;
 	private enginePromises = new Map<string, Promise<EpubReaderEngine>>();
@@ -43,7 +47,7 @@ export class ExcerptParagraphPreviewService {
 		const cfi = String(request?.cfi || "").trim();
 		const excerptText = String(request?.excerptText || "").trim();
 		if (!filePath || !cfi) {
-			return { status: "unavailable", chapterTitle: "", paragraphText: "", highlight: null };
+			return unavailablePreview();
 		}
 
 		const cacheKey = `${filePath}\u0000${cfi}\u0000${excerptText}`;
@@ -62,12 +66,7 @@ export class ExcerptParagraphPreviewService {
 		cfi: string,
 		excerptText: string
 	): Promise<ExcerptParagraphPreview> {
-		const unavailable: ExcerptParagraphPreview = {
-			status: "unavailable",
-			chapterTitle: "",
-			paragraphText: "",
-			highlight: null,
-		};
+		const unavailable = unavailablePreview();
 		try {
 			const engine = await this.getEngine(filePath);
 			const chapterIndex = await engine.getSectionIndexForCfi?.(cfi);

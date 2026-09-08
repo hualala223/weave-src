@@ -28,13 +28,13 @@ import { configureNavigationHub } from "./services/navigation/navigation-hub-acc
 import { getBookSessionManager } from "./services/epub/session/book-session-manager-access";
 import { syncLargeNavButtonStyle } from "./services/epub/epub-large-nav-style";
 import {
-	disposeEpubExcerptHoverPreview,
 	openEpubBookshelf,
 	openEpubReader,
 	registerEpubMarkdownPostProcessor,
 	registerEpubProtocolHandler,
 	registerEpubWorkspaceViews,
 } from "./services/epub/epub-plugin-support";
+import { disposeEpubExcerptHoverPreview } from "./services/epub/EpubLinkPostProcessor";
 import { logger } from "./utils/logger";
 import { vaultStorage } from "./utils/vault-local-storage";
 import {

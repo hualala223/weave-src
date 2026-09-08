@@ -1,9 +1,8 @@
-import type { ExcerptParagraphPreview } from "./excerpt-paragraph-preview-service";
+import { unavailablePreview, type ExcerptParagraphPreview } from "./excerpt-paragraph-preview-service";
 
 const POPOVER_CLASS = "weave-excerpt-paragraph-popover";
 const HOVER_DELAY_MS = 300;
 const DISMISS_GRACE_MS = 120;
-const MAX_WIDTH_PX = 480;
 
 interface PopoverPosition {
 	left: number;
@@ -134,11 +133,7 @@ export class ExcerptHoverPopoverController {
 				if (this.hoverTarget !== targetForThisShow || !this.popover) {
 					return;
 				}
-				buildPopoverContent(
-					contentEl,
-					{ status: "unavailable", chapterTitle: "", paragraphText: "", highlight: null },
-					excerptText
-				);
+				buildPopoverContent(contentEl, unavailablePreview(), excerptText);
 				this.popover.style.visibility = "";
 				positionPopover(this.popover, targetForThisShow.getBoundingClientRect());
 			});
@@ -192,6 +187,17 @@ export function bindExcerptHoverPreview(options: {
 		}
 	};
 
+	const showNow = () => {
+		cancelEnter();
+		enterTimer = null;
+		options.controller.show(
+			calloutEl,
+			options.excerptColor,
+			async () => options.loadPreview(),
+			options.excerptText
+		);
+	};
+
 	calloutEl.addEventListener("mouseenter", (event: MouseEvent) => {
 		if (!options.isEnabled() || !options.isSupportedBlock()) {
 			return;
@@ -201,15 +207,16 @@ export function bindExcerptHoverPreview(options: {
 		enterTimer = window.setTimeout(
 			() => {
 				enterTimer = null;
-				options.controller.show(
-					calloutEl,
-					options.excerptColor,
-					async () => options.loadPreview(),
-					options.excerptText
-				);
+				showNow();
 			},
 			withCtrl ? 0 : HOVER_DELAY_MS
 		);
+	});
+	// 悬停等待期间按下 Ctrl：立即弹出（无需移出重进）。
+	calloutEl.addEventListener("mousemove", (event: MouseEvent) => {
+		if (enterTimer !== null && event.ctrlKey) {
+			showNow();
+		}
 	});
 	calloutEl.addEventListener("mouseleave", () => {
 		cancelEnter();

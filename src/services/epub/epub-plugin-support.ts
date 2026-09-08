@@ -9,7 +9,7 @@ import {
 } from "../../views/EpubBookshelfSidebarView";
 import { EpubSidebarView, VIEW_TYPE_EPUB_SIDEBAR } from "../../views/EpubSidebarView";
 import { EpubView, VIEW_TYPE_EPUB } from "../../views/EpubView";
-import { createEpubLinkPostProcessor, disposeEpubExcerptHoverPreview } from "./EpubLinkPostProcessor";
+import { createEpubLinkPostProcessor } from "./EpubLinkPostProcessor";
 import { EpubLinkService } from "./EpubLinkService";
 import { isSupportedBookFile, SUPPORTED_BOOK_EXTENSIONS } from "./book-format";
 import { EPUB_RUNTIME } from "./epub-runtime";
@@ -125,8 +125,6 @@ export function registerEpubMarkdownPostProcessor(
 ): void {
 	plugin.registerMarkdownPostProcessor(createEpubLinkPostProcessor(app, options));
 }
-
-export { disposeEpubExcerptHoverPreview } from "./EpubLinkPostProcessor";
 
 export async function openEpubBookshelf(
 	app: App,

@@ -44,6 +44,9 @@ function getPreviewService(app: App): ExcerptParagraphPreviewService {
 	return service;
 }
 
+/** 想法条目（💡 时间戳行）开头的引用段不属于摘录原文。 */
+const IDEA_ENTRY_PREFIX = "💡";
+
 /**
  * 合并粘贴块（一个 callout 多条摘录，深链仅首条定位）不可做单段预览：
  * 引用区出现多条非想法（非 💡 开头）的引文段即视为合并形态。
@@ -54,7 +57,7 @@ function isMergedExcerptCallout(calloutEl: HTMLElement): boolean {
 	);
 	let quoteCount = 0;
 	for (const paragraph of quoteParagraphs) {
-		if (String(paragraph.textContent || "").trim().startsWith("💡")) {
+		if (String(paragraph.textContent || "").trim().startsWith(IDEA_ENTRY_PREFIX)) {
 			continue;
 		}
 		quoteCount += 1;
