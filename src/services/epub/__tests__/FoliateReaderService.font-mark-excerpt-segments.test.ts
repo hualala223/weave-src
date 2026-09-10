@@ -188,6 +188,31 @@ describe("FoliateReaderService.getExcerptFontMarkSegments（摘录导出的字�
 		}
 	});
 
+	it("划线节解析不出时不退回当前帧节：异段同名标记不得被染进摘录（防误染）", () => {
+		const service = new FoliateReaderService(createMockApp());
+		try {
+			installFrameEnvironment(service, [12], 12);
+			// 划线 CFI 解析不出节号：无法证明任何标记与划线同节——保守放弃染色，
+			// 不再借用当前可见帧的节当过滤目标（否则当前章节异段同名标记
+			// 会经文本回退被染进摘录，即「没标记的词也带色」的错染根因）。
+			const parser = (service as any).parser;
+			vi.spyOn(parser, "getSectionIndexForCfi").mockImplementation(((cfi: string) => {
+				if (cfi === HIGHLIGHT_CFI) {
+					return null;
+				}
+				return cfi.startsWith("seg:") ? 12 : null;
+			}) as any);
+
+			const segments = service.getExcerptFontMarkSegments(HIGHLIGHT_CFI, EXCERPT_TEXT, [
+				{ cfiRange: "seg:3:5", color: "red", text: "太高" },
+			]);
+
+			expect(segments).toEqual<FontMarkSegment[]>([]);
+		} finally {
+			service.destroy();
+		}
+	});
+
 	it("解析与字符串两级都失败时跳过该标记，其余标记照常生效", () => {
 		const service = new FoliateReaderService(createMockApp());
 		try {

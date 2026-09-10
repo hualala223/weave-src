@@ -71,10 +71,11 @@ export interface FontMarkSegment {
  * 对每个标记（同节候选已由调用方保证）：
  * 1. 划线基线可解析时，用块感知偏移精确切段（Range 证明优先，严格包含性）；
  * 2. 偏移切段失败（标记 Range 不可用/无重叠）**或基线本身解析失败**时，
- *    回退「摘录内文本回退」：在摘录文本里找标记文本首现，找到即染——
- *    用户标记过的词出现在所划句子中，染上它是预期行为（8/25 成功版语义，
+ *    回退「摘录内文本回退」（带唯一性闸）：标记文本在摘录内**唯一出现**才染——
+ *    用户标记过的词唯一出现在所划句子中，染上它是预期行为（8/25 成功版语义，
  *    票 08 修订恢复；ac3a3d8 的"基线失败即整体放弃"被证伪：用户主场景是
  *    反复出现的主题词，CFI 常解析失败，整体放弃等于让句子里的词永远无色）；
+ *    多次出现则无法证明用户标记的是哪一处，跳过不染（防误染唯一性闸）；
  * 3. 两级都失败则跳过该标记（无色纯文本降级，绝不阻塞导出）。
  *
  * 任何情况都不抛异常——字色只是增强。
@@ -107,10 +108,11 @@ export function buildExcerptDecorationSegments(input: {
 			// 返回 null，才走下一级回退。
 			offsets = computeFontMarkOffsetsWithIndex(index, highlightRange, markRange, text.length);
 		}
-		// 摘录内文本回退（最后一级，同时覆盖基线失败场景）：
-		// 在摘录文本里找标记文本首现，找到即染。同节约束已由调用方保证。
+		// 摘录内文本回退（最后一级，同时覆盖基线失败场景）：标记文本须在摘录内
+		// **唯一出现**才按文本定位——多次出现无法证明用户标记的是哪一处，首现
+		// 回退会把颜色落在错误的那处（宁可漏染，不可错染）。同节约束已由调用方保证。
 		if (!offsets && mark.text) {
-			offsets = findFontMarkByText(text, mark.text);
+			offsets = findUniqueFontMarkByText(text, mark.text);
 		}
 		if (offsets) {
 			segments.push({ ...offsets, color: mark.color });
@@ -161,8 +163,9 @@ export function decorateExcerptText(text: string, segments: FontMarkSegment[]): 
 /**
  * 字符串查找工具（保留导出）：在文本中查找标记文本的首个出现位置。
  *
- * 注意：导出管线（buildExcerptDecorationSegments）已按"严格包含性"不再使用本函数——
- * 字符串回退会把同章异段标记误染到摘录同文处。保留仅供诊断/调试与工具用途。
+ * 注意：导出管线（buildExcerptDecorationSegments）使用的是下方带唯一性闸的
+ * findUniqueFontMarkByText——首现回退会把多次出现的词染到错误的那处。
+ * 本函数保留仅供诊断/调试与工具用途。
  */
 export function findFontMarkByText(
 	text: string,
@@ -177,6 +180,23 @@ export function findFontMarkByText(
 		return null;
 	}
 	return { start: index, end: index + needle.length };
+}
+
+/**
+ * 导出文本回退（带唯一性闸）：仅当标记文本在摘录文本内**唯一出现**时返回其
+ * 首现（=唯一）位置；出现多次或不存在一律返回 null，标记降级为纯文本。
+ * 与书内渲染找回管线的「唯一出现才降级」闸同构：宁可漏染，不可错染。
+ */
+export function findUniqueFontMarkByText(
+	text: string,
+	markText: string,
+): { start: number; end: number } | null {
+	const first = findFontMarkByText(text, markText);
+	if (!first) {
+		return null;
+	}
+	const needle = String(markText || "").trim();
+	return text.indexOf(needle, first.end) >= 0 ? null : first;
 }
 
 interface BoundaryPosition {

@@ -75,6 +75,34 @@ describe("buildExcerptDecorationSegments（导出装饰编排）", () => {
 		);
 	});
 
+	it("Range 解析失败但标记文本在摘录内多次出现 → 不做文本回退，输出纯文本（防误染唯一性闸）", () => {
+		const doc = buildDoc("<p>目标决定方向，目标决定行动</p>");
+		const { resolveRange } = makeParagraphRangeFactory(doc);
+		const text = "目标决定方向，目标决定行动";
+		const marks: TestMark[] = [{ cfiRange: "broken", text: "目标", color: "red" }];
+
+		// 「目标」在摘录里出现两次，无法证明用户标记的是哪一处——
+		// 首现回退会染错位置（宁可漏染，不可错染），两级都失败被跳过。
+		expect(
+			buildExcerptDecorationSegments({ text, highlightCfiRange: "p:0:0:12", marks, resolveRange }),
+		).toEqual<FontMarkSegment[]>([]);
+	});
+
+	it("Range 解析失败但标记文本在摘录内唯一出现 → 文本回退仍染色（票 08 场景保留）", () => {
+		const doc = buildDoc("<p>今天天气真好啊</p>");
+		const { resolveRange } = makeParagraphRangeFactory(doc);
+		const marks: TestMark[] = [{ cfiRange: "broken", text: "真好", color: "green" }];
+
+		const segments = buildExcerptDecorationSegments({
+			text: "今天天气真好啊",
+			highlightCfiRange: "p:0:0:7",
+			marks,
+			resolveRange,
+		});
+
+		expect(segments).toEqual<FontMarkSegment[]>([{ start: 4, end: 6, color: "green" }]);
+	});
+
 	it("Range 与字符串都失败时该项被跳过，剩余项仍生效", () => {
 		const doc = buildDoc("<p>今天天气真好啊</p>");
 		const { resolveRange } = makeParagraphRangeFactory(doc);

@@ -1903,13 +1903,20 @@ export class FoliateReaderService implements EpubReaderEngine {
 			}
 			// 优先取与划线同节的可见帧；找不到时用第一帧——跨节 CFI 解析必然失败，
 			// 自然落到编排内的字符串回退，属预期降级而非错误。
-			const highlightSectionIndex = this.parser.getSectionIndexForCfi(highlightCfiRange);
-			const frame =
-				visibleFrames.find((item) => item.index === highlightSectionIndex) ?? visibleFrames[0];
 			// 候选标记先按「与划线同节」过滤：异节标记绝不参与——即便 Range 解析失败，
 			// 编排内的字符串回退也会把它 indexOf 进摘录文本，造成跨章误染
-			// （规格：只保留落在划线范围内的彩词）。划线节解析不出时保守退回当前帧节。
-			const targetSectionIndex = highlightSectionIndex ?? frame.index;
+			// （规格：只保留落在划线范围内的彩词）。划线节解析不出时无法证明任何
+			// 标记与划线同节——保守放弃染色，绝不退回当前帧节：当前章节异段同名
+			// 标记会经文本回退被染进摘录，正是「没标记的词也带色」的错染根因。
+			const highlightSectionIndex = this.parser.getSectionIndexForCfi(highlightCfiRange);
+			if (highlightSectionIndex === null) {
+				return [];
+			}
+			const frame =
+				// 帧选择只决定 Range 解析的载体文档；标记过滤目标始终是划线自己的节
+				// （targetSectionIndex），帧不可见时的第一帧兜底不参与同节判定。
+				visibleFrames.find((item) => item.index === highlightSectionIndex) ?? visibleFrames[0];
+			const targetSectionIndex = highlightSectionIndex;
 			const sameSectionMarks = marks.filter((mark) => {
 				try {
 					return this.parser.getSectionIndexForCfi(mark.cfiRange) === targetSectionIndex;
