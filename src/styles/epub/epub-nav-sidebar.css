@@ -1127,15 +1127,55 @@ body.is-mobile .epub-highlight-toolbar:not(.mobile-docked) {
 
 .epub-selection-toolbar .color-btn .color-btn-core,
 .epub-highlight-toolbar .color-btn .color-btn-core {
-	display: block;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 12px;
+	height: 12px;
+	min-width: 12px;
+	min-height: 12px;
+	flex: 0 0 12px;
+	border-radius: 50%;
+	background: currentColor;
+	box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.35), inset 0 -1px 1px rgba(0, 0, 0, 0.08);
+}
+
+/*
+ * 色板按钮图标编码（颜色 + 形状双编码）：黑白墨水屏靠形状区分色板按钮，
+ * 彩色屏上颜色不变。图标按颜色统一映射（sun/droplet/flame/gem/leaf），
+ * 见 SelectionToolbar.svelte 的 colorGlyphs 与 docs/adr/0003。
+ * 背景涂色行 = 实心色点内嵌镂空图标；字色标记行 = 空心色环内嵌同色图标。
+ */
+.epub-selection-toolbar .color-btn .color-btn-glyph,
+.epub-highlight-toolbar .color-btn .color-btn-glyph {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	width: 10px;
 	height: 10px;
 	min-width: 10px;
 	min-height: 10px;
-	flex: 0 0 10px;
-	border-radius: 50%;
-	background: currentColor;
-	box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.35), inset 0 -1px 1px rgba(0, 0, 0, 0.08);
+	color: #ffffff;
+}
+
+.epub-selection-toolbar .color-btn .color-btn-glyph .svg-icon,
+.epub-highlight-toolbar .color-btn .color-btn-glyph .svg-icon {
+	width: 100%;
+	height: 100%;
+	/* Lucide 默认 stroke-width=2（24px 视箱），缩到 10px 后只剩 ~0.8px，墨水屏上看不清；加粗到可辨线宽。 */
+	stroke-width: 2.5px;
+}
+
+/* 字色标记行：图标继承空心色环的 tint 色，与环同色。 */
+.epub-selection-toolbar .color-btn.fontmark-dot .color-btn-glyph,
+.epub-highlight-toolbar .color-btn.fontmark-dot .color-btn-glyph {
+	color: inherit;
+}
+
+/* 浅色主题下实心色点改配深色图标，避免白图标压在浅色渐变上发糊。 */
+.epub-reader-root[data-host-theme="light"] .epub-selection-toolbar .color-btn .color-btn-glyph,
+.epub-reader-root[data-host-theme="light"] .epub-highlight-toolbar .color-btn .color-btn-glyph {
+	color: rgba(15, 23, 42, 0.82);
 }
 
 .epub-selection-toolbar .color-btn.yellow .color-btn-core,

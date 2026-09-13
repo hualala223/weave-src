@@ -1,4 +1,5 @@
 import type { MarkdownView } from "obsidian";
+import { perfBegin, perfEnd } from "../../utils/perf-probe";
 
 /**
  * 笔记文档编辑器插入工具（T01 预重构）。
@@ -40,18 +41,42 @@ export function insertIntoMarkdownEditor(
 	}
 
 	const editor = view.editor;
-	// 追加到末尾时，若最后一行已有内容则先另起一行，避免新块与原文挤在同一行。
-	const lastLine =
-		position === "end" && typeof editor.getLine === "function"
-			? editor.getLine(Math.max(0, editor.lineCount() - 1)) ?? ""
-			: "";
-	const leadingNewline = position === "end" && lastLine.trim().length > 0 ? "\n" : "";
+	const insertProbeStart = perfBegin();
+	// 追加到末尾时与既有内容保持「恰好一个空行分隔」：先把文档末尾的所有尾随空行
+	// （0 个或多个）连同旧内容边界一起，归一化重写为恰好一个空行，再接新内容。
+	// 只看末行是否为空不够——上次追加留下的那个空行会被本次内容原位填掉，等于没有分隔。
+	const hasLineAccess = typeof editor.getLine === "function";
+	const total = editor.lineCount();
+	let lastNonEmpty = total - 1;
+	if (position === "end" && hasLineAccess) {
+		while (lastNonEmpty >= 0 && (editor.getLine(lastNonEmpty) ?? "").trim().length === 0) {
+			lastNonEmpty -= 1;
+		}
+	}
+	const replaceEnd = { line: total - 1, ch: (editor.getLine(total - 1) ?? "").length };
+	// 尾随空行区的起点；最后一行本身有内容时（lastNonEmpty === total-1）没有可复用的
+	// 空行区，插入锚点显式取文档最末字符之后，不依赖编辑器对越界位置的钳制行为。
+	const replaceStart =
+		lastNonEmpty + 1 <= total - 1
+			? { line: lastNonEmpty + 1, ch: 0 }
+			: { line: total - 1, ch: replaceEnd.ch };
 	const cursor =
 		position === "cursor"
 			? editor.getCursor()
-			: { line: editor.lineCount(), ch: 0 };
-	editor.replaceRange(`${leadingNewline}${content}\n`, cursor);
-	const lines = content.split("\n").length;
+			: replaceStart;
+	const separator = position === "end" && lastNonEmpty >= 0 ? "\n" : "";
+	const replacement =
+		position === "end" && hasLineAccess
+			? `${separator}${content}\n`
+			: `${content}\n`;
+	const replaceTo = position === "end" && hasLineAccess ? replaceEnd : undefined;
+	editor.replaceRange(replacement, cursor, replaceTo);
+	// 光标移到插入文本的末行（按实际写入的完整文本统计行数，含前导空行与收尾换行）。
+	const lines = replacement.split("\n").length - 1;
 	editor.setCursor({ line: cursor.line + lines, ch: 0 });
+	perfEnd("insertIntoMarkdownEditor", insertProbeStart, {
+		always: true,
+		extra: { lines: total, position, bytes: content.length },
+	});
 	return { ok: true, filePath: view.file?.path ?? null };
 }

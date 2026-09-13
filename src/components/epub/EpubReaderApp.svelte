@@ -18,6 +18,7 @@
 	import { insertIntoMarkdownEditor, NO_EDITOR_MESSAGE } from '../../services/epub/note-editor-insert';
 	import {
 		buildExcerptPasteBlocks,
+		buildExcerptMergedPasteBlock,
 		type ExcerptPasteBlockItem,
 	} from '../../services/epub/excerpt-batch-paste';
 	import { formatExcerptEntryTimestamp, formatExcerptTimestamp } from '../../services/epub/epub-time-format';
@@ -71,6 +72,7 @@
 	} from '../../services/epub/bookshelf-data-events';
 	import { epubActiveDocumentStore } from '../../stores/epub-active-document-store';
 	import { logger } from '../../utils/logger';
+	import { perfBegin, perfEnd, perfTick } from '../../utils/perf-probe';
 	import { getOpenEpubFilePath, pathsReferToSameOpenBook } from '../../utils/epub-leaf-utils';
 	import { showObsidianChoice, showObsidianConfirm } from '../../utils/obsidian-confirm';
 	import { UnifiedThemeManager } from '../../utils/theme-detection';
@@ -234,6 +236,8 @@
 	let commentEditorDraft = $state('');
 	let commentEditorSaving = $state(false);
 	let highlightDeleting = $state(false);
+	/** 工具条「粘贴到笔记」进行中标志（重入保护：写入为异步，连点只写一块）。 */
+	let pastingHighlightToNote = $state(false);
 	const SCROLLED_NAV_FRAME_INSET_VAR = '--epub-scrolled-side-nav-frame-inset-end';
 	const SCROLLED_NAV_SCROLLBAR_VAR = '--epub-scrolled-side-nav-scrollbar-width';
 	let excerptSettings = $state<EpubExcerptSettings>({
@@ -1991,10 +1995,13 @@
 	}
 
 	async function copyTextToClipboard(content: string) {
+		const clipProbeStart = perfBegin();
 		try {
 			await navigator.clipboard.writeText(content);
+			perfEnd("copyTextToClipboard", clipProbeStart, { always: true });
 			new Notice('已复制到剪贴板');
 		} catch (_e) {
+			perfEnd("copyTextToClipboard", clipProbeStart, { always: true });
 			new Notice('复制失败');
 		}
 	}
@@ -2034,12 +2041,16 @@
 
 	function outputNote(text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) {
 		/* Always allow output */
+		const outputProbeStart = perfBegin();
 		const content = buildNoteContent(decorateExcerptForOutput(text, cfiRange), cfiRange, color, style, autoInsert);
+		perfEnd("outputNote.buildContent", outputProbeStart);
+		const writeProbeStart = perfBegin();
 		if (autoInsert) {
 			insertToEditorAndTrack(content);
 		} else {
 			copyTextToClipboard(content);
 		}
+		perfEnd("outputNote.write", writeProbeStart, { always: true, extra: { autoInsert } });
 	}
 
 	async function handleInsertToNote(
@@ -2048,10 +2059,14 @@
 		color?: string,
 		style?: EpubHighlightStyle
 	) {
+		const insertProbeStart = perfBegin();
+		const outputProbeStart = perfBegin();
 		outputNote(text, cfiRange, color, style);
+		perfEnd("handleInsertToNote.outputNote", outputProbeStart, { always: true });
 		// await 持久化（含其中的乐观 eid 身份绘制）：保证划线/背景色与「写想法」路径一致，
 		// 用同一带 excerptId 的记录立即上屏，避免重载整组重建时把临时标记冲掉。
 		await persistInlineHighlight(cfiRange, text, color, style);
+		perfEnd("handleInsertToNote.total", insertProbeStart, { always: true });
 	}
 
 	/** 章节标签：优先按「章节标签格式」设置用引擎重新解析该章节，其次用条目自带标题兜底。 */
@@ -2072,16 +2087,20 @@
 	}
 
 	/**
-	 * 摘录面板「粘贴所选摘录到笔记」（批量选择后单击粘贴按钮 / 卡片右键单条）：
+	 * 「粘贴所选摘录到笔记」共享入口（批量选择后单击粘贴按钮 / 卡片右键单条 / 划线工具条编辑态单条）：
 	 * - 与划线自动粘贴同款格式：buildQuoteBlock 引用块 + 追加到最近激活笔记文档末尾；
 	 * - 块顺序与面板显示相反：按 createdTime 升序（最早摘录在最上）；
 	 * - 时间戳用摘录原始创建时间（而非粘贴时刻），保留真实时间；
 	 * - 带想法的摘录直接把想法条目渲染进块（所见即所得，不依赖事后合并）；
 	 * - 无打开的 Markdown 编辑器时仅提示，不隐式复制（与自动插入一致）。
+	 * 入参为粘贴所需的最小结构形状（面板快照与工具条点击信息派生条目均可满足）。
 	 * 块构建（排序/时间戳/样式位/想法条目/拼接）全部收拢在纯函数服务
 	 * excerpt-batch-paste 内，此处只做装饰、章节标签解析与插入两类胶水。
 	 */
-	async function pasteSelectedHighlightsToNote(highlights: EpubDisplayHighlight[]): Promise<boolean> {
+	async function pasteSelectedHighlightsToNote(
+		highlights: PasteableExcerptHighlight[],
+		merged = false
+	): Promise<boolean> {
 		if (!book || !filePath || highlights.length === 0) {
 			return false;
 		}
@@ -2114,6 +2133,32 @@
 		if (items.length === 0) {
 			return false;
 		}
+		// 合并粘贴：多条并成一个摘录块、同行省略号接续（格式收拢在 excerpt-batch-paste）。
+		if (merged) {
+			const mergedResult = buildExcerptMergedPasteBlock(items, {
+				filePath,
+				sourceId: book.sourceId,
+				sourcePath: resolveExcerptLinkSourcePath(true),
+				addCreationTime: excerptSettings.addCreationTime,
+				chapterLabelMaxLength: resolveExcerptChapterLabelMaxLength(),
+				buildQuoteBlock: (...args) => linkService.buildQuoteBlock(...args),
+			});
+			if (!mergedResult || mergedResult.count === 0) {
+				return false;
+			}
+			const mergedInserted = insertToEditor(mergedResult.content);
+			if (mergedInserted) {
+				new Notice(`已合并粘贴 ${mergedResult.count} 条摘录到笔记末尾`);
+				if (mergedResult.keys.length > 0) {
+					const pastedAt = Date.now();
+					for (const key of mergedResult.keys) {
+						void updateInlineHighlightFields(key, { pastedAt });
+					}
+				}
+				return true;
+			}
+			return false;
+		}
 		const result = buildExcerptPasteBlocks(items, {
 			filePath,
 			sourceId: book.sourceId,
@@ -2139,6 +2184,64 @@
 			return true;
 		}
 		return false;
+	}
+
+	/** 粘贴链路所需的最小条目形状（面板快照的结构子集；color/createdTime 放宽以容纳点击信息）。 */
+	type PasteableExcerptHighlight = Pick<
+		EpubDisplayHighlight,
+		| 'cfiRange'
+		| 'text'
+		| 'commentText'
+		| 'hasCommentDivider'
+		| 'excerptId'
+		| 'chapterIndex'
+		| 'chapterTitle'
+		| 'noteTypeKey'
+	> & { color?: string; createdTime?: number };
+
+	/**
+	 * 划线工具条「粘贴到笔记」（编辑态单条直粘，spec: docs/specs/toolbar-paste-to-note.md）：
+	 * - 与面板单条粘贴同一条链路：组装单条目后调用 pasteSelectedHighlightsToNote；
+	 * - HighlightClickInfo 唯一缺口是 chapterIndex，按划线身份 key 回查 pendingLoadedHighlights
+	 *   补齐（既有先例：resolveCommentDraftFromMemory 的身份 key + find）；回查失败降级写入，
+	 *   章标签退化为划线自带章标题、再退化为无标签（块构建不依赖章节索引）；
+	 * - 重入保护：粘贴进行中重复点击直接返回，连点只写一块。
+	 */
+	async function handlePasteHighlightToNote(info: HighlightClickInfo): Promise<void> {
+		if (pastingHighlightToNote || !book || !filePath) {
+			return;
+		}
+		pastingHighlightToNote = true;
+		try {
+			await pasteSelectedHighlightsToNote([resolvePasteableHighlightFromClick(info)]);
+		} finally {
+			pastingHighlightToNote = false;
+		}
+	}
+
+	/** 把工具条点击信息组装为粘贴条目。取数口径统一为「回查记录优先、点击信息兜底」，
+	 *  与面板粘贴同源（面板快照同样来自存储记录）；chapterIndex/chapterTitle 只能来自
+	 *  回查记录（点击信息无此字段，缺失即按规格降级：章标签退自带标题、再退无标签）。 */
+	function resolvePasteableHighlightFromClick(info: HighlightClickInfo): PasteableExcerptHighlight {
+		const identityKey = getReaderHighlightIdentityKey(info);
+		const loaded = identityKey
+			? pendingLoadedHighlights?.find(
+					(highlight) => getReaderHighlightIdentityKey(highlight) === identityKey
+				)
+			: undefined;
+		return {
+			cfiRange: info.cfiRange,
+			text: loaded?.text ?? info.text ?? '',
+			commentText: loaded?.commentText ?? info.commentText,
+			hasCommentDivider:
+				loaded?.hasCommentDivider ?? info.hasCommentDivider ?? Boolean(info.commentText?.trim()),
+			color: loaded?.color ?? info.color,
+			excerptId: loaded?.excerptId ?? info.excerptId,
+			createdTime: loaded?.createdTime ?? info.createdTime,
+			chapterIndex: loaded?.chapterIndex,
+			chapterTitle: loaded?.chapterTitle,
+			noteTypeKey: loaded?.style || info.style || 'highlight',
+		};
 	}
 
 	function resolveBookDisplayTitle(): string {
@@ -2234,10 +2337,13 @@
 	/** v2：读取当前书的高亮记录（books[id].notes.highlights）。 */
 	async function loadInlineHighlights(): Promise<any[]> {
 		if (!book?.id) return [];
+		const loadProbeStart = perfBegin();
 		try {
 			return await storageService.loadBookHighlights(book.id);
 		} catch (_e) {
 			return [];
+		} finally {
+			perfEnd("loadInlineHighlights", loadProbeStart);
 		}
 	}
 
@@ -2315,6 +2421,8 @@
 		color?: string,
 		style?: EpubHighlightStyle
 	) {
+		const persistProbeStart = perfBegin();
+		perfTick('persistInlineHighlight.calls');
 		try {
 			if (!book?.id) return;
 			const trimmedRange = String(cfiRange || '').trim();
@@ -2372,8 +2480,12 @@
 			if (readerReady) {
 				readerService.addHighlight(optimistic);
 			}
+			const sidebarProbeStart = perfBegin();
 			publishSidebarHighlights(pendingLoadedHighlights);
-		} catch (_e) {}
+			perfEnd("persist.publishSidebar", sidebarProbeStart);
+		} catch (_e) {} finally {
+			perfEnd("persistInlineHighlight.total", persistProbeStart, { always: true });
+		}
 	}
 
 
@@ -2619,6 +2731,7 @@
 				onDeleteBookmarkNote: null,
 				onDeleteHighlight: null,
 				onPasteHighlightsToNote: null,
+				onPasteHighlightsMergedToNote: null,
 				onSettingsClick: showSettingsMenu,
 			});
 			return;
@@ -2645,6 +2758,9 @@
 			onDeleteBookmarkNote: deleteBookmarkNoteById,
 			onDeleteHighlight: canUseExcerptNotes ? deleteDisplayHighlight : null,
 			onPasteHighlightsToNote: canUseExcerptNotes ? pasteSelectedHighlightsToNote : null,
+			onPasteHighlightsMergedToNote: canUseExcerptNotes
+				? (highlights) => pasteSelectedHighlightsToNote(highlights, true)
+				: null,
 			onNavigate: requestBookLocate,
 			onSettingsClick: showSettingsMenu,
 			onSwitchBook,
@@ -2943,7 +3059,12 @@
 			pendingLoadedHighlights = allHighlights;
 
 			if (readerReady) {
+				const applyProbeStart = perfBegin();
 				await readerService.applyHighlights(allHighlights);
+				perfEnd("reloadHighlights.applyHighlights", applyProbeStart, {
+					always: true,
+					extra: { count: allHighlights.length },
+				});
 			}
 			publishSidebarHighlights(allHighlights);
 		} catch (_e) {
@@ -3639,6 +3760,7 @@
 				onChangeFontMarkColor={(info, color) => void handleChangeFontMarkColor(info, color)}
 				onDeleteFontMark={(info) => void handleDeleteFontMark(info)}
 				onCopyText={handleHighlightCopyText}
+				onPasteToNote={hasExcerptNotesCapability() ? handlePasteHighlightToNote : undefined}
 				onEditComment={handleHighlightEditComment}
 				onAppendComment={handleHighlightAppendComment}
 				onDismiss={() => {

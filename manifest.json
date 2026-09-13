@@ -1,7 +1,7 @@
 {
   "id": "fork-weave-epub-reader",
   "name": "Fork Weave EPUB Reader",
-  "version": "0.6.56",
+  "version": "0.6.57",
   "minAppVersion": "1.8.7",
   "description": "Multi-format ebook reader for desktop and mobile: bookshelf, highlights, excerpts, and deep links (EPUB and TXT free; more formats with Premium).",
   "author": "叫我包仔",

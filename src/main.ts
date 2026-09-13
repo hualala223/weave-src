@@ -36,6 +36,7 @@ import {
 } from "./services/epub/epub-plugin-support";
 import { disposeEpubExcerptHoverPreview } from "./services/epub/EpubLinkPostProcessor";
 import { logger } from "./utils/logger";
+import { perfSetSink } from "./utils/perf-probe";
 import { vaultStorage } from "./utils/vault-local-storage";
 import {
 	DEFAULT_BOOKSHELF_DISPLAY_MODE,
@@ -90,7 +91,47 @@ export default class StandaloneEpubPlugin extends Plugin {
 	private workspaceViewsRegistered = false;
 	private pendingBookshelfRefreshTimer: number | null = null;
 	private epubStorageService: EpubStorageService | null = null;
+	/** 诊断用：性能采样行缓冲区与落盘节流定时器（见 attachPerfLogSink）。 */
+	private perfLogBuffer: string[] = [];
+	private perfLogTimer: number | null = null;
 	settings: StandaloneEpubPluginSettings = DEFAULT_STANDALONE_EPUB_SETTINGS;
+
+	/**
+	 * 诊断用（临时）：把探针的关键采样行写进插件目录下的 perf.log。
+	 *
+	 * 目的是替代「让用户在控制台敲命令」——挂上 sink 后探针不再往控制台输出，
+	 * 因此也不引入 console 开销。写在 `.obsidian/plugins/<id>/` 下是因为该目录
+	 * 不参与 vault 索引，不会触发 Obsidian 的重新索引。
+	 * 采样行 3 秒合并写一次；任何异常都静默，绝不能影响插件本身。
+	 */
+	private attachPerfLogSink(): void {
+		try {
+			const adapter = this.app.vault.adapter;
+			const logPath = normalizePath(
+				`${this.app.vault.configDir}/plugins/${this.manifest.id}/perf.log`
+			);
+			void adapter
+				.write(logPath, `# weave-perf session ${new Date().toISOString()}\n`)
+				.catch(() => undefined);
+			perfSetSink((line) => {
+				this.perfLogBuffer.push(line);
+				if (this.perfLogTimer !== null) {
+					return;
+				}
+				this.perfLogTimer = window.setTimeout(() => {
+					this.perfLogTimer = null;
+					if (!this.perfLogBuffer.length) {
+						return;
+					}
+					const pending = `${this.perfLogBuffer.join("\n")}\n`;
+					this.perfLogBuffer = [];
+					void adapter.append(logPath, pending).catch(() => undefined);
+				}, 3000);
+			});
+		} catch {
+			/* 诊断尽力而为 */
+		}
+	}
 
 	private syncDebugSettings(): void {
 		this.settings.enableDebugMode = this.settings.enableDebugMode === true;
@@ -299,6 +340,7 @@ export default class StandaloneEpubPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		this.attachPerfLogSink();
 		syncLargeNavButtonStyle(this.settings.enableLargeNavButtons === true);
 		await vaultStorage.initialize(this.app);
 		configureNavigationHub(this.app, {
@@ -344,6 +386,11 @@ export default class StandaloneEpubPlugin extends Plugin {
 	}
 
 	onunload(): void {
+		perfSetSink(null);
+		if (this.perfLogTimer !== null && typeof window !== "undefined") {
+			window.clearTimeout(this.perfLogTimer);
+			this.perfLogTimer = null;
+		}
 		if (this.pendingBookshelfRefreshTimer !== null && typeof window !== "undefined") {
 			window.clearTimeout(this.pendingBookshelfRefreshTimer);
 			this.pendingBookshelfRefreshTimer = null;

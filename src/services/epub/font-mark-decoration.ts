@@ -75,7 +75,8 @@ export interface FontMarkSegment {
  *    用户标记过的词唯一出现在所划句子中，染上它是预期行为（8/25 成功版语义，
  *    票 08 修订恢复；ac3a3d8 的"基线失败即整体放弃"被证伪：用户主场景是
  *    反复出现的主题词，CFI 常解析失败，整体放弃等于让句子里的词永远无色）；
- *    多次出现则无法证明用户标记的是哪一处，跳过不染（防误染唯一性闸）；
+ *    多次出现则无法证明用户标记的是哪一处（创建时 before/after 快照亦不足为证：
+ *    异段同名标记的快照可能与摘录内某处恰好吻合），跳过不染（防误染唯一性闸）；
  * 3. 两级都失败则跳过该标记（无色纯文本降级，绝不阻塞导出）。
  *
  * 任何情况都不抛异常——字色只是增强。
@@ -83,7 +84,13 @@ export interface FontMarkSegment {
 export function buildExcerptDecorationSegments(input: {
 	text: string;
 	highlightCfiRange: string;
-	marks: Array<{ cfiRange: string; text?: string; color: unknown }>;
+	marks: Array<{
+		cfiRange: string;
+		text?: string;
+		color: unknown;
+		before?: string;
+		after?: string;
+	}>;
 	resolveRange: (cfiRange: string) => Range | null;
 }): FontMarkSegment[] {
 	const { text, marks, resolveRange } = input;
@@ -108,11 +115,13 @@ export function buildExcerptDecorationSegments(input: {
 			// 返回 null，才走下一级回退。
 			offsets = computeFontMarkOffsetsWithIndex(index, highlightRange, markRange, text.length);
 		}
-		// 摘录内文本回退（最后一级，同时覆盖基线失败场景）：标记文本须在摘录内
-		// **唯一出现**才按文本定位——多次出现无法证明用户标记的是哪一处，首现
-		// 回退会把颜色落在错误的那处（宁可漏染，不可错染）。同节约束已由调用方保证。
+		// 摘录内文本回退（最后一级，同时覆盖基线失败场景）：
+		// 标记文本须在摘录内**唯一出现**才按文本定位——多次出现无法证明用户
+		// 标记的是哪一处，创建时快照也不能作为证明（异段同名标记的快照可能与
+		// 摘录内某处恰好吻合，染上即错染）。宁可漏染，不可错染。
+		// 同节约束已由调用方保证。
 		if (!offsets && mark.text) {
-			offsets = findUniqueFontMarkByText(text, mark.text);
+			offsets = findFontMarkOccurrenceByText(text, mark.text, mark.before, mark.after);
 		}
 		if (offsets) {
 			segments.push({ ...offsets, color: mark.color });
@@ -183,9 +192,34 @@ export function findFontMarkByText(
 }
 
 /**
- * 导出文本回退（带唯一性闸）：仅当标记文本在摘录文本内**唯一出现**时返回其
+ * 摘录内文本回退（防误染）——**唯一出现才允许按文本定位**。
+ *
+ * 本函数服务「无法用 Range 证明出处」的标记，导出的领域保证是**宁可漏染，
+ * 不可错染**（规格 export-font-mark-decoration-misdye 票 01）：只有当目标词在
+ * 摘录文本内**唯一出现**时，该处才可被证明是用户标记的那一个字词，才允许染色。
+ *
+ * 出现多次时，任何文本证据都不足以证明用户标记的是哪一处——
+ * 创建时 before/after 上下文快照也不行：快照来自标记所在的那一段，而异段
+ * 同名标记的快照完全可能与摘录内某一处的上下文**恰好吻合**（例如同一句话/
+ * 小标题在节内重复出现），此时染色就是错染。因此多次出现一律返回 null，
+ * 标记降级为纯文本。
+ *
+ * 该唯一性闸与书内渲染找回管线的「唯一出现才降级」闸同构。
+ * before/after 参数仅为调用签名兼容保留，本链**不**据此放宽闸门。
+ */
+export function findFontMarkOccurrenceByText(
+	text: string,
+	markText: string,
+	_before?: string,
+	_after?: string,
+): { start: number; end: number } | null {
+	return findUniqueFontMarkByText(text, markText);
+}
+
+/**
+ * 摘录内文本回退（带唯一性闸）：仅当标记文本在摘录文本内**唯一出现**时返回其
  * 首现（=唯一）位置；出现多次或不存在一律返回 null，标记降级为纯文本。
- * 与书内渲染找回管线的「唯一出现才降级」闸同构：宁可漏染，不可错染。
+ * 供无 before/after 快照的旧标记记录使用。
  */
 export function findUniqueFontMarkByText(
 	text: string,

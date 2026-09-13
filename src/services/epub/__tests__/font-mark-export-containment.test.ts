@@ -1,5 +1,5 @@
 /**
- * 字色标记导出——"偏移证明优先 + 摘录内文本回退"回归测试（票 08 二次修订）。
+ * 字色标记导出——"偏移证明优先 + 摘录内唯一性闸文本回退"回归测试。
  *
  * 背景（真实用户数据复现，小岛经济学 + 后续实测）：
  * 同一章节（同节）内、不同段落的标记也通过「同节过滤」进入候选。
@@ -7,10 +7,13 @@
  * 但用户实测证明主场景是**反复出现的主题词**（CFI 常解析失败）——该约束使
  * 摘录里的主题词永远无色，笔记同步功能形同虚设。
  *
- * 本文件断言的外部契约（票 08 修订）：
+ * 本文件断言的外部契约（票 08 修订 + 防误染唯一性闸，见
+ * docs/specs/export-font-mark-decoration-misdye.md）：
  * - Range 偏移证明优先：标记确实落在划线范围内时按精确偏移染色，**不回退**；
  * - 偏移失败（含标记在划线外/CFI 解析失败/基线失败）时，**摘录内文本回退**：
- *   标记文本在摘录中出现即染色（8/25 成功版语义，用户主场景）；
+ *   仅当标记文本在摘录内**唯一出现**才染色（唯一 = 只可能是用户标记的那一处）；
+ * - 出现多次时一律不染——创建时 before/after 快照**不足为证**（异段同名标记的
+ *   快照可能与摘录内某处恰好吻合，染上即错染），宁可漏染，不可错染；
  * - 两级都失败才跳过（无色纯文本降级，不阻塞导出）。
  */
 
@@ -104,12 +107,44 @@ describe("字色导出——标记必须严格落在划线范围内", () => {
 			},
 		});
 
-		// 契约（票 08 二次修订）：标记在划线范围之外 → 偏移无重叠 → 摘录内文本回退；
-		// 摘录包含「经济学」（偏移 14..17）→ 染色。
+		// 契约（票 08 二次修订 + 防误染唯一性闸）：标记在划线范围之外 → 偏移无重叠 →
+		// 摘录内文本回退；「经济学」在摘录内**唯一出现**（偏移 14..17）→ 唯一性闸放行染色。
 		expect(segments).toEqual([{ start: 14, end: 17, color: "green" }]);
 		expect(decorateExcerptText(excerptText, segments)).toBe(
 			'这是一本别具一格、引人入胜的<span style="color:#16a34a">经济学</span>著作'
 		);
+	});
+
+	it("防误染：标记词在摘录内多次出现时，即便带创建时上下文快照也不染色", () => {
+		// 摘录段本身重复了「目标」，另一段有同名标记，且其创建时快照恰好与摘录内
+		// 第二处的上下文一致——快照来自别处，无法证明用户标的就是摘录里这一处。
+		const { doc, root } = buildSectionDocument([
+			"设定目标后行动，调整目标再前行", // 摘录（划线 0..15）
+			"调整目标再前行", // 另一段：带快照的同名标记在此
+		]);
+		const highlightRange = rangeAt(doc, root, 0, 0, 0, 15);
+		const markRange = rangeAt(doc, root, 1, 2, 1, 4);
+
+		const excerptText = "设定目标后行动，调整目标再前行";
+		const segments = buildExcerptDecorationSegments({
+			text: excerptText,
+			highlightCfiRange: "epubcfi(/hl,/1:0,/1:15)",
+			marks: [
+				{
+					cfiRange: "epubcfi(/mk,/1:2,/1:4)",
+					text: "目标",
+					color: "red",
+					before: "调整",
+					after: "再前行",
+				},
+			],
+			resolveRange: (cfiRange) =>
+				cfiRange.includes("/hl,") ? highlightRange : markRange,
+		});
+
+		// 「目标」在摘录内出现两次 → 无法证明是哪一处 → 不产生装饰段（宁可漏染）。
+		expect(segments).toEqual([]);
+		expect(decorateExcerptText(excerptText, segments)).toBe(excerptText);
 	});
 
 	it("标记确实落在划线范围内时，按 Range 偏移精确染色", () => {

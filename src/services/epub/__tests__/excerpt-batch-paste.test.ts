@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildExcerptPasteBlocks,
+	buildExcerptMergedPasteBlock,
 	joinExcerptPasteBlocks,
 	sortExcerptsForPaste,
 	type ExcerptPasteBlockItem,
@@ -395,5 +396,143 @@ describe("buildExcerptPasteBlocks", () => {
 			}
 		);
 		expect(output.keys).toEqual([]);
+	});
+});
+describe("buildExcerptMergedPasteBlock", () => {
+	const mergedContext = (overrides?: Partial<ExcerptPasteBuildContext>) => {
+		const harness = createBuildHarness(overrides);
+		const recording = harness.context.buildQuoteBlock;
+		harness.context.buildQuoteBlock = (...args: Parameters<ExcerptPasteBuildContext["buildQuoteBlock"]>) => {
+			recording(...args); // 仍走默认伪构建器记录全部参数
+			return `> [!EPUB] head-${args[1]}
+> ${args[2]}
+`;
+		};
+		return harness;
+	};
+
+	it("多条摘录合并为一个块：文本展平、同行「 …… 」接续、深链取最早一条", () => {
+		const { calls, context } = mergedContext({ addCreationTime: false });
+		const output = buildExcerptMergedPasteBlock(
+			[
+				item({ cfiRange: "cfi-new", key: "cfi-new", text: "第二条摘录", createdTime: 200 }),
+				item({ cfiRange: "cfi-old", key: "cfi-old", text: "第一条摘录", createdTime: 100 }),
+			],
+			context
+		)!;
+		expect(calls).toHaveLength(1);
+		expect(calls[0].cfi).toBe("cfi-old");
+		expect(output.content).toBe("> [!EPUB] head-cfi-old\n> 第一条摘录 …… 第二条摘录");
+		expect(output.count).toBe(2);
+		expect(output.keys).toEqual(["cfi-old", "cfi-new"]);
+	});
+
+	it("摘录内部换行展平为单个空格", () => {
+		const { calls, context } = mergedContext({ addCreationTime: false });
+		buildExcerptMergedPasteBlock(
+			[
+				item({ cfiRange: "cfi-a", text: "第一行\n第二行", createdTime: 100 }),
+				item({ cfiRange: "cfi-b", text: "第三行\n\n第四行", createdTime: 200 }),
+			],
+			context
+		);
+		expect(calls[0].text).toBe("第一行 第二行 …… 第三行 第四行");
+	});
+
+	it("带想法摘录自成一段并紧跟标准想法条目行（含创建时间），无想法摘录同行省略号接续", () => {
+		const { calls, context } = mergedContext({ addCreationTime: true });
+		const createdTime = new Date(2026, 2, 15, 8, 5).getTime();
+		buildExcerptMergedPasteBlock(
+			[
+				item({
+					cfiRange: "cfi-idea",
+					key: "cfi-idea",
+					text: "有想法的原文",
+					createdTime,
+					hasCommentDivider: true,
+					commentText: "多行想法\n第二行",
+					}),
+				item({ cfiRange: "cfi-bare1", text: "无想法原文一", createdTime }),
+				item({ cfiRange: "cfi-bare2", text: "无想法原文二", createdTime }),
+			],
+			context
+		);
+		// 条目行格式与「想法入笔记」一致：`> 💡 MM-DD HH:mm`，条目段以空引用行分隔。
+		expect(calls[0].text).toBe(
+			"有想法的原文\n\n💡 03-15 08:05\n多行想法 第二行\n\n无想法原文一 …… 无想法原文二"
+		);
+	});
+
+	it("想法条目在块内标准位置：首位带想法摘录后接条目段，其余摘录另起一段", () => {
+		const { calls, context } = mergedContext({ addCreationTime: false });
+		buildExcerptMergedPasteBlock(
+			[
+				item({ cfiRange: "cfi-a", text: "甲", createdTime: 100 }),
+				item({
+					cfiRange: "cfi-b",
+					text: "乙",
+					createdTime: 200,
+					hasCommentDivider: true,
+					commentText: "乙的想法",
+				}),
+				item({ cfiRange: "cfi-c", text: "丙", createdTime: 300 }),
+			],
+			context
+		);
+		expect(calls[0].text).toBe("甲\n\n乙\n\n💡 01-01 08:00\n乙的想法\n\n丙");
+	});
+
+	it("仅一条有效摘录时退回普通单条块格式（保留章节标签与时间戳，无省略号）", () => {
+		const createdTime = new Date(2026, 2, 15, 8, 5).getTime();
+		const { calls, context } = createBuildHarness();
+		const output = buildExcerptMergedPasteBlock(
+			[item({ cfiRange: "cfi-one", text: "唯一摘录", createdTime })],
+			context
+		)!;
+		expect(calls).toHaveLength(1);
+		expect(calls[0].chapterTitle).toBe("第二章");
+		expect(calls[0].timestamp).toMatch(FULL_TIMESTAMP_RE);
+		expect(output.count).toBe(1);
+	});
+
+	it("块标题丢弃章节标签；样式位取各条一致样式，混样式输出无样式位", () => {
+		const { calls, context } = mergedContext({ addCreationTime: false });
+		buildExcerptMergedPasteBlock(
+			[
+				item({ cfiRange: "cfi-u1", noteTypeKey: "underline", createdTime: 100 }),
+				item({ cfiRange: "cfi-u2", noteTypeKey: "underline", createdTime: 200 }),
+			],
+			context
+		);
+		expect(calls[0].chapterTitle).toBeUndefined();
+		expect(calls[0].chapterIndex).toBeUndefined();
+		expect(calls[0].style).toBe("underline");
+		buildExcerptMergedPasteBlock(
+			[
+				item({ cfiRange: "cfi-mix1", noteTypeKey: "underline", createdTime: 100 }),
+				item({ cfiRange: "cfi-mix2", noteTypeKey: "highlight", createdTime: 200 }),
+			],
+			context
+		);
+		expect(calls[1].style).toBeUndefined();
+	});
+
+	it("开启「添加时间」时合并块时间戳取最早一条摘录的创建时间", () => {
+		const oldest = new Date(2026, 2, 1, 8, 0).getTime();
+		const { calls, context } = mergedContext({ addCreationTime: true });
+		buildExcerptMergedPasteBlock(
+			[
+				item({ cfiRange: "cfi-new", createdTime: oldest + 1000 }),
+				item({ cfiRange: "cfi-old", createdTime: oldest }),
+			],
+			context
+		);
+		expectFullTimestampOf(calls[0].timestamp, oldest);
+	});
+
+	it("全部条目无效时返回 null", () => {
+		const { context } = mergedContext();
+		expect(buildExcerptMergedPasteBlock([item({ cfiRange: "", text: "" })], context)).toBeNull();
+		expect(buildExcerptMergedPasteBlock([], context)).toBeNull();
 	});
 });

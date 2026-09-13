@@ -11,6 +11,7 @@ import "../../utils/blob-url-registry";
 import { createDivInDocument } from "../../utils/obsidian-document-dom";
 import { domInstanceOf } from "../../utils/dom-instance-of";
 import { logger } from "../../utils/logger";
+import { perfBegin, perfEnd, perfTick } from "../../utils/perf-probe";
 import { readVaultBinaryData } from "./EpubBinaryData";
 import {
 	getBookExtensionFromPath,
@@ -39,6 +40,10 @@ const EPUB_OPS_NAMESPACE = "http://www.idpf.org/2007/ops";
 const POSITION_CHAR_BUCKET = 1800;
 const MAX_SEARCH_RESULTS = 120;
 const TEXT_NODE_TAG_BLACKLIST = new Set(["SCRIPT", "STYLE", "NOSCRIPT"]);
+/** 文本兜底「未命中」memo 的容量上限；超出后整体清空（简单且足够）。 */
+const TEXT_QUOTE_MISS_CACHE_LIMIT = 8000;
+/** CFI 解析结果 memo 的容量上限。 */
+const CFI_TARGET_CACHE_LIMIT = 8000;
 const COMPACT_READIUM_MARKER = "loc";
 const COMPACT_READIUM_SEPARATOR = "~";
 const REMOTE_RESOURCE_URL_PATTERN = /^(?:https?:)?\/\//i;
@@ -207,6 +212,21 @@ export class FoliateVaultPublicationParser {
 	private sectionTitleByHref = new Map<string, string>();
 	private rawDocumentCache = new Map<string, Document>();
 	private processedDocumentCache = new Map<string, Document>();
+	/**
+	 * CFI 字符串 → 解析结果。一次标注同步会对每条划线调用 N×(1+可见帧数) 次
+	 * resolveCfiTarget，而结果对同一本书是确定的，故在这里 memo 掉。
+	 */
+	private cfiTargetCache = new Map<string, { index: number; anchor: (doc: Document) => unknown } | null>();
+	/**
+	 * 文本引用兜底的命中/未命中 memo，键为 `${sectionIndex}\u0000${textHint}`。
+	 * 章节正文在一个会话内不会变，因此同一 (章节, 文本) 的扫描结果是稳定的。
+	 */
+	private textQuoteOutcomeCache = new Map<string, boolean>();
+	/**
+	 * 单次标注同步内的「章节正文片段」作用域缓存：避免每条划线都把整章
+	 * TreeWalker 重扫一遍。仅在 beginTextQuoteScanScope/endTextQuoteScanScope 之间有效。
+	 */
+	private textQuoteScanScope: Map<Element, { segments: TextNodeSegment[]; combined: string }> | null = null;
 	/** Reader-aligned generic section DOM (from `section.load`, not `createDocument`). */
 	private genericSectionDocumentCache = new Map<number, Document>();
 	/** Serialize foliate `section.load()` so blob resources are not revoked mid-read. */
@@ -508,6 +528,7 @@ export class FoliateVaultPublicationParser {
 	}
 
 	getSectionIndexForCfi(cfi: string): number | null {
+		perfTick("getSectionIndexForCfi.calls");
 		const resolved = this.resolveCfiTarget(cfi);
 		// resolveCfiTarget 已对 foliate idref 失配（index: -1）做过前缀推断修复；
 		// 此处归一化仍保留为防御：任何解析不出合法节号的路径统一返回 null，
@@ -633,7 +654,13 @@ export class FoliateVaultPublicationParser {
 				}
 			}
 			if (currentTextHint) {
-				return this.findRangeByTextQuote(currentRoot, { highlight: currentTextHint });
+				return this.findRangeByTextQuoteWithMissMemo(
+				currentRoot,
+				{ highlight: currentTextHint },
+				sectionIndex,
+				normalizedTarget,
+				currentTextHint
+			);
 			}
 			return null;
 		}
@@ -651,7 +678,13 @@ export class FoliateVaultPublicationParser {
 
 		if (!this.isDocumentHrefLike(normalizedTarget)) {
 			return currentTextHint
-				? this.findRangeByTextQuote(currentRoot, { highlight: currentTextHint })
+				? this.findRangeByTextQuoteWithMissMemo(
+						currentRoot,
+						{ highlight: currentTextHint },
+						sectionIndex,
+						normalizedTarget,
+						currentTextHint
+					)
 				: null;
 		}
 
@@ -664,7 +697,13 @@ export class FoliateVaultPublicationParser {
 		}
 
 		if (currentTextHint) {
-			const quoteRange = this.findRangeByTextQuote(currentRoot, { highlight: currentTextHint });
+			const quoteRange = this.findRangeByTextQuoteWithMissMemo(
+				currentRoot,
+				{ highlight: currentTextHint },
+				sectionIndex,
+				normalizedTarget,
+				currentTextHint
+			);
 			if (quoteRange) {
 				return quoteRange;
 			}
@@ -892,6 +931,9 @@ export class FoliateVaultPublicationParser {
 		this.transformCleanup = null;
 		this.currentBook?.destroy?.();
 		this.currentBook = null;
+		this.clearCfiTargetCache();
+		this.clearTextQuoteMissCache();
+		this.endTextQuoteScanScope();
 		this.archive = null;
 		this.archiveEntryLookup.clear();
 		this.manifestMediaTypeByHref.clear();
@@ -1345,7 +1387,73 @@ export class FoliateVaultPublicationParser {
 		};
 	}
 
+	/** 清空 CFI 解析 memo（换书/重载时调用）。 */
+	clearCfiTargetCache(): void {
+		this.cfiTargetCache.clear();
+	}
+
+	/** 清空文本兜底未命中 memo（换书/重载时调用）。 */
+	clearTextQuoteMissCache(): void {
+		this.textQuoteOutcomeCache.clear();
+	}
+
+	/**
+	 * 各缓存的条目数（供诊断采样；不含内容，零成本）。
+	 */
+	getCacheStats(): Record<string, number> {
+		return {
+			cfiTarget: this.cfiTargetCache.size,
+			quoteMiss: this.textQuoteOutcomeCache.size,
+			rawDocs: this.rawDocumentCache.size,
+			procDocs: this.processedDocumentCache.size,
+			genDocs: this.genericSectionDocumentCache.size,
+		};
+	}
+
+	/**
+	 * 容量到顶时按插入顺序淘汰最旧的一批，而**不是整体清空**。
+	 *
+	 * 整体清空会造成「悬崖」：一旦工作集超过容量，缓存会周期性归零，
+	 * 而归零后每个键都要重新付全额成本，等于缓存白做（实测退化为 1.02×
+	 * 无缓存水平）。增量淘汰保证始终有大部分旧条目可命中，成本平滑。
+	 */
+	private evictOldestEntries<K, V>(map: Map<K, V>, limit: number): void {
+		if (map.size < limit) {
+			return;
+		}
+		const dropCount = Math.max(1, Math.floor(limit * 0.25));
+		let dropped = 0;
+		for (const key of map.keys()) {
+			map.delete(key);
+			dropped += 1;
+			if (dropped >= dropCount) {
+				break;
+			}
+		}
+	}
+
+	/**
+	 * CFI 解析 memo 包装。一次标注同步里同一条 CFI 会被解析
+	 * `1 + 可见帧数` 次，而结果对同一本书完全确定，故缓存。
+	 */
 	private resolveCfiTarget(
+		cfi: string
+	): { index: number; anchor: (doc: Document) => unknown } | null {
+		const cached = this.cfiTargetCache.get(cfi);
+		if (cached !== undefined) {
+			perfTick("resolveCfiTarget.memoHit");
+			// 命中即刷新到队尾（LRU），让热的高亮 CFI 不被淘汰。
+			this.cfiTargetCache.delete(cfi);
+			this.cfiTargetCache.set(cfi, cached);
+			return cached;
+		}
+		const computed = this.computeCfiTarget(cfi);
+		this.evictOldestEntries(this.cfiTargetCache, CFI_TARGET_CACHE_LIMIT);
+		this.cfiTargetCache.set(cfi, computed);
+		return computed;
+	}
+
+	private computeCfiTarget(
 		cfi: string
 	): { index: number; anchor: (doc: Document) => unknown } | null {
 		try {
@@ -1954,6 +2062,35 @@ export class FoliateVaultPublicationParser {
 		return normalized.startsWith("epubcfi(") || /^\/\d+/.test(normalized);
 	}
 
+	/**
+	 * 带「未命中 memo」的文本引用查找。
+	 *
+	 * 标注同步会对每一条划线 × 每一个可见帧尝试一次文本兜底，而绝大多数划线
+	 * 根本不在当前章节——这些必然失败的整章扫描占了同步耗时的大头。这里把
+	 * 失败结果按 (章节, 目标, 文本) 记下来，下次直接跳过。命中不缓存，
+	 * 因为命中需要返回活的 Range（持有 DOM 节点，不能跨调用复用），
+	 * 且命中本就罕见（每章个位数）。
+	 */
+	private findRangeByTextQuoteWithMissMemo(
+		root: Element | null,
+		text: TextQuote,
+		sectionIndex: number,
+		target: string,
+		textHint: string
+	): Range | null {
+		const key = `${sectionIndex}\u0000${target}\u0000${textHint}`;
+		if (this.textQuoteOutcomeCache.get(key) === false) {
+			perfTick("findRangeByTextQuote.memoSkip");
+			return null;
+		}
+		const range = this.findRangeByTextQuote(root, text);
+		if (!range) {
+			this.evictOldestEntries(this.textQuoteOutcomeCache, TEXT_QUOTE_MISS_CACHE_LIMIT);
+			this.textQuoteOutcomeCache.set(key, false);
+		}
+		return range;
+	}
+
 	private findRangeByTextQuote(root: Element | null, text: TextQuote): Range | null {
 		if (!root) {
 			return null;
@@ -1962,11 +2099,15 @@ export class FoliateVaultPublicationParser {
 		if (!highlight) {
 			return null;
 		}
-		const segments = this.collectTextSegments(root);
+		const quoteProbeStart = perfBegin();
+		perfTick("findRangeByTextQuote.calls");
+		const { segments, combined } = this.getSectionTextIndex(root);
 		if (segments.length === 0) {
+			perfEnd("findRangeByTextQuote.collectSegments", quoteProbeStart);
 			return null;
 		}
-		const combined = segments.map((segment) => segment.text).join("");
+		perfEnd("findRangeByTextQuote.collectSegments", quoteProbeStart);
+		perfTick("findRangeByTextQuote.scannedChars", combined.length);
 		const needles = this.buildTextQuoteNeedles(highlight);
 		let bestIndex = -1;
 		let bestLength = 0;
@@ -1995,17 +2136,24 @@ export class FoliateVaultPublicationParser {
 		}
 
 		if (bestIndex < 0) {
+			perfTick("findRangeByTextQuote.normalizedFallback");
 			const normalizedMatch = this.findRangeByNormalizedTextQuote(
 				root.ownerDocument,
 				segments,
 				combined,
 				highlight
 			);
+			perfEnd("findRangeByTextQuote.total", quoteProbeStart, {
+				extra: { outcome: normalizedMatch ? "normalized-hit" : "miss", chars: combined.length },
+			});
 			if (normalizedMatch) {
 				return normalizedMatch;
 			}
 			return null;
 		}
+		perfEnd("findRangeByTextQuote.total", quoteProbeStart, {
+			extra: { outcome: "hit", chars: combined.length },
+		});
 		return this.createRangeFromTextOffsets(
 			root.ownerDocument,
 			segments,
@@ -2199,6 +2347,42 @@ export class FoliateVaultPublicationParser {
 			return range;
 		}
 		return this.createRangeForNode(root);
+	}
+
+	/**
+	 * 标注同步开始前调用：开启一个「章节正文只扫一遍」的作用域。
+	 * 作用域内同一章节元素的文本片段会被复用，避免每条划线都全章 TreeWalker。
+	 */
+	beginTextQuoteScanScope(): void {
+		this.textQuoteScanScope = new Map();
+	}
+
+	/** 标注同步结束后调用：释放作用域缓存（防止长期持有 DOM 节点）。 */
+	endTextQuoteScanScope(): void {
+		this.textQuoteScanScope = null;
+	}
+
+	/**
+	 * 取章节的文本片段 + 拼接全文。作用域内同一 root 只做一次 TreeWalker 遍历与拼接，
+	 * 把「每条划线 × 每个可见帧各扫一遍整章」降到「每个可见帧扫一遍」。
+	 */
+	private getSectionTextIndex(root: Element): {
+		segments: TextNodeSegment[];
+		combined: string;
+	} {
+		const scope = this.textQuoteScanScope;
+		if (!scope) {
+			const segments = this.collectTextSegments(root);
+			return { segments, combined: segments.map((segment) => segment.text).join("") };
+		}
+		const cached = scope.get(root);
+		if (cached) {
+			return cached;
+		}
+		const segments = this.collectTextSegments(root);
+		const entry = { segments, combined: segments.map((segment) => segment.text).join("") };
+		scope.set(root, entry);
+		return entry;
 	}
 
 	private collectTextSegments(root: Element): TextNodeSegment[] {

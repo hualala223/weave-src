@@ -71,11 +71,11 @@ describe("insertIntoMarkdownEditor", () => {
 			filePath: "Notes.md",
 		});
 		expect(replaceCalls).toEqual([
-			{ replacement: "![[img.png]]\n\n", from: { line: 9, ch: 0 } },
+			{ replacement: "![[img.png]]\n\n", from: { line: 0, ch: 0 } },
 		]);
 	});
 
-	it("文末模式且最后一行非空时，先另起一行再追加（不与原内容挤在一行）", () => {
+	it("文末模式且最后一行非空时，先空一行再追加（连续粘贴的块之间有空行分隔）", () => {
 		const { editor, replaceCalls, setCursorCalls } = createFakeEditor(
 			{ line: 0, ch: 0 },
 			1,
@@ -87,12 +87,12 @@ describe("insertIntoMarkdownEditor", () => {
 
 		expect(result.ok).toBe(true);
 		expect(replaceCalls).toEqual([
-			{ replacement: "\n> 新摘录\n\n", from: { line: 1, ch: 0 } },
+			{ replacement: "\n> 新摘录\n\n", from: { line: 0, ch: 4 } },
 		]);
 		expect(setCursorCalls.at(-1)).toEqual({ line: 3, ch: 0 });
 	});
 
-	it("文末模式且文档以空行收尾时直接追加、不堆多余空行", () => {
+	it("文末模式且文档以一个空行收尾时，保留该空行作分隔、不堆多余空行", () => {
 		const { editor, replaceCalls } = createFakeEditor(
 			{ line: 0, ch: 0 },
 			2,
@@ -103,7 +103,22 @@ describe("insertIntoMarkdownEditor", () => {
 		});
 
 		expect(replaceCalls).toEqual([
-			{ replacement: "> 新摘录\n\n", from: { line: 2, ch: 0 } },
+			{ replacement: "\n> 新摘录\n\n", from: { line: 1, ch: 0 } },
+		]);
+	});
+
+	it("文末模式且文档以多个空行收尾时，归一化为恰好一个空行分隔", () => {
+		const { editor, replaceCalls } = createFakeEditor(
+			{ line: 0, ch: 0 },
+			3,
+			["旧内容", "", ""],
+		);
+		insertIntoMarkdownEditor("> 新摘录\n", "end", {
+			resolveMarkdownView: () => createFakeView(editor),
+		});
+
+		expect(replaceCalls).toEqual([
+			{ replacement: "\n> 新摘录\n\n", from: { line: 1, ch: 0 } },
 		]);
 	});
 

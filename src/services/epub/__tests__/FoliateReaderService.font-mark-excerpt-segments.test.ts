@@ -60,12 +60,15 @@ const HIGHLIGHT_CFI = "epubcfi(highlight)";
  * - 每个可见帧一份独立章节 doc，正文都是同一句话；
  * - CFI 约定：划线与 `seg:<start>:<end>` 都属于 highlightSection 指定的节，
  *   解析为该节帧文本节点上的真实 DOM Range；`other:` 前缀属于异节（跨节标记）；
+ *   `seg2:` 前缀为**同节第二段**（用于异段同名标记防误染场景）；
  * - 只有与节号对应的章节 doc 才解析成功——模拟真实解析器的同节约束。
+ * @param secondParagraph 可选的第二段文本（同节、异段），供异段标记场景使用。
  */
 function installFrameEnvironment(
 	service: FoliateReaderService,
 	frameSections: number[],
 	highlightSection: number,
+	secondParagraph?: string,
 ): void {
 	const docsBySection = new Map<number, Document>();
 	const frames = frameSections.map((sectionIndex) => {
@@ -73,6 +76,11 @@ function installFrameEnvironment(
 		const paragraph = doc.createElement("p");
 		paragraph.textContent = EXCERPT_TEXT;
 		doc.body.appendChild(paragraph);
+		if (secondParagraph !== undefined) {
+			const second = doc.createElement("p");
+			second.textContent = secondParagraph;
+			doc.body.appendChild(second);
+		}
 		docsBySection.set(sectionIndex, doc);
 		return {
 			index: sectionIndex,
@@ -90,7 +98,7 @@ function installFrameEnvironment(
 
 	const parser = (service as any).parser;
 	vi.spyOn(parser, "getSectionIndexForCfi").mockImplementation(((cfi: string) => {
-		if (cfi === HIGHLIGHT_CFI || cfi.startsWith("seg:")) {
+		if (cfi === HIGHLIGHT_CFI || cfi.startsWith("seg:") || cfi.startsWith("seg2:")) {
 			return highlightSection;
 		}
 		if (cfi.startsWith("other:")) {
@@ -102,12 +110,16 @@ function installFrameEnvironment(
 	vi.spyOn(parser, "resolveRangeInLoadedSection").mockImplementation(
 		((...args: any[]) => {
 			const [cfi, doc, sectionIndex] = args as [string, Document, number];
-			const makeOffsetRange = (start: number, end: number): Range | null => {
+			const makeOffsetRange = (
+				paragraphIndex: number,
+				start: number,
+				end: number,
+			): Range | null => {
 				// 模拟真实解析器行为：只有与该节号对应的章节 doc 才能解析出范围。
 				if (doc !== docsBySection.get(sectionIndex)) {
 					return null;
 				}
-				const textNode = doc.body.querySelector("p")?.firstChild;
+				const textNode = doc.body.querySelectorAll("p")[paragraphIndex]?.firstChild;
 				if (!textNode) {
 					return null;
 				}
@@ -117,13 +129,17 @@ function installFrameEnvironment(
 				return range;
 			};
 			if (cfi === HIGHLIGHT_CFI) {
-				return makeOffsetRange(0, EXCERPT_TEXT.length);
+				return makeOffsetRange(0, 0, EXCERPT_TEXT.length);
+			}
+			const second = /^seg2:(\d+):(\d+)$/.exec(cfi);
+			if (second) {
+				return makeOffsetRange(1, Number(second[1]), Number(second[2]));
 			}
 			const match = /^seg:(\d+):(\d+)$/.exec(cfi);
 			if (!match) {
 				return null;
 			}
-			return makeOffsetRange(Number(match[1]), Number(match[2]));
+			return makeOffsetRange(0, Number(match[1]), Number(match[2]));
 		}) as any
 	);
 }
@@ -208,6 +224,35 @@ describe("FoliateReaderService.getExcerptFontMarkSegments（摘录导出的字�
 			]);
 
 			expect(segments).toEqual<FontMarkSegment[]>([]);
+		} finally {
+			service.destroy();
+		}
+	});
+
+	it("同节异段标记：词在摘录内多次出现时不染，唯一出现时才染（防误染唯一性闸）", () => {
+		const service = new FoliateReaderService(createMockApp());
+		try {
+			// 同节第二段重复了摘录里的词，标记落在第二段（异段）：
+			// 第一段「不能要太高悬赏」重复了「高」之外的词，这里让第二段也含「太高」。
+			installFrameEnvironment(service, [12], 12, "不能要太高悬赏");
+
+			// 标记只在第二段出现过（seg2:3:5），其词面「太高」在摘录里出现一次
+			// → 唯一性闸放行：同节异段标记仍可通过文本回退染色（票 08 主场景保留）。
+			const uniqueSegments = service.getExcerptFontMarkSegments(
+				HIGHLIGHT_CFI,
+				EXCERPT_TEXT,
+				[{ cfiRange: "seg2:3:5", color: "green", text: "太高" }],
+			);
+			expect(uniqueSegments).toEqual<FontMarkSegment[]>([{ start: 3, end: 5, color: "green" }]);
+
+			// 摘录文本本身重复该词（「太高」出现两次）→ 无法证明标记的是哪一处 → 不染。
+			const repeatedExcerpt = "太高悬赏，太高代价";
+			const repeatedSegments = service.getExcerptFontMarkSegments(
+				HIGHLIGHT_CFI,
+				repeatedExcerpt,
+				[{ cfiRange: "broken-cfi", color: "red", text: "太高" }],
+			);
+			expect(repeatedSegments).toEqual<FontMarkSegment[]>([]);
 		} finally {
 			service.destroy();
 		}

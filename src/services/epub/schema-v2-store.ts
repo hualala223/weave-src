@@ -18,6 +18,7 @@ import type { App } from "obsidian";
 import { normalizeDataPath, resolveWeaveDataFilePath } from "../../config/paths";
 import { DirectoryUtils } from "../../utils/directory-utils";
 import { logger } from "../../utils/logger";
+import { perfBegin, perfEnd } from "../../utils/perf-probe";
 import {
 	readWithTransientParseRetry,
 	writeUnifiedLocalDataAtomically,
@@ -323,7 +324,9 @@ export class SchemaV2Store {
 			await this.persistPromise;
 			return;
 		}
+		const persistProbeStart = perfBegin();
 		const snapshot = await this.buildPersistSnapshot();
+		perfEnd("persist.buildSnapshot", persistProbeStart, { always: true });
 		this.dirty = false;
 
 		this.persistPromise = this.persistPromise.then(async () => {
@@ -331,11 +334,15 @@ export class SchemaV2Store {
 				const adapter = this.app.vault.adapter;
 				const filePath = this.getFilePath();
 				await DirectoryUtils.ensureDirForFile(adapter, filePath);
-				await writeUnifiedLocalDataAtomically(
-					adapter,
-					filePath,
-					`${JSON.stringify(snapshot, null, 2)}\n`
-				);
+				const stringifyProbeStart = perfBegin();
+				const serialized = `${JSON.stringify(snapshot, null, 2)}\n`;
+				perfEnd("persist.stringify", stringifyProbeStart, {
+					always: true,
+					extra: { bytes: serialized.length },
+				});
+				const writeProbeStart = perfBegin();
+				await writeUnifiedLocalDataAtomically(adapter, filePath, serialized);
+				perfEnd("persist.writeFile", writeProbeStart, { always: true });
 			} catch (error) {
 				logger.warn(`[SchemaV2Store] 写入失败: ${this.getFilePath()}`, error);
 				this.dirty = true;
@@ -343,6 +350,7 @@ export class SchemaV2Store {
 		});
 
 		await this.persistPromise;
+		perfEnd("persist.total", persistProbeStart, { always: true });
 	}
 
 	/**

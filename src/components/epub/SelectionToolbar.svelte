@@ -62,6 +62,8 @@ import { extractFontMarkContextSnapshot } from '../../services/epub/font-mark-re
 		/** 追加一条新想法（宿主侧以追加语义同步入笔记，草稿留空）。 */
 		onAppendComment?: (info: HighlightClickInfo) => void;
 		onCopyText?: (info: HighlightClickInfo) => void;
+		/** 编辑状态：把当前点中的划线以摘录块写入最近激活的笔记文档（工具条单条直粘）。 */
+		onPasteToNote?: (info: HighlightClickInfo) => void;
 		onDismiss?: () => void;
 		/** 创建状态：「想法」默认下划线后在宿主侧持久化并打开想法输入框。 */
 		onCommentCreate?: (text: string, cfiRange: string, color: string) => void;
@@ -101,6 +103,7 @@ import { extractFontMarkContextSnapshot } from '../../services/epub/font-mark-re
 		onEditComment,
 		onAppendComment,
 		onCopyText,
+		onPasteToNote,
 		onDismiss,
 		onCommentCreate,
 		onCreateFontMark,
@@ -159,6 +162,18 @@ import { extractFontMarkContextSnapshot } from '../../services/epub/font-mark-re
 		purple: '紫色',
 	};
 	let lastUsedFontColor = $state<FontMarkColorToken>('red');
+
+	// 颜色 → 图标编码（颜色 + 形状双编码，黑白墨水屏靠形状区分；彩色屏颜色不变）。
+	// 两行色板共用同一映射：黄/金=sun、蓝=droplet、红=flame、紫=gem、绿=leaf；
+	// 行间区分沿用「实心色点（背景涂色）/ 空心色环（字色标记）」的既有语言。
+	const colorGlyphs: Record<string, string> = {
+		yellow: 'sun',
+		gold: 'sun',
+		blue: 'droplet',
+		red: 'flame',
+		purple: 'gem',
+		green: 'leaf',
+	};
 
 	function icon(node: HTMLElement, name: string) {
 		setIcon(node, name);
@@ -757,6 +772,13 @@ import { extractFontMarkContextSnapshot } from '../../services/epub/font-mark-re
 				}
 			});
 		});
+		if (editNow && currentInfo && onPasteToNote) {
+			menu.addItem((item) => {
+				item.setTitle('粘贴到笔记');
+				item.setIcon('clipboard-paste');
+				item.onClick(() => onPasteToNote?.(currentInfo));
+			});
+		}
 		menu.addItem((item) => {
 			item.setTitle('AI');
 			item.setIcon('bot');
@@ -912,7 +934,7 @@ import { extractFontMarkContextSnapshot } from '../../services/epub/font-mark-re
 									title={`切换为${fontMarkColorLabels[c]}`}
 									aria-label={`切换为${fontMarkColorLabels[c]}颜色`}
 								>
-									<span class="color-btn-core">{'A'}</span>
+									<span class="color-btn-core"><span class="color-btn-glyph" use:icon={colorGlyphs[c]}></span></span>
 								</button>
 							{/each}
 						</div>
@@ -932,15 +954,28 @@ import { extractFontMarkContextSnapshot } from '../../services/epub/font-mark-re
 		{#if isConcealMode}
 			<div class="selection-main-row">
 				<div class="selection-actions-shell">
-					<div class="toolbar-row actions-row selection-actions-row highlight-actions-row concealment-actions">
+					<div class="toolbar-row actions-row selection-actions-row highlight-actions-row concealment-actions" bind:this={actionsShellEl}>
 						<button class="clickable-icon action-item" onclick={() => onTemporarilyReveal?.(highlightInfo)} title={'暂时显示隐藏文本'}>
 							<span class="action-icon" use:icon={'eye'}></span>
 							<span class="action-label">{'暂显'}</span>
 						</button>
-						<button class="clickable-icon action-item" onclick={() => onCopyText?.(highlightInfo)} title={'复制隐藏文本'}>
-							<span class="action-icon" use:icon={'clipboard-copy'}></span>
-							<span class="action-label">{'复制'}</span>
-						</button>
+						{#if !actionsOverflow}
+							<button class="clickable-icon action-item" onclick={() => onCopyText?.(highlightInfo)} title={'复制隐藏文本'}>
+								<span class="action-icon" use:icon={'clipboard-copy'}></span>
+								<span class="action-label">{'复制'}</span>
+							</button>
+							{#if onPasteToNote}
+								<button class="clickable-icon action-item" onclick={() => onPasteToNote?.(highlightInfo)} title={'粘贴到笔记'} aria-label={'粘贴到笔记'}>
+									<span class="action-icon" use:icon={'clipboard-paste'}></span>
+									<span class="action-label">{'粘贴到笔记'}</span>
+								</button>
+							{/if}
+						{/if}
+						{#if actionsOverflow}
+							<button class="clickable-icon action-item icon-only" bind:this={moreBtnEl} onclick={openMoreMenu} title={'更多'}>
+								<span class="action-icon" use:icon={'more-horizontal'}></span>
+							</button>
+						{/if}
 						<button class="clickable-icon action-item accent concealment-reset" onclick={() => onDelete?.(highlightInfo)} title={'恢复文本显示'}>
 							<span class="action-icon" use:icon={'eye'}></span>
 							<span class="action-label">{'恢复'}</span>
@@ -962,7 +997,7 @@ import { extractFontMarkContextSnapshot } from '../../services/epub/font-mark-re
 										title={`切换为${colorLabels[c]}`}
 										aria-label={`切换为${colorLabels[c]}颜色`}
 									>
-										<span class="color-btn-core"></span>
+										<span class="color-btn-core"><span class="color-btn-glyph" use:icon={colorGlyphs[c]}></span></span>
 									</button>
 								{/each}
 							</div>
@@ -996,6 +1031,12 @@ import { extractFontMarkContextSnapshot } from '../../services/epub/font-mark-re
 								<span class="action-icon" use:icon={'clipboard-copy'}></span>
 								<span class="action-label">{'复制'}</span>
 							</button>
+							{#if onPasteToNote}
+								<button class="clickable-icon action-item paste-to-note-action" onclick={() => onPasteToNote?.(highlightInfo)} title={'粘贴到笔记'} aria-label={'粘贴到笔记'}>
+									<span class="action-icon" use:icon={'clipboard-paste'}></span>
+									<span class="action-label">{'粘贴到笔记'}</span>
+								</button>
+							{/if}
 							<button class="clickable-icon action-item ai" onclick={() => handleOpenAction(highlightInfo.text || '', highlightInfo.cfiRange || '')} title={'AI 查词 / 解释 / 翻译'}>
 								<span class="action-icon" use:icon={'bot'}></span>
 								<span class="action-label">{'AI'}</span>
@@ -1022,9 +1063,9 @@ import { extractFontMarkContextSnapshot } from '../../services/epub/font-mark-re
 					<div class="toolbar-row selection-style-row">
 						<div class="toolbar-row colors-row selection-color-row selection-primary-row">
 							{#each colors as c}
-								<button class="color-btn {c}" onclick={() => void handleHighlight(c)} title={colorLabels[c]} aria-label={`添加${colorLabels[c]}颜色`}>
-									<span class="color-btn-core"></span>
-								</button>
+							<button class="color-btn {c}" onclick={() => void handleHighlight(c)} title={colorLabels[c]} aria-label={`添加${colorLabels[c]}颜色`}>
+								<span class="color-btn-core"><span class="color-btn-glyph" use:icon={colorGlyphs[c]}></span></span>
+							</button>
 							{/each}
 						</div>
 						<span class="row-divider" aria-hidden="true"></span>
@@ -1067,7 +1108,7 @@ import { extractFontMarkContextSnapshot } from '../../services/epub/font-mark-re
 							title={`染成${fontMarkColorLabels[c]}`}
 							aria-label={`将所选文字染成${fontMarkColorLabels[c]}`}
 						>
-							<span class="color-btn-core">{'A'}</span>
+							<span class="color-btn-core"><span class="color-btn-glyph" use:icon={colorGlyphs[c]}></span></span>
 						</button>
 					{/each}
 				</div>

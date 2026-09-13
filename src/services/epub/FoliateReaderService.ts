@@ -117,6 +117,7 @@ import {
 	resolveScrolledChapterEndState,
 } from "./scrolled-chapter-end";
 import { logger } from "../../utils/logger";
+import { perfBegin, perfEnd, perfTick } from "../../utils/perf-probe";
 import { domInstanceOf } from "../../utils/dom-instance-of";
 import { readRegisteredBlobAsArrayBuffer } from "../../utils/blob-url-registry";
 import { decodeDataUriToBytes } from "./image-src-utils";
@@ -1786,6 +1787,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	async refreshHighlights(): Promise<void> {
+		perfTick("refreshHighlights.forcedSyncs");
 		this.invalidateParagraphPresentation();
 		await this.queueAnnotationSync(true);
 	}
@@ -1884,8 +1886,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 	 * 摘录导出的字色切段：把落在划线范围内的标记换算成摘录文本偏移。
 	 * 只在可见帧的章节 doc 里做精确 Range 解析——同一章节才能算出可靠偏移；
 	 * 偏移计算走「块感知 + trim 容差」坐标系（computeFontMarkOffsets），与
-	 * selection.toString().trim() 对齐；标记必须由 Range 证明落在划线内才染色
-	 * （严格包含性，票 07：不做字符串回退），解析失败/无重叠的标记被跳过。
+	 * selection.toString().trim() 对齐；标记须由 Range 证明落在划线内才染色
+	 * （严格包含性，票 07），偏移失败时回退「摘录内**唯一出现**」闸的文本定位
+	 * （防误染，规格 export-font-mark-decoration-misdye）；两级都失败的标记被跳过。
 	 * 无可见帧/无标记/任何异常一律返回 []：字色只是增强，导出永不因它阻塞。
 	 */
 	getExcerptFontMarkSegments(
@@ -1893,6 +1896,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		text: string,
 		marks: ReaderFontMark[]
 	): FontMarkSegment[] {
+		const fontMarkProbeStart = perfBegin();
 		try {
 			if (!text || !Array.isArray(marks) || marks.length === 0) {
 				return [];
@@ -1973,6 +1977,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 		} catch (error) {
 			logger.warn("[FoliateReaderService] Failed to build excerpt font mark segments:", error);
 			return [];
+		} finally {
+			perfEnd("getExcerptFontMarkSegments", fontMarkProbeStart, {
+				extra: { marks: marks?.length ?? 0 },
+			});
 		}
 	}
 
@@ -6867,6 +6875,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	private async syncAnnotationsWithView(): Promise<void> {
+		const syncProbeStart = perfBegin();
 		const view = this.foliateView;
 		if (!view) {
 			this.renderedAnnotations.clear();
@@ -6881,6 +6890,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 			...this.highlightDataMap.keys(),
 			...this.temporaryHighlightDataMap.keys(),
 		]);
+		perfTick("sync.highlightKeys", highlightKeys.size);
+		perfTick("sync.visibleFrames", visibleFrames.length);
 
 		const pendingVisible: Array<{
 			key: string;
@@ -6889,6 +6900,11 @@ export class FoliateReaderService implements EpubReaderEngine {
 			visibleHighlight: ReaderHighlight;
 		}> = [];
 
+		const sectionLoopStart = perfBegin();
+		// 开启文本扫描作用域：整章正文在这轮同步里只 TreeWalker 一次，
+		// 而不是「每条划线 × 每个可见帧」各扫一次。
+		this.parser.beginTextQuoteScanScope();
+		try {
 		for (const key of highlightKeys) {
 			const persistentHighlight = this.highlightDataMap.get(key);
 			const temporaryHighlight = this.temporaryHighlightDataMap.get(key);
@@ -6904,6 +6920,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			if (sectionIndex === null || !visibleIndexes.has(sectionIndex)) {
 				continue;
 			}
+			perfTick("sync.pendingVisible");
 			pendingVisible.push({
 				key,
 				persistentHighlight,
@@ -6911,6 +6928,13 @@ export class FoliateReaderService implements EpubReaderEngine {
 				visibleHighlight,
 			});
 		}
+		} finally {
+			this.parser.endTextQuoteScanScope();
+		}
+		perfEnd("sync.sectionIndexLoop", sectionLoopStart, {
+			always: true,
+			extra: { keys: highlightKeys.size, pending: pendingVisible.length },
+		});
 
 		await Promise.all(
 			pendingVisible.map(async ({
@@ -6970,6 +6994,26 @@ export class FoliateReaderService implements EpubReaderEngine {
 				});
 			}
 		}
+
+		// 诊断采样：把「可能随使用时长无界增长」的集合规模一并落盘。
+		// 划线数量本身很小（真实数据 185 条 / 书），若这里某一路数字持续上涨，
+		// 就是「用着用着变慢」的元凶。
+		const parserStats =
+			typeof this.parser.getCacheStats === "function" ? this.parser.getCacheStats() : {};
+		perfEnd("sync.total", syncProbeStart, {
+			always: true,
+			extra: {
+				keys: highlightKeys.size,
+				rendered: desiredVisible.size,
+				frames: visibleFrames.length,
+				anchorRes: this.highlightAnchorResolutionByKey.size,
+				fontMarks: this.fontMarksByCfiKey.size,
+				srcLocate: this.sourceLocateFocusByCfiKey.size,
+				paraCache: this.paragraphCache.size,
+				paraById: this.paragraphRecordById.size,
+				...parserStats,
+			},
+		});
 	}
 
 	private getCurrentHighlightByCfi(cfiRange: string): ReaderHighlight | null {

@@ -43,6 +43,7 @@
 		currentChapterIndex?: number;
 		onDeleteHighlight?: (highlight: EpubDisplayHighlight) => Promise<boolean>;
 		onPasteHighlights?: (highlights: EpubDisplayHighlight[]) => Promise<boolean>;
+		onPasteHighlightsMerged?: (highlights: EpubDisplayHighlight[]) => Promise<boolean>;
 		searchQuery?: string;
 		searchMeta?: HighlightSearchMeta;
 		onNavigate?: (
@@ -70,6 +71,7 @@
 		currentChapterIndex = -1,
 		onDeleteHighlight,
 		onPasteHighlights,
+		onPasteHighlightsMerged,
 		searchQuery = $bindable(''),
 		searchMeta = $bindable<HighlightSearchMeta>({
 			availableTags: [],
@@ -542,13 +544,14 @@
 	 * 把给定摘录按最早在前粘贴到打开的笔记文档（与划线自动粘贴同款格式）。
 	 * 成功/失败提示由宿主（阅读器）弹出；批量路径粘贴后保持选择模式，便于继续勾选粘贴。
 	 */
-	async function pasteHighlights(highlights: EpubDisplayHighlight[]) {
-		if (!onPasteHighlights || highlights.length === 0 || pasting) {
+	async function pasteHighlights(highlights: EpubDisplayHighlight[], merged = false) {
+		const handler = merged ? onPasteHighlightsMerged : onPasteHighlights;
+		if (!handler || highlights.length === 0 || pasting) {
 			return;
 		}
 		pasting = true;
 		try {
-			await onPasteHighlights(highlights);
+			await handler(highlights);
 		} finally {
 			pasting = false;
 		}
@@ -569,6 +572,14 @@
 			item.setDisabled(selectedHighlights.length === 0 || !onPasteHighlights || pasting);
 			item.onClick(() => {
 				void pasteSelectedHighlights();
+			});
+		});
+		menu.addItem((item) => {
+			item.setTitle('合并粘贴所选摘录到笔记');
+			item.setIcon('clipboard-paste');
+			item.setDisabled(selectedHighlights.length < 2 || !onPasteHighlightsMerged || pasting);
+			item.onClick(() => {
+				void pasteHighlights(selectedHighlights, true);
 			});
 		});
 		menu.addItem((item) => {
@@ -639,6 +650,14 @@
 				item.setDisabled(highlights.length === 0 || !onPasteHighlights || pasting);
 				item.onClick(() => {
 					void pasteHighlights(highlights);
+				});
+			});
+			menu.addItem((item) => {
+				item.setTitle('合并粘贴全部摘录到笔记');
+				item.setIcon('clipboard-paste');
+				item.setDisabled(highlights.length < 2 || !onPasteHighlightsMerged || pasting);
+				item.onClick(() => {
+					void pasteHighlights(highlights, true);
 				});
 			});
 		}
@@ -1024,6 +1043,16 @@
 						onclick={() => void pasteSelectedHighlights()}
 					>
 						<span use:iconAction={'clipboard-paste'}></span>
+					</button>
+					<button
+						type="button"
+						class="clickable-icon epub-notes-selection-icon-btn"
+						title={'合并粘贴所选摘录到笔记'}
+						aria-label={'合并粘贴所选摘录到笔记'}
+						disabled={selectedHighlights.length < 2 || !onPasteHighlightsMerged || pasting}
+						onclick={() => void pasteHighlights(selectedHighlights, true)}
+					>
+						<span use:iconAction={'combine'}></span>
 					</button>
 					<span class="epub-notes-selection-divider" aria-hidden="true"></span>
 					<button
