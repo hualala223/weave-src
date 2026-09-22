@@ -176,7 +176,12 @@ export class EpubView extends ItemView {
 	}
 
 	private shouldShowToolbarFeature(): boolean {
-		return true;
+		return this.plugin.isAutoInsertButtonOnReaderVisible?.() ?? false;
+	}
+
+	/** 设置页切换「在阅读页显示自动化按钮」后，刷新已打开阅读视图的按钮显隐。 */
+	refreshAutoInsertButtonVisibility(): void {
+		this.updateAutoInsertBtn();
 	}
 
 	private areHeaderActionsMounted(): boolean {

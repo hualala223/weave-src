@@ -51,6 +51,11 @@
     return plugin.settings?.excerptParagraphHoverPreviewEnabled !== false;
   });
 
+  let showAutoInsertButtonOnReader = $derived.by(() => {
+    stateVersion;
+    return plugin.settings?.showAutoInsertButtonOnReader === true;
+  });
+
   let largeNavButtonsEnabled = $derived.by(() => {
     stateVersion;
     return plugin.settings?.enableLargeNavButtons === true;
@@ -77,6 +82,7 @@
     getContinuousReadingPositionAutoSavePages: () => continuousReadingPositionAutoSavePages,
     getSourceNavigationOpenInNewTab: () => sourceNavigationOpenInNewTab,
     getExcerptParagraphHoverPreviewEnabled: () => excerptParagraphHoverPreviewEnabled,
+    getShowAutoInsertButtonOnReader: () => showAutoInsertButtonOnReader,
     getLargeNavButtonsEnabled: () => largeNavButtonsEnabled,
     getDebugModeEnabled: () => debugModeEnabled,
     getAutoSavePagesTextControl: () => autoSavePagesTextControl,
@@ -151,6 +157,7 @@
           continuousReadingPositionAutoSavePagesInput,
           sourceNavigationOpenInNewTab,
           excerptParagraphHoverPreviewEnabled,
+          showAutoInsertButtonOnReader,
           largeNavButtonsEnabled,
           debugModeEnabled,
         },
@@ -172,6 +179,7 @@
             actions.updateContinuousReadingPositionAutoSavePages,
           updateSourceNavigationOpenInNewTab: actions.updateSourceNavigationOpenInNewTab,
           updateExcerptParagraphHoverPreview: actions.updateExcerptParagraphHoverPreview,
+          updateShowAutoInsertButtonOnReader: actions.updateShowAutoInsertButtonOnReader,
           updateLargeNavButtons: actions.updateLargeNavButtons,
           updateDebugMode: actions.updateDebugMode,
         },

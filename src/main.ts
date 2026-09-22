@@ -60,6 +60,8 @@ interface StandaloneEpubPluginSettings {
 	sourceNavigationOpenInNewTab: boolean;
 	/** 笔记文档中悬停摘录块预览所在完整段落的浮框（默认开）。 */
 	excerptParagraphHoverPreviewEnabled: boolean;
+	/** 阅读页（头部动作栏与内联工具栏）是否显示「自动化」（zap 闪电）按钮（默认关，可从摘录工具菜单切换自动粘贴）。 */
+	showAutoInsertButtonOnReader: boolean;
 }
 
 const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
@@ -76,6 +78,7 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 	selectionQuickCreateLastFolder: "",
 	sourceNavigationOpenInNewTab: true,
 	excerptParagraphHoverPreviewEnabled: true,
+	showAutoInsertButtonOnReader: false,
 };
 
 type PersistedStandaloneEpubPluginSettings = Omit<
@@ -136,6 +139,11 @@ export default class StandaloneEpubPlugin extends Plugin {
 	private syncDebugSettings(): void {
 		this.settings.enableDebugMode = this.settings.enableDebugMode === true;
 		logger.setDebugMode(this.settings.enableDebugMode);
+	}
+
+	/** 阅读页是否显示「自动化」（zap 闪电）按钮（EpubView 通过 EpubViewHost 读取）。 */
+	isAutoInsertButtonOnReaderVisible(): boolean {
+		return this.settings.showAutoInsertButtonOnReader === true;
 	}
 
 	private syncBookshelfDisplaySettings(): void {
@@ -217,6 +225,7 @@ export default class StandaloneEpubPlugin extends Plugin {
 			normalizeEpubBookmarkFolderPath(this.settings.bookmarkFolder) || DEFAULT_EPUB_BOOKMARK_FOLDER;
 		this.settings.weaveParentFolder = normalizeWeaveParentFolder(this.settings.weaveParentFolder);
 		this.settings.dataPath = normalizeDataPath(this.settings.dataPath);
+		this.settings.showAutoInsertButtonOnReader = this.settings.showAutoInsertButtonOnReader === true;
 		this.settings.selectionQuickCreateLastFolder = this.normalizeRememberedFolder(
 			this.settings.selectionQuickCreateLastFolder
 		);

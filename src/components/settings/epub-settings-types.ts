@@ -19,6 +19,7 @@ export interface EpubBasicSettingsSnapshot {
 	continuousReadingPositionAutoSavePagesInput: string;
 	sourceNavigationOpenInNewTab: boolean;
 	excerptParagraphHoverPreviewEnabled: boolean;
+	showAutoInsertButtonOnReader: boolean;
 	largeNavButtonsEnabled: boolean;
 	debugModeEnabled: boolean;
 }
@@ -33,6 +34,7 @@ export interface EpubBasicSettingsCallbacks {
 	updateContinuousReadingPositionAutoSavePages: (value: string) => Promise<void>;
 	updateSourceNavigationOpenInNewTab: (enabled: boolean) => Promise<void>;
 	updateExcerptParagraphHoverPreview: (enabled: boolean) => Promise<void>;
+	updateShowAutoInsertButtonOnReader: (enabled: boolean) => Promise<void>;
 	updateLargeNavButtons: (enabled: boolean) => Promise<void>;
 	updateDebugMode: (enabled: boolean) => Promise<void>;
 }

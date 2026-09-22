@@ -23,6 +23,17 @@ export function mountEpubBasicSettings(options: EpubBasicSettingsMountOptions): 
 	callbacks.setAutoSavePagesTextControl(null);
 	clearHosts(hosts);
 
+	new Setting(hosts.interface)
+		.setName('在阅读页显示「自动化」按钮')
+		.setDesc('开启后，阅读页顶部动作栏与左侧工具栏显示闪电按钮，用于切换划线摘录自动粘贴；关闭（默认）时不显示，仍可在阅读页右键「摘录工具 → 自动化」中切换。')
+		.setClass("epub-auto-insert-button-toggle-setting")
+		.addToggle((toggle) => {
+			toggle.setValue(snapshot.showAutoInsertButtonOnReader);
+			toggle.onChange(async (value) => {
+				await callbacks.updateShowAutoInsertButtonOnReader(value);
+			});
+		});
+
 	const dataPathSetting = new Setting(hosts.reading)
 		.setName('数据路径')
 		.setDesc('书签、高亮、阅读进度、书架与溯源等全部阅读数据统一保存在该目录下的 weave-data.json 中（缓存与备份位于其 cache/ 与 backups/ 子目录）。默认 CONFIG/STORAGE。')

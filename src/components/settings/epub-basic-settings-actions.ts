@@ -7,6 +7,8 @@ import {
 } from "../../config/reading-position-auto-save";
 import { normalizeDataPath } from "../../config/paths";
 import { syncLargeNavButtonStyle } from "../../services/epub/epub-large-nav-style";
+import { EPUB_RUNTIME } from "../../services/epub";
+import { EpubView } from "../../views/EpubView";
 import { showNotification } from "../../utils/notifications";
 import type StandaloneEpubPlugin from "../../main";
 
@@ -18,6 +20,7 @@ export interface EpubBasicSettingsActionDeps {
 	getContinuousReadingPositionAutoSavePages: () => number;
 	getSourceNavigationOpenInNewTab: () => boolean;
 	getExcerptParagraphHoverPreviewEnabled: () => boolean;
+	getShowAutoInsertButtonOnReader: () => boolean;
 	getLargeNavButtonsEnabled: () => boolean;
 	getDebugModeEnabled: () => boolean;
 	getAutoSavePagesTextControl: () => TextComponent | null;
@@ -108,6 +111,23 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 
 			plugin.settings.excerptParagraphHoverPreviewEnabled = enabled;
 			await deps.save();
+		},
+
+		async updateShowAutoInsertButtonOnReader(enabled: boolean): Promise<void> {
+			if (deps.getShowAutoInsertButtonOnReader() === enabled) {
+				return;
+			}
+
+			plugin.settings.showAutoInsertButtonOnReader = enabled;
+			await deps.save();
+
+			// 已打开的阅读视图实时刷新闪电按钮显隐（右键菜单「摘录工具 → 自动化」不受影响）。
+			for (const leaf of plugin.app.workspace.getLeavesOfType(EPUB_RUNTIME.viewTypes.reader)) {
+				const view = leaf.view;
+				if (view instanceof EpubView) {
+					view.refreshAutoInsertButtonVisibility();
+				}
+			}
 		},
 
 		async updateLargeNavButtons(enabled: boolean): Promise<void> {
