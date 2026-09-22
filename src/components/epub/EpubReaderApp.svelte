@@ -20,6 +20,7 @@
 		buildExcerptPasteBlocks,
 		buildExcerptMergedPasteBlock,
 		type ExcerptPasteBlockItem,
+		type ExcerptPasteCallbackResult,
 	} from '../../services/epub/excerpt-batch-paste';
 	import { formatExcerptEntryTimestamp, formatExcerptTimestamp } from '../../services/epub/epub-time-format';
 	import {
@@ -2096,18 +2097,20 @@
 	 * 入参为粘贴所需的最小结构形状（面板快照与工具条点击信息派生条目均可满足）。
 	 * 块构建（排序/时间戳/样式位/想法条目/拼接）全部收拢在纯函数服务
 	 * excerpt-batch-paste 内，此处只做装饰、章节标签解析与插入两类胶水。
+	 * 返回 ExcerptPasteCallbackResult：ok = 是否真正写入；keys = 实际写入条目
+	 * （cfiRange 口径），供面板在批量选择模式下自动取消勾选（spec: paste-auto-uncheck）。
 	 */
 	async function pasteSelectedHighlightsToNote(
 		highlights: PasteableExcerptHighlight[],
 		merged = false
-	): Promise<boolean> {
+	): Promise<ExcerptPasteCallbackResult> {
 		if (!book || !filePath || highlights.length === 0) {
-			return false;
+			return { ok: false };
 		}
 		// 先确认有打开的 MD 笔记文档，避免块已构建却无处插入（无副作用原则）。
 		if (!resolveActiveMarkdownView()) {
 			new Notice(NO_EDITOR_MESSAGE);
-			return false;
+			return { ok: false };
 		}
 		const chapterLocationFormat = excerptSettings.chapterLocationFormat ?? 'leaf';
 		const items: ExcerptPasteBlockItem[] = [];
@@ -2131,7 +2134,7 @@
 			}
 		}
 		if (items.length === 0) {
-			return false;
+			return { ok: false };
 		}
 		// 合并粘贴：多条并成一个摘录块、同行省略号接续（格式收拢在 excerpt-batch-paste）。
 		if (merged) {
@@ -2144,7 +2147,7 @@
 				buildQuoteBlock: (...args) => linkService.buildQuoteBlock(...args),
 			});
 			if (!mergedResult || mergedResult.count === 0) {
-				return false;
+				return { ok: false };
 			}
 			const mergedInserted = insertToEditor(mergedResult.content);
 			if (mergedInserted) {
@@ -2155,9 +2158,9 @@
 						void updateInlineHighlightFields(key, { pastedAt });
 					}
 				}
-				return true;
+				return { ok: true, keys: mergedResult.keys };
 			}
-			return false;
+			return { ok: false };
 		}
 		const result = buildExcerptPasteBlocks(items, {
 			filePath,
@@ -2168,7 +2171,7 @@
 			buildQuoteBlock: (...args) => linkService.buildQuoteBlock(...args),
 		});
 		if (result.count === 0) {
-			return false;
+			return { ok: false };
 		}
 		const inserted = insertToEditor(result.content);
 		if (inserted) {
@@ -2181,9 +2184,9 @@
 					void updateInlineHighlightFields(key, { pastedAt });
 				}
 			}
-			return true;
+			return { ok: true, keys: result.keys };
 		}
-		return false;
+		return { ok: false };
 	}
 
 	/** 粘贴链路所需的最小条目形状（面板快照的结构子集；color/createdTime 放宽以容纳点击信息）。 */

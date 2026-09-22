@@ -62,6 +62,18 @@ export interface ExcerptPasteBuildContext {
 	) => string;
 }
 
+/**
+ * 粘贴回调的统一结果契约（spec: docs/specs/paste-auto-uncheck.md）：
+ * - ok：是否真正写入笔记（整批未写入——如无编辑器——为 false）；
+ * - keys：实际写入成功条目的 key 集合（cfiRange 口径，与「已粘贴」标记回写同一口径）；
+ *   成功时由宿主从块构建服务结果透传；失败时缺省。
+ * 面板按该集合与勾选集合求交集，实现「粘贴成功后自动取消勾选」。
+ */
+export interface ExcerptPasteCallbackResult {
+	ok: boolean;
+	keys?: string[];
+}
+
 /** 粘贴顺序：按 createdTime 升序（最早摘录在最上）；同时间戳保持原顺序（稳定排序）。 */
 export function sortExcerptsForPaste<T extends { createdTime?: number }>(items: T[]): T[] {
 	return [...items].sort((left, right) => (left.createdTime || 0) - (right.createdTime || 0));

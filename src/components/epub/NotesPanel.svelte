@@ -9,6 +9,7 @@
 		selectTodayExcerpts,
 		selectUnpastedExcerpts,
 	} from '../../services/epub/excerpt-selection';
+	import type { ExcerptPasteCallbackResult } from '../../services/epub/excerpt-batch-paste';
 	import { sortExcerptsForDisplay } from '../../services/epub/excerpt-display-order';
 	import type { EpubBook, EpubHighlightViewSnapshotService, EpubReaderEngine } from '../../services/epub';
 	import {
@@ -42,8 +43,10 @@
 		currentChapterTitle?: string;
 		currentChapterIndex?: number;
 		onDeleteHighlight?: (highlight: EpubDisplayHighlight) => Promise<boolean>;
-		onPasteHighlights?: (highlights: EpubDisplayHighlight[]) => Promise<boolean>;
-		onPasteHighlightsMerged?: (highlights: EpubDisplayHighlight[]) => Promise<boolean>;
+		onPasteHighlights?: (highlights: EpubDisplayHighlight[]) => Promise<ExcerptPasteCallbackResult>;
+		onPasteHighlightsMerged?: (
+			highlights: EpubDisplayHighlight[]
+		) => Promise<ExcerptPasteCallbackResult>;
 		searchQuery?: string;
 		searchMeta?: HighlightSearchMeta;
 		onNavigate?: (
@@ -543,6 +546,9 @@
 	/**
 	 * 把给定摘录按最早在前粘贴到打开的笔记文档（与划线自动粘贴同款格式）。
 	 * 成功/失败提示由宿主（阅读器）弹出；批量路径粘贴后保持选择模式，便于继续勾选粘贴。
+	 * 粘贴成功后自动取消「实际写入成功」条目的勾选（spec: paste-auto-uncheck）：
+	 * 宿主回传 keys（cfiRange 口径），经本次请求列表映射为勾选 key 后剔除——
+	 * 构建失败条目不在 keys 中、保持勾选；整批未写入（ok=false）不动勾选。
 	 */
 	async function pasteHighlights(highlights: EpubDisplayHighlight[], merged = false) {
 		const handler = merged ? onPasteHighlightsMerged : onPasteHighlights;
@@ -551,7 +557,20 @@
 		}
 		pasting = true;
 		try {
-			await handler(highlights);
+			const outcome: ExcerptPasteCallbackResult = await handler(highlights);
+			if (outcome.ok && selectionMode && outcome.keys && outcome.keys.length > 0) {
+				const pastedCfiKeys = new Set(outcome.keys);
+				const writtenSelectionKeys = new Set(
+					highlights
+						.filter((highlight) => pastedCfiKeys.has(highlight.cfiRange))
+						.map((highlight) => getHighlightSelectionKey(highlight))
+				);
+				if (writtenSelectionKeys.size > 0) {
+					selectedKeys = new Set(
+						[...selectedKeys].filter((key) => !writtenSelectionKeys.has(key))
+					);
+				}
+			}
 		} finally {
 			pasting = false;
 		}

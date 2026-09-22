@@ -12,6 +12,7 @@ import type {
 	EpubReaderEngine,
 } from "../services/epub";
 import type { EpubDisplayHighlight } from "../services/epub/EpubHighlightViewSnapshotService";
+import type { ExcerptPasteCallbackResult } from "../services/epub/excerpt-batch-paste";
 import type { FlashStyle, PaginationInfo } from "../services/epub";
 
 export interface EpubNavigationRequest {
@@ -46,8 +47,12 @@ export interface EpubSharedState {
 	onUpdateBookmarkNote: ((bookmarkId: string, noteId: string, text: string) => Promise<boolean>) | null;
 	onDeleteBookmarkNote: ((bookmarkId: string, noteId: string) => Promise<boolean>) | null;
 	onDeleteHighlight: ((highlight: EpubDisplayHighlight) => Promise<boolean>) | null;
-	onPasteHighlightsToNote: ((highlights: EpubDisplayHighlight[]) => Promise<boolean>) | null;
-	onPasteHighlightsMergedToNote: ((highlights: EpubDisplayHighlight[]) => Promise<boolean>) | null;
+	onPasteHighlightsToNote:
+		| ((highlights: EpubDisplayHighlight[]) => Promise<ExcerptPasteCallbackResult>)
+		| null;
+	onPasteHighlightsMergedToNote:
+		| ((highlights: EpubDisplayHighlight[]) => Promise<ExcerptPasteCallbackResult>)
+		| null;
 	onSettingsClick: ((evt: MouseEvent) => void) | null;
 	onSwitchBook: ((filePath: string) => void) | null;
 	onNavigate: ((request: EpubNavigationRequest) => void) | null;
