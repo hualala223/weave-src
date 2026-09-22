@@ -22,22 +22,15 @@
 		type ExcerptPasteBlockItem,
 		type ExcerptPasteCallbackResult,
 	} from '../../services/epub/excerpt-batch-paste';
-	import { formatExcerptEntryTimestamp, formatExcerptTimestamp } from '../../services/epub/epub-time-format';
-	import {
-	renderIdeaQuoteBlock,
-	upsertIdeaEntry,
-	mergeIdeaInlineRewrite,
-	rewriteLastIdeaEntry,
-	stripLastIdeaEntry,
-	type IdeaMergedInlineRecord,
-	type IdeaNoteResult,
-} from '../../services/epub/idea-note-doc';
+	import { formatExcerptTimestamp } from '../../services/epub/epub-time-format';
 	import {
 		AnnotationMutationQueue,
 		applyFontMarkMutations,
 		applyHighlightMutations,
 		buildHighlightReplaceMutations,
+		mergeIdeaInlineRewrite,
 		type FontMarkMutation,
+		type IdeaMergedInlineRecord,
 	} from '../../services/epub/annotation-mutation-queue';
 	import { extractImageToNote } from '../../services/epub/image-note-extractor';
 	import { DirectoryUtils } from '../../utils/directory-utils';
@@ -2771,18 +2764,6 @@
 	}
 
 
-	async function findInlineHighlight(cfiRange: string) {
-		try {
-			if (!book?.id) return null;
-			const arr = await loadInlineHighlights();
-			const nCfi = EpubLinkService.normalizeCfi(cfiRange);
-			for (let i = 0; i < arr.length; i++) {
-				if (EpubLinkService.normalizeCfi(arr[i]?.cfiRange) === nCfi) return { idx: i, item: arr[i], arr };
-			}
-		} catch (_e) {}
-		return null;
-	}
-
 	/**
 	 * 划线改色/改样式：构造 patch 入队（按归一化 key 命中全部匹配——原代码用
 	 * normalizeCfi 找第一个匹配，语义经队列统一为同 key 全命中，消除编码同义重复）。
@@ -2931,66 +2912,9 @@
 			new Notice('想法已保存');
 			closeCommentEditor();
 			// 刷新合并由队列排干末尾的 onFlush 统一执行，此处不再单独 reload。
-			await syncIdeaToNoteDocument(info, draft);
 		} finally {
 			commentEditorSaving = false;
 		}
-	}
-
-	/**
-	 * 想法入笔记（票03 起覆盖创建/编辑两路径）：
-	 * - 创建：首写建块 / 同句重写追加条目 / 相同 noop；
-	 * - 编辑：改写最后一条、清空剥离；
-	 * 应用到最近激活笔记文档；无活动编辑器时兜底复制块到剪贴板。
-	 */
-	async function syncIdeaToNoteDocument(info: HighlightClickInfo, ideaText: string) {
-		if (excerptSettings.ideaAutoToNote === false) {
-			return;
-		}
-		const trimmed = ideaText.trim();
-		// 兜底：info 取自输入框打开的瞬间，那时引擎可能尚未写入新记录；
-		// 用持久化记录补齐真实 eid，保证块头深链携带稳定划线标识。
-		const live = await findInlineHighlight(info.cfiRange);
-		const excerptId = String(info.excerptId || live?.item?.excerptId || '') || undefined;
-		const identity = { eid: excerptId, cfi: info.cfiRange };
-		// 想法块的原文走划线同款字色装饰：新建/合并的块内原文一律带彩词颜色（票 05 接线）。
-		const quoteBlock = buildNoteContent(decorateExcerptForOutput(info.text, info.cfiRange), info.cfiRange, info.color, info.style, true, excerptId);
-		const view = resolveActiveMarkdownView();
-		const doc = view?.editor?.getValue() ?? '';
-		const entry = { text: ideaText, timestamp: formatExcerptEntryTimestamp(new Date()) };
-
-		let result: IdeaNoteResult | null = null;
-		if (commentEditorMode === 'create' || commentEditorMode === 'append') {
-			if (!trimmed) {
-				return;
-			}
-			// create / append 均走 upsert：首写建块、二次写入追加条目（appended）、相同 noop。
-			result = upsertIdeaEntry(doc, identity, entry, { quoteBlock });
-		} else {
-			// 编辑路径：清空 → 剥离最后一条；有内容 → 改写最后一条（相同则 noop）。
-			result = trimmed
-				? rewriteLastIdeaEntry(doc, identity, entry, { quoteBlock })
-				: stripLastIdeaEntry(doc, identity);
-		}
-
-		if (!result || result.outcome === 'noop' || !result.patch) {
-			return;
-		}
-		if (!view?.editor) {
-			await copyTextToClipboard(result.block ?? renderIdeaQuoteBlock(quoteBlock, [entry]));
-			new Notice('未找到活动的 Markdown 编辑器，已复制到剪贴板');
-			return;
-		}
-		// 自动同步不移动光标（不打断当前写作位置），
-		// 故不复用会 setCursor 的追加式插入工具，直接应用变换补丁。
-		// 同句去重时 extraPatches 坐标基于原文档，须按起点行号自后向前应用。
-		const patches = [result.patch, ...(result.extraPatches ?? [])].sort(
-			(a, b) => b.from.line - a.from.line
-		);
-		for (const patch of patches) {
-			view.editor.replaceRange(patch.text, patch.from, patch.to);
-		}
-		new Notice(result.outcome === 'stripped' ? '想法条目已从笔记中清除' : '想法已同步到笔记末尾');
 	}
 
 	async function handleHighlightCopyText(info: HighlightClickInfo) {

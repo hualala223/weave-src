@@ -4,6 +4,7 @@ import {
 	applyFontMarkMutations,
 	applyHighlightMutations,
 	buildHighlightReplaceMutations,
+	mergeIdeaInlineRewrite,
 	isSpanFullyContained,
 	normalizeAnnotationKey,
 	type EpubStoredFontMark,
@@ -24,6 +25,35 @@ function hl(partial: Partial<EpubStoredHighlight> & { cfiRange: string }): EpubS
 function mark(partial: Partial<EpubStoredFontMark> & { cfiRange: string }): EpubStoredFontMark {
 	return { color: "red", ...partial };
 }
+
+describe("mergeIdeaInlineRewrite（同 CFI 重写保留身份）", () => {
+	it("沿用原划线的 excerptId 与 createdTime，想法与分隔标记原样保留", () => {
+		const existing = {
+			cfiRange: "epubcfi(/6/4!)",
+			text: "旧文本",
+			color: "yellow",
+			style: "underline" as const,
+			commentText: "既有想法",
+			createdTime: 111,
+			excerptId: "eid-stable",
+		};
+		const next = { cfiRange: "epubcfi(/6/4!)", text: "新文本", color: "red", style: "wavy" as const };
+		const merged = mergeIdeaInlineRewrite(existing, next);
+		expect(merged.excerptId).toBe("eid-stable");
+		expect(merged.createdTime).toBe(111);
+		expect(merged.commentText).toBe("既有想法");
+		expect(merged.text).toBe("新文本");
+		expect(merged.color).toBe("red");
+		expect(merged.style).toBe("wavy");
+	});
+
+	it("没有既有记录时行为等同新建（生成新身份、无想法）", () => {
+		const merged = mergeIdeaInlineRewrite(undefined, { cfiRange: "c", text: "T" });
+		expect(merged.cfiRange).toBe("c");
+		expect(merged.excerptId).toBeTruthy();
+		expect(merged.commentText).toBe("");
+	});
+});
 
 describe("normalizeAnnotationKey", () => {
 	it("百分比编码与未编码的同义 CFI 归一为同一 key", () => {

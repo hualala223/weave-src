@@ -21,6 +21,9 @@
  */
 
 import { EpubLinkService } from "./EpubLinkService";
+import { generateBlockID } from "../identifier/WeaveIDGenerator";
+import type { ReaderHighlight } from "./reader-engine-types";
+import type { EpubHighlightStyle } from "./types";
 import type { EpubStoredFontMark, EpubStoredHighlight } from "./schema-v2";
 
 export type { EpubStoredFontMark, EpubStoredHighlight } from "./schema-v2";
@@ -44,6 +47,42 @@ export function normalizeAnnotationKey(cfiRange: string): string {
 
 function isBlank(value: string | undefined): boolean {
 	return !value || !value.trim();
+}
+
+/** 同 CFI 重写时的新值（仅文本/颜色/样式位）。 */
+export interface IdeaInlineRewriteInput {
+	cfiRange: string;
+	text: string;
+	color?: string;
+	style?: EpubHighlightStyle;
+}
+
+/** 合并后的记录：沿用原身份与既有想法，更新文本/样式位。复用划线记录的字段形状。 */
+export type IdeaMergedInlineRecord = Pick<
+	ReaderHighlight,
+	"cfiRange" | "text" | "color" | "style" | "commentText" | "createdTime" | "excerptId"
+>;
+
+/**
+ * 同 CFI 重写合并规则：对同一句再次选字时，
+ * 不抹掉旧记录——沿用原 excerptId 与 createdTime、保留既有想法；
+ * 没有旧记录则等价新建（新身份、空想法）。
+ * applyHighlightMutations 的 upsert 身份合并（mergeHighlightIdentity）与之方向一致，仅作兜底。
+ */
+export function mergeIdeaInlineRewrite(
+	existing: Partial<IdeaMergedInlineRecord> | undefined,
+	next: IdeaInlineRewriteInput
+): IdeaMergedInlineRecord {
+	const now = Date.now();
+	return {
+		cfiRange: next.cfiRange,
+		text: next.text,
+		color: next.color || existing?.color || "",
+		style: next.style || existing?.style,
+		commentText: existing?.commentText || "",
+		createdTime: existing?.createdTime || now,
+		excerptId: existing?.excerptId || generateBlockID(),
+	};
 }
 
 /**

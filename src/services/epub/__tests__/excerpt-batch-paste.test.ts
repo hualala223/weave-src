@@ -3,11 +3,59 @@ import {
 	buildExcerptPasteBlocks,
 	buildExcerptMergedPasteBlock,
 	joinExcerptPasteBlocks,
+	renderIdeaQuoteBlock,
 	sortExcerptsForPaste,
 	type ExcerptPasteBlockItem,
 	type ExcerptPasteBuildContext,
 } from "../excerpt-batch-paste";
+import { EpubLinkService } from "../EpubLinkService";
 import type { EpubHighlightStyle } from "../types";
+
+/** 用真实生产者（摘录块构建服务）生成块文本，保证夹具与线上一致。 */
+function buildQuoteBlock(excerptId?: string): string {
+	const linkService = new EpubLinkService({} as never);
+	return linkService.buildQuoteBlock(
+		"books/demo.epub",
+		"epubcfi(/6/4!/4/2/2,/1:0,/2:5)",
+		"被划线的原文",
+		2,
+		"yellow",
+		"第三章",
+		undefined,
+		undefined,
+		undefined,
+		excerptId,
+		"underline"
+	);
+}
+
+describe("renderIdeaQuoteBlock", () => {
+	it("在摘录块原文之下以空引用行分隔，引出带时间戳的裸 💡 想法条目", () => {
+		const quoteBlock = buildQuoteBlock("eid-1");
+		const rendered = renderIdeaQuoteBlock(quoteBlock, [
+			{ text: "想法第一行\n想法第二行", timestamp: "01-01 22:10" },
+		]);
+		expect(rendered).toBe(
+			`${quoteBlock.replace(/\n+$/, "")}\n>\n> 💡 01-01 22:10\n> 想法第一行\n> 想法第二行\n`
+		);
+	});
+
+	it("无时间戳时标签行不拖尾空格；多条条目纵向堆叠", () => {
+		const quoteBlock = buildQuoteBlock("eid-2");
+		const rendered = renderIdeaQuoteBlock(quoteBlock, [
+			{ text: "A1", timestamp: "01-01 22:10" },
+			{ text: "A2", timestamp: "01-02 09:30" },
+		]);
+		expect(rendered).toBe(
+			`${quoteBlock.replace(/\n+$/, "")}\n>\n> 💡 01-01 22:10\n> A1\n>\n> 💡 01-02 09:30\n> A2\n`
+		);
+	});
+
+	it("没有条目时输出与纯摘录块一致", () => {
+		const quoteBlock = buildQuoteBlock("eid-3");
+		expect(renderIdeaQuoteBlock(quoteBlock, [])).toBe(quoteBlock);
+	});
+});
 
 interface PasteItem {
 	id: string;

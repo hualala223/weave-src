@@ -1,6 +1,6 @@
 # Spec: 想法入笔记——写完想法自动沉淀原文与想法到笔记文档末尾 (Idea-to-Note)
 
-Status: Finalized locally — 设计经三轮 grilling 定稿、用户已确认测试接缝。**待发布 issue tracker**（本机无 gh CLI / token / tracker 配置；配置好后按 `ready-for-agent` 标签发布）。实现等用户明确开工指令。
+Status: **已取消（2026-09-22）**——「想法自动入笔记」功能已按用户决定移除，摘录进笔记统一走「粘贴所选摘录」（见 SPEC-paste-excerpts-to-note.md）。下文仅作历史设计记录；实现已删除（`idea-note-doc.ts` 的五态 upsert/定位部分，`renderIdeaQuoteBlock` 迁入 `excerpt-batch-paste.ts`，`mergeIdeaInlineRewrite` 迁入 `annotation-mutation-queue.ts`）。
 
 ## Problem Statement
 

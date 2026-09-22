@@ -9,12 +9,43 @@
  * - 空块丢弃、去尾换行、块间以空行分隔拼接为一次插入的内容。
  *
  * 不含 Obsidian 依赖：摘录块构建器（EpubLinkService.buildQuoteBlock）以参数注入，
- * 想法条目渲染复用 idea-note-doc 的纯函数。
+ * 想法条目渲染（裸 💡 标签 + 时间戳）为本模块内纯函数。
  */
 
 import type { EpubHighlightStyle } from "./types";
-import { renderIdeaQuoteBlock, type IdeaEntryInput } from "./idea-note-doc";
 import { formatExcerptEntryTimestamp, formatExcerptTimestamp } from "./epub-time-format";
+
+/** 条目标签（裸灯泡，无加粗、无标签文字），后接可选的紧凑时间戳。 */
+export const IDEA_ENTRY_LABEL = "💡";
+
+/** 一条想法条目的输入：想法正文 + 写入时刻（紧凑 MM-DD HH:mm）。 */
+export interface IdeaEntryInput {
+	text: string;
+	timestamp?: string;
+}
+
+function renderEntryLines(entry: IdeaEntryInput): string[] {
+	const label = entry.timestamp ? `${IDEA_ENTRY_LABEL} ${entry.timestamp}` : IDEA_ENTRY_LABEL;
+	const bodyLines = String(entry.text ?? "").split("\n");
+	return [`> ${label}`, ...bodyLines.map((line) => `> ${line}`)];
+}
+
+/**
+ * 渲染完整块文本：摘录块（头部 + 原文）之下按序堆叠想法条目，
+ * 条目之间以及原文与首个条目之间以空引用行分隔。没有条目时原样返回。
+ */
+export function renderIdeaQuoteBlock(quoteBlock: string, entries: IdeaEntryInput[]): string {
+	if (!entries.length) {
+		return quoteBlock;
+	}
+	const base = quoteBlock.replace(/\n+$/, "");
+	const segmentLines: string[] = [];
+	for (const entry of entries) {
+		segmentLines.push(">");
+		segmentLines.push(...renderEntryLines(entry));
+	}
+	return `${base}\n${segmentLines.join("\n")}\n`;
+}
 
 /** 批量粘贴的单个摘录条目（宿主已完成字色装饰与章节标签解析后的形态）。 */
 export interface ExcerptPasteBlockItem {
